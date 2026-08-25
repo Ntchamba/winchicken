@@ -1,0 +1,42 @@
+.transition-screen{
+  position:fixed;inset:0;z-index:1000;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  background:#0d1b29;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+}
+
+/* Oversized + scaled so the blur's softened edges never show at the viewport
+   boundary — .transition-screen's own overflow:hidden clips the excess. No blur
+   technique existed elsewhere to reuse (the login/create-farm cards are opaque, so
+   their background was never blurred, only scrimmed) — added here specifically
+   because large text sits directly on this background with nothing opaque behind it. */
+.transition-bg-blur{position:absolute;inset:-40px;filter:blur(18px);transform:scale(1.05)}
+
+/* AnimatedBackground already applies its own internal scrim; this one stacks on top
+   for the extra contrast headroom text-directly-on-background needs (vs. a card
+   fully separating text from the image, as on /login and /create-farm) — the
+   gradient wash's screen-blend can brighten patches of the image as it drifts, which
+   would otherwise cut into white-text contrast wherever that patch happens to land. */
+.transition-scrim{position:absolute;inset:0;z-index:1;background:rgba(7,15,21,.35)}
+
+.transition-content{position:relative;z-index:2;text-align:center;padding:24px;width:min(720px,92vw)}
+
+.transition-message{
+  margin:0 0 40px;color:#fff;
+  font-family:'Space Grotesk',sans-serif;font-weight:700;
+  font-size:clamp(1.75rem,3.2vw + 1rem,3.25rem);
+  line-height:1.22;letter-spacing:-.02em;
+}
+
+.transition-progress-track{
+  width:min(280px,80%);height:3px;margin:0 auto;
+  border-radius:999px;background:rgba(255,255,255,.18);overflow:hidden;
+}
+.transition-progress-fill{height:100%;background:var(--mint-fill);border-radius:999px}
+
+@media(prefers-reduced-motion: reduce){
+  .transition-content{transition:none!important}
+}
+@media(max-width:480px){
+  .transition-message{margin-bottom:32px}
+}

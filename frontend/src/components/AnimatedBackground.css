@@ -1,0 +1,36 @@
+.animated-bg{position:absolute;inset:0;z-index:0;overflow:hidden}
+.animated-bg-parallax{position:absolute;inset:-4%}
+.animated-bg-image{
+  position:absolute;inset:0;
+  background-size:cover;background-position:center;background-repeat:no-repeat;
+  will-change:transform;
+}
+.animated-bg-wash{
+  position:absolute;top:-30%;left:-30%;width:160%;height:160%;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(23,184,146,.4), transparent 55%),
+    radial-gradient(ellipse at 75% 80%, rgba(11,143,104,.32), transparent 55%);
+  mix-blend-mode:screen;
+  will-change:transform,opacity;
+  animation:animated-bg-wash-drift 26s ease-in-out infinite alternate;
+}
+@keyframes animated-bg-wash-drift{
+  0%{transform:translate(-3%,-2%);opacity:.55}
+  100%{transform:translate(3%,4%);opacity:.85}
+}
+.animated-bg-scrim{position:absolute;inset:0;background:rgba(7,15,21,.3)}
+.animated-bg-particles{position:absolute;inset:0;pointer-events:none}
+.animated-bg-mote{
+  position:absolute;border-radius:50%;background:rgba(215,245,236,.55);filter:blur(.5px);
+  animation-name:animated-bg-mote-drift;animation-timing-function:ease-in-out;animation-iteration-count:infinite;
+}
+@keyframes animated-bg-mote-drift{
+  0%{transform:translate(0,0);opacity:0}
+  15%{opacity:.4}
+  50%{transform:translate(14px,-22px);opacity:.6}
+  85%{opacity:.25}
+  100%{transform:translate(-8px,10px);opacity:0}
+}
+@media(prefers-reduced-motion: reduce){
+  .animated-bg *{animation:none!important;transition:none!important}
+}

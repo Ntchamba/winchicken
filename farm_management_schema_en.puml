@@ -1,0 +1,503 @@
+@startuml
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+
+' ====================================================================
+' FARM & USERS
+' ====================================================================
+
+class Farm {
+  * id : int <<PK>>
+  --
+  name : String
+  location : String
+  creationDate : Date
+}
+
+enum UserRole {
+  ADMIN
+  SECONDARY_ADMIN
+  FARM_MANAGER
+  FARMER
+  WORKER
+  TECHNICIAN
+  CASHIER
+}
+
+class User {
+  * id : int <<PK>>
+  --
+  farm_id : int <<FK>>
+  name : String
+  email : String
+  phone : String
+  password : String
+  role : UserRole
+}
+
+' Subtypes use a shared primary key (class table inheritance):
+' avoids redundant generated codes, guarantees a single active role.
+
+class Admin {
+  * user_id : int <<PK, FK>>
+}
+
+class SecondaryAdmin {
+  * user_id : int <<PK, FK>>
+}
+
+class FarmManager {
+  * user_id : int <<PK, FK>>
+  --
+  admin_id : int <<FK>>
+}
+
+class Farmer {
+  * user_id : int <<PK, FK>>
+  --
+  secondaryAdmin_id : int <<FK>>
+}
+
+class Worker {
+  * user_id : int <<PK, FK>>
+}
+
+class Technician {
+  * user_id : int <<PK, FK>>
+}
+
+class Cashier {
+  * user_id : int <<PK, FK>>
+}
+
+Farm   ||--o{ User            : employs
+User   ||--o| Admin            : specializes_as
+User   ||--o| SecondaryAdmin   : specializes_as
+User   ||--o| FarmManager      : specializes_as
+User   ||--o| Farmer           : specializes_as
+User   ||--o| Worker           : specializes_as
+User   ||--o| Technician       : specializes_as
+User   ||--o| Cashier          : specializes_as
+
+Admin          ||--o{ FarmManager : supervises
+SecondaryAdmin ||--o{ Farmer      : oversees
+
+' ====================================================================
+' HOUSES & BATCHES
+' ====================================================================
+
+class PoultryHouse {
+  * houseCode : String <<PK>>
+  --
+  farm_id : int <<FK>>
+  name : String
+  sizeM2 : int
+  maxCapacity : int
+  lastDisinfectionDate : Date
+}
+
+' Added 2026-08-25 (custom protocol categories) — apps.protocols was previously entirely
+' absent from this puml despite being implemented and listed in the cahier des charges
+' section 10 app table; ProtocolCategory is new, ProtocolTemplate is documented here for
+' the first time alongside it.
+class ProtocolCategory {
+  * id : int <<PK>>
+  --
+  houseCode : String <<FK>>
+  label : String
+  icon : String
+  sortOrder : int
+}
+
+note bottom of ProtocolCategory
+  5 defaults (Alimentation/Température/Santé et
+  soins/Vaccination/Nettoyage) auto-seeded for every
+  new PoultryHouse (apps.houses.signals) — structural
+  UI scaffolding, not example data. Deleting a category
+  cascades to delete its ProtocolTemplate rows.
+end note
+
+enum ProtocolUnit {
+  DAY
+  WEEK
+  MONTH
+}
+
+class ProtocolTemplate {
+  * id : int <<PK>>
+  --
+  houseCode : String <<FK>>
+  category_id : int <<FK>>
+  fromValue : int
+  fromUnit : ProtocolUnit
+  toValue : int
+  toUnit : ProtocolUnit
+  untilEnd : bool
+  what : String
+  details : String
+}
+
+PoultryHouse     ||--o{ ProtocolCategory : defines
+ProtocolCategory ||--o{ ProtocolTemplate : groups
+PoultryHouse     ||--o{ ProtocolTemplate : hosts
+
+enum ProductionType {
+  BROILER
+  PULLET
+  LAYER
+}
+
+enum BatchStatus {
+  ACTIVE
+  CLOSED
+}
+
+class PoultryBatch {
+  * batchCode : String <<PK>>
+  --
+  name : String
+  houseCode : String <<FK>>
+  farmer_id : int <<FK>>
+  productionType : ProductionType
+  breed : String
+  initialCount : int
+  currentCount : int
+  startDate : Date
+  plannedEndDate : Date
+  actualEndDate : Date
+  status : BatchStatus
+}
+
+note bottom of PoultryBatch
+  Application-level constraint: no overlapping
+  PoultryBatch.status = ACTIVE on the same
+  PoultryHouse (single-batch / sanitary void principle).
+end note
+
+PoultryHouse ||--o{ PoultryBatch : hosts
+Farmer       ||--o{ PoultryBatch : manages
+
+class DailyLog {
+  * id : int <<PK>>
+  --
+  batchCode : String <<FK>>
+  logDate : Date
+  mortality : int
+  feedConsumedKg : double
+  waterConsumedL : double
+  avgSampleWeight : double
+  notes : String
+}
+note right of DailyLog : unique (batchCode, logDate)
+
+PoultryBatch ||--o{ DailyLog : logs
+
+' ====================================================================
+' STOCK (FEED / VETERINARY / EQUIPMENT / BEDDING)
+' ====================================================================
+
+enum ItemCategory {
+  FEED
+  VETERINARY
+  EQUIPMENT
+  BEDDING
+}
+
+enum FeedStage {
+  STARTER
+  GROWER
+  FINISHER
+  PULLET_STAGE
+  LAYER_STAGE
+  NOT_APPLICABLE
+}
+
+class StockItem {
+  * itemCode : String <<PK>>
+  --
+  farm_id : int <<FK>>
+  category : ItemCategory
+  name : String
+  unit : String
+  feedStage : FeedStage
+  coldChainRequired : boolean
+  alertThreshold : double
+  unitPrice : decimal
+}
+
+enum MovementType {
+  IN
+  OUT
+}
+
+class StockMovement {
+  * id : int <<PK>>
+  --
+  itemCode : String <<FK>>
+  batchCode : String <<FK>>
+  movementType : MovementType
+  quantity : double
+  movementDate : Date
+  supplierBatchNumber : String
+  supplier : String
+}
+
+Farm      ||--o{ StockItem     : owns
+StockItem ||--o{ StockMovement : concerns
+PoultryBatch ||--o{ StockMovement : consumes
+
+class Vaccination {
+  * id : int <<PK>>
+  --
+  batchCode : String <<FK>>
+  itemCode : String <<FK>>
+  scheduledDate : Date
+  administeredDate : Date
+  reconstitutionTime : DateTime
+  dosesUsed : int
+  status : String
+}
+note right of Vaccination
+  dosesUsed >= batch currentCount
+  reconstitutionTime + 2h = strict expiry
+end note
+
+PoultryBatch ||--o{ Vaccination : receives
+StockItem    ||--o{ Vaccination : vaccine_used
+
+class EquipmentFault {
+  * faultCode : String <<PK>>
+  --
+  technician_id : int <<FK>>
+  houseCode : String <<FK>>
+  itemCode : String <<FK>>
+  faultDescription : String
+  reportedDate : Date
+  repairedDate : Date
+  status : String
+}
+
+Technician ||--o{ EquipmentFault : handles
+PoultryHouse ||--o{ EquipmentFault : concerns
+StockItem  ||--o{ EquipmentFault : equipment_concerned
+
+class UnusualCase {
+  * caseCode : String <<PK>>
+  --
+  batchCode : String <<FK>>
+  farmer_id : int <<FK>>
+  worker_id : int <<FK>>
+  caseDescription : String
+  caseDate : Date
+}
+
+Farmer       ||--o{ UnusualCase : reports
+Worker       ||--o{ UnusualCase : reports
+PoultryBatch ||--o{ UnusualCase : concerns
+
+' ====================================================================
+' FINANCE
+' ====================================================================
+
+enum ExpenseCategory {
+  FEED
+  VETERINARY
+  MISC
+  DEPRECIATION
+  LABOR
+}
+
+class Expense {
+  * id : int <<PK>>
+  --
+  farm_id : int <<FK>>
+  batchCode : String <<FK>>
+  category : ExpenseCategory
+  amount : decimal
+  expenseDate : Date
+  supplier : String
+}
+
+enum ProductType {
+  BIRD
+  EGG
+  CULL
+  MANURE
+}
+
+class Sale {
+  * id : int <<PK>>
+  --
+  farm_id : int <<FK>>
+  batchCode : String <<FK>>
+  cashier_id : int <<FK>>
+  productType : ProductType
+  quantity : double
+  unitPrice : decimal
+  totalAmount : decimal
+  saleDate : Date
+  customer : String
+}
+
+enum OrderStatus {
+  PENDING
+  RECEIVED
+  CANCELLED
+}
+
+class PurchaseOrder {
+  * orderCode : String <<PK>>
+  --
+  farm_id : int <<FK>>
+  cashier_id : int <<FK>>
+  itemCode : String <<FK>>
+  supplier : String
+  quantity : double
+  amount : decimal
+  orderDate : Date
+  status : OrderStatus
+}
+note right of PurchaseOrder
+  Supplier purchase order (restocking), distinct
+  from Sale. Receiving it generates a StockMovement
+  of type IN.
+end note
+
+Farm         ||--o{ Expense       : bears
+PoultryBatch ||--o{ Expense       : allocated_to
+Farm         ||--o{ Sale          : collects
+PoultryBatch ||--o{ Sale          : generates
+Cashier      ||--o{ Sale          : records
+Cashier      ||--o{ PurchaseOrder : places
+StockItem    ||--o{ PurchaseOrder : replenishes
+
+class BatchClosingReport {
+  * batchCode : String <<PK, FK>>
+  --
+  closingDate : Date
+  totalMortalityPct : double
+  feedConversionRatio : double
+  revenue : decimal
+  totalVariableCost : decimal
+  unitCostPrice : decimal
+  totalMargin : decimal
+}
+note right of BatchClosingReport
+  Snapshot computed at batch closing
+  (replaces the old Profit table, which
+  stored a derived value directly).
+end note
+
+PoultryBatch ||--o| BatchClosingReport : closed_by
+
+' ====================================================================
+' ALERTS & SMS (async, idempotent - SMS gateway conventions)
+' ====================================================================
+
+enum TriggerMode {
+  EVENT
+  SCHEDULED
+}
+
+enum ScheduleFrequency {
+  DAILY
+  WEEKLY
+  ONE_TIME
+}
+
+enum AlertRuleType {
+  LOW_STOCK
+  VACCINE_DUE
+  CONSUMPTION_DEVIATION
+  PROFITABILITY_THRESHOLD
+  SANITARY_VOID_END
+}
+
+class AlertRule {
+  * id : int <<PK>>
+  --
+  farm_id : int <<FK>>
+  ruleType : AlertRuleType
+  triggerMode : TriggerMode
+  threshold : double
+  frequency : ScheduleFrequency
+  triggerTime : Time
+  activeDays : String
+  active : boolean
+}
+note right of AlertRule
+  EVENT (low stock, consumption deviation, profitability
+  threshold, sanitary void end) -> threshold set, frequency/time null.
+  SCHEDULED (feeding time, scheduled vaccination)
+  -> triggerTime + frequency set, threshold null.
+end note
+
+enum AlertStatus {
+  NEW
+  SENT
+  RESOLVED
+}
+
+class Alert {
+  * id : int <<PK>>
+  --
+  rule_id : int <<FK>>
+  batchCode : String <<FK>>
+  triggeredAt : DateTime
+  status : AlertStatus
+}
+
+enum SmsStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+class SmsMessage {
+  * id : int <<PK>>
+  --
+  alert_id : int <<FK>>
+  recipient : String
+  idempotencyKey : String <<unique>>
+  providerStatus : SmsStatus
+  provider : String
+  retryCount : int
+  nextRetryAt : DateTime
+  sentAt : DateTime
+}
+note right of SmsMessage
+  retryCount / nextRetryAt implement the exponential
+  backoff retry required by the SMS gateway.
+  idempotencyKey prevents duplicates if Celery replays
+  the task (e.g. worker crash after provider call).
+end note
+
+enum NotificationChannel {
+  SMS
+  PUSH
+  EMAIL
+}
+
+class NotificationPreference {
+  * id : int <<PK>>
+  --
+  user_id : int <<FK>>
+  ruleType : AlertRuleType
+  preferredChannel : NotificationChannel
+  active : boolean
+}
+note right of NotificationPreference
+  Per-user, per-alert-type volume control: opt-out,
+  or route routine reminders (feeding, vaccination)
+  to PUSH, reserving SMS for critical alerts (stock,
+  profitability threshold) - cost and rate limiting.
+end note
+
+Farm       ||--o{ AlertRule   : defines
+AlertRule  ||--o{ Alert       : triggers
+PoultryBatch ||--o{ Alert     : concerns
+Alert      ||--o{ SmsMessage  : notifies
+User       ||--o{ NotificationPreference : configures
+
+@enduml

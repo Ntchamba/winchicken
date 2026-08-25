@@ -1,0 +1,33 @@
+/* .onboarding-shell overrides .app-shell's light background with the shared animated
+   hero background (same as /login, /create-farm) — deliberately no overflow:hidden here
+   (unlike .auth-shell): AnimatedBackground already clips its own Ken Burns zoom inside
+   .animated-bg, and overflow:hidden on this ancestor would break .onboarding-progress's
+   position:sticky. Step content (HouseProtocolForm/StockParametersForm/
+   OnboardingEmployeesPage, all rooted at .page-wrap) becomes one big white card floating
+   on the backdrop instead — no internal color changes needed in those shared components
+   (which are also used, unstyled this way, by /dashboard/houses/{id}/protocol and
+   /dashboard/stock — this rule is scoped to .onboarding-shell so it never reaches them). */
+.onboarding-shell{position:relative;padding-top:0;background:#0d1b29}
+.onboarding-progress{position:sticky;top:0;z-index:10;display:flex;justify-content:center;gap:28px;padding:18px 20px;background:rgba(255,255,255,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+/* Nested inside the sticky progress bar (not positioned against the viewport corner like
+   .auth-back-link's default) so it never collides with the bar and stays visible on
+   scroll along with it. Removed from the flex flow so the three step labels still center
+   correctly on their own. */
+.onboarding-back-link{position:absolute;top:50%;left:20px;transform:translateY(-50%);background:none;backdrop-filter:none;padding:4px 6px;color:var(--muted)}
+.onboarding-back-link:hover{color:var(--mint);background:none}
+@media(max-width:600px){
+  .onboarding-back-link{position:static;transform:none;order:-1;margin:0 0 8px}
+}
+.onboarding-step{font-size:12.5px;font-weight:700;letter-spacing:.04em;color:var(--muted)}
+.onboarding-step.active{color:var(--mint)}
+.onboarding-content{position:relative;z-index:1;padding-top:32px;padding-bottom:100px}
+.onboarding-shell .page-wrap{
+  position:relative;background:#fff;border-radius:24px;
+  padding:32px 36px 40px;box-shadow:0 24px 70px rgba(0,0,0,.28);
+}
+@media(max-width:767px){
+  .onboarding-progress{gap:16px;flex-wrap:wrap}
+}
+@media(max-width:600px){
+  .onboarding-shell .page-wrap{padding:22px 18px 28px;border-radius:18px}
+}

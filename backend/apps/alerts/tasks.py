@@ -1,0 +1,46 @@
+from datetime import timedelta
+
+from celery import shared_task
+from django.utils import timezone
+
+from apps.alerts.models import SmsMessage, SmsStatus
+from apps.alerts.providers import get_sms_provider
+
+MAX_RETRIES = 5
+BASE_BACKOFF_SECONDS = 30
+
+
+@shared_task(bind=True, max_retries=MAX_RETRIES)
+def send_sms_task(self, sms_message_id: int):
+    """Sends one SmsMessage. Idempotent via idempotency_key — safe to replay on worker crash.
+
+    Never called synchronously from a view; always queued after the triggering write commits.
+    """
+    try:
+        sms = SmsMessage.objects.get(pk=sms_message_id)
+    except SmsMessage.DoesNotExist:
+        return
+
+    if sms.provider_status in (SmsStatus.SENT, SmsStatus.DELIVERED):
+        return  # already handled — idempotency guard against task replay
+
+    provider = get_sms_provider()
+    result = provider.send(sms.recipient, sms.alert.message)
+
+    if result['success']:
+        sms.provider_status = SmsStatus.SENT
+        sms.provider = result.get('provider_message_id') or 'unknown'
+        sms.sent_at = timezone.now()
+        sms.save(update_fields=['provider_status', 'provider', 'sent_at'])
+        return
+
+    sms.retry_count += 1
+    if sms.retry_count >= MAX_RETRIES:
+        sms.provider_status = SmsStatus.FAILED
+        sms.save(update_fields=['provider_status', 'retry_count'])
+        return
+
+    backoff_seconds = BASE_BACKOFF_SECONDS * (2 ** (sms.retry_count - 1))
+    sms.next_retry_at = timezone.now() + timedelta(seconds=backoff_seconds)
+    sms.save(update_fields=['retry_count', 'next_retry_at'])
+    raise self.retry(countdown=backoff_seconds)
