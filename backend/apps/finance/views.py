@@ -1,13 +1,26 @@
+from datetime import date
+
+from django.db import transaction
+from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema, inline_serializer
-from rest_framework import generics, serializers
+from rest_framework import generics, serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.permissions import ADMIN, FARM_MANAGER, IsAdminOrCashier, IsAdminOrFarmManager
-from apps.finance.calculations import expense_category_breakdown, finance_summary, finance_trend_direction
-from apps.finance.models import Expense, PurchaseOrder, Sale
-from apps.finance.serializers import ExpenseSerializer, PurchaseOrderSerializer, SaleSerializer
+from apps.core.permissions import ADMIN, FARM_MANAGER, IsAdminOrCashier, IsAdminOrFarmManager, IsAdminOrFarmManagerOrCashier
+from apps.core.services import record_audit_log
+from apps.finance.calculations import (
+    expense_category_breakdown, finance_summary, finance_trend_direction,
+    purchases_evolution, sales_evolution, series_trend,
+)
+from apps.finance.models import (
+    Expense, ExpenseCategory, PurchaseOrder, Sale, SalaryPayment, SalaryPaymentStatus, WorkHoursEntry,
+)
+from apps.finance.serializers import (
+    ExpenseSerializer, PurchaseOrderSerializer, SaleSerializer, SalaryPaymentSerializer, WorkHoursEntrySerializer,
+)
+from apps.finance.services import calculate_salaries
 
 _RANGE_PARAM = OpenApiParameter(
     name='range', type=str, required=False,
@@ -135,18 +148,26 @@ class FinanceTransactionsView(generics.ListAPIView):
 
 
 class ExpenseListCreateView(generics.ListCreateAPIView):
-    """GET/POST /api/expenses/ — history and creation of farm/batch expenses.
-    Creation reserved to Admin / Farm Manager."""
+    """GET/POST /api/expenses/ — history and creation of farm/batch expenses. Creation reserved
+    to Admin / Farm Manager / Cashier — widened 2026-08-27 (Finances restructure, Part C) to add
+    Cashier, so the new "Enregistrer une dépense" action on `/dashboard/cashier` can use this
+    same endpoint rather than a duplicate one; Admin/Farm Manager's pre-existing access is
+    unchanged, only added to, not narrowed."""
 
     serializer_class = ExpenseSerializer
 
     def get_permissions(self):
         if self.request.method == 'POST':
-            return [IsAdminOrFarmManager()]
+            return [IsAdminOrFarmManagerOrCashier()]
         return [IsAuthenticated()]
 
     def get_queryset(self):
         return Expense.objects.filter(farm=self.request.user.farm)
+
+    def perform_create(self, serializer):
+        # farm comes from ExpenseSerializer.create() itself (request context) — not passed here.
+        expense = serializer.save()
+        record_audit_log(self.request.user, 'expense.created', f'{expense.get_category_display()} · {expense.amount}')
 
 
 class SaleListCreateView(generics.ListCreateAPIView):
@@ -163,28 +184,200 @@ class SaleListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         return Sale.objects.filter(farm=self.request.user.farm)
 
+    def perform_create(self, serializer):
+        # farm/cashier come from SaleSerializer.create() itself (request context) — not passed here.
+        sale = serializer.save()
+        record_audit_log(self.request.user, 'sale.created', f'{sale.get_product_type_display()} · {sale.total_amount}')
+
 
 class PurchaseOrderListCreateView(generics.ListCreateAPIView):
     """GET/POST /api/purchase-orders/ — history and creation of supplier purchase orders.
-    Creation reserved to Admin / Cashier (section 8)."""
+    Creation reserved to Admin / Farm Manager / Cashier (2026-08-27, purchase-order task —
+    widened from Admin/Cashier only, which was missing Farm Manager despite the task's own
+    role list; a new `IsAdminOrFarmManagerOrCashier` was added rather than widening the
+    existing `IsAdminOrCashier` in place, since that one is also used by `SaleListCreateView`,
+    explicitly out of this task's scope). `?status=`/`?category=` filter the list server-side
+    (category filters by the related `StockItem.category`) — same query-param-filtering
+    convention as `EquipmentFaultListCreateView`/`UnusualCaseListCreateView`."""
 
     serializer_class = PurchaseOrderSerializer
 
     def get_permissions(self):
         if self.request.method == 'POST':
-            return [IsAdminOrCashier()]
+            return [IsAdminOrFarmManagerOrCashier()]
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        return PurchaseOrder.objects.filter(farm=self.request.user.farm)
+        qs = PurchaseOrder.objects.filter(farm=self.request.user.farm).select_related('item')
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            qs = qs.filter(status=status_param)
+        category = self.request.query_params.get('category')
+        if category:
+            qs = qs.filter(item__category__kind=category)
+        return qs
+
+    def perform_create(self, serializer):
+        # farm/cashier/order_code come from PurchaseOrderSerializer.create() itself — not passed here.
+        order = serializer.save()
+        record_audit_log(self.request.user, 'purchase_order.created', f'{order.order_code} · {order.supplier}')
 
 
 class PurchaseOrderDetailView(generics.RetrieveUpdateAPIView):
-    """PATCH /api/purchase-orders/{orderCode}/ — status transition to RECEIVED generates a StockMovement IN."""
+    """PATCH /api/purchase-orders/{orderCode}/ — status transition to RECEIVED generates a
+    StockMovement IN (see `PurchaseOrderSerializer.update`, wrapped in one transaction); a
+    transition to CANCELLED just updates status, no StockMovement. Once RECEIVED or CANCELLED
+    an order is final — the serializer itself rejects any further status change (2026-08-27,
+    purchase-order task, Part B item 5) — logged to the audit trail either way, since that's
+    this task's own stated substitute for "no un-receiving/un-cancelling."."""
 
     serializer_class = PurchaseOrderSerializer
-    permission_classes = [IsAdminOrCashier]
+    permission_classes = [IsAdminOrFarmManagerOrCashier]
     lookup_field = 'order_code'
 
     def get_queryset(self):
         return PurchaseOrder.objects.filter(farm=self.request.user.farm)
+
+    def perform_update(self, serializer):
+        previous_status = serializer.instance.status
+        order = serializer.save()
+        if order.status != previous_status and order.status == 'RECEIVED':
+            record_audit_log(self.request.user, 'purchase_order.received', f'{order.order_code} · {order.supplier}')
+        elif order.status != previous_status and order.status == 'CANCELLED':
+            record_audit_log(self.request.user, 'purchase_order.cancelled', f'{order.order_code} · {order.supplier}')
+
+
+class PurchaseOrderPendingCountView(APIView):
+    """GET /api/purchase-orders/pending-count/ — sidebar Finance badge. `IsAdminOrFarmManager`,
+    not the broader `IsAdminOrFarmManagerOrCashier` used for PO create/update above — this
+    reuses the same Finance-access role set as FinanceSummaryView's `access: "full"` branch
+    (deviation #28), so the count never leaks to a role that can't see full Finance figures
+    either."""
+
+    permission_classes = [IsAdminOrFarmManager]
+
+    def get(self, request):
+        count = PurchaseOrder.objects.filter(farm=request.user.farm, status='PENDING').count()
+        return Response({'count': count})
+
+
+_PERIOD_PARAM = OpenApiParameter(
+    name='period', type=str, required=False,
+    description='"week" (8 weeks), "month" (12 months, default) or "year" (5 years).',
+)
+
+
+class SalesEvolutionView(APIView):
+    """GET /api/finance/sales-evolution/?period=week|month|year — "Ventes" section (2026-08-27,
+    Finances restructure Part B): bucketed revenue series + period totals/breakdown. Same
+    Admin/Farm-Manager-full vs. everyone-else-restricted split as `FinanceSummaryView` (direction
+    only, no amounts) — Caissier keeps full detail on their *own* recorded sales via
+    `/dashboard/cashier`/`GET /api/sales/` regardless (unchanged), this is the farm-wide
+    aggregate view specifically."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(parameters=[_PERIOD_PARAM])
+    def get(self, request):
+        period = request.query_params.get('period', 'month')
+        farm = request.user.farm
+        if request.user.role in (ADMIN, FARM_MANAGER):
+            return Response({'access': 'full', **sales_evolution(farm, period)})
+        return Response({'access': 'restricted', 'period': period, 'trend': series_trend(sales_evolution(farm, period)['series'])})
+
+
+class PurchasesEvolutionView(APIView):
+    """GET /api/finance/purchases-evolution/?period=week|month|year — "Achats" section
+    (2026-08-27, Finances restructure Part C): read-only aggregation of RECEIVED PurchaseOrder +
+    Expense rows (see apps.finance.calculations.purchases_evolution) — no data entry here. Same
+    access split as SalesEvolutionView above."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(parameters=[_PERIOD_PARAM])
+    def get(self, request):
+        period = request.query_params.get('period', 'month')
+        farm = request.user.farm
+        if request.user.role in (ADMIN, FARM_MANAGER):
+            return Response({'access': 'full', **purchases_evolution(farm, period)})
+        return Response({'access': 'restricted', 'period': period, 'trend': series_trend(purchases_evolution(farm, period)['series'])})
+
+
+class WorkHoursEntryListCreateView(generics.ListCreateAPIView):
+    """GET/POST /api/work-hours/ — Salaires module (2026-08-27, Part D). Any authenticated user
+    can log their own hours (self-report); Admin/Farm Manager can also log/correct hours for any
+    employee on the farm (see WorkHoursEntrySerializer.validate for the enforcement — this task's
+    "hours-logging ownership model," see docs/deviations.md). Listing: Admin/Farm Manager see
+    every employee's entries (needed to review before calculating salaries); every other role
+    sees only their own."""
+
+    serializer_class = WorkHoursEntrySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = WorkHoursEntry.objects.filter(user__farm=self.request.user.farm).select_related('user')
+        if self.request.user.role not in (ADMIN, FARM_MANAGER):
+            qs = qs.filter(user=self.request.user)
+        return qs
+
+
+class SalaryPaymentListView(generics.ListAPIView):
+    """GET /api/salary-payments/ — Admin/Farm Manager only. Unlike Ventes/Achats/Globale, the
+    entire Salaires section is hidden from every other role — no restricted summary view (this
+    task's own Part D item 4: salary data is sensitive, "hidden entirely from everyone else,"
+    enforced here server-side, not just left off the sidebar)."""
+
+    serializer_class = SalaryPaymentSerializer
+    permission_classes = [IsAdminOrFarmManager]
+
+    def get_queryset(self):
+        return SalaryPayment.objects.filter(farm=self.request.user.farm).select_related('user')
+
+
+class SalaryCalculateView(APIView):
+    """POST /api/salary-payments/calculate/ — {month, year} (both optional, default to the
+    current month/year). On-demand monthly salary calculation (see
+    apps.finance.services.calculate_salaries for why on-demand, not scheduled, and why an
+    already-PAID payment for the period is never touched)."""
+
+    permission_classes = [IsAdminOrFarmManager]
+
+    def post(self, request):
+        today = date.today()
+        try:
+            month = int(request.data.get('month', today.month))
+            year = int(request.data.get('year', today.year))
+        except (TypeError, ValueError):
+            return Response({'detail': 'month/year doivent être des entiers.'}, status=status.HTTP_400_BAD_REQUEST)
+        payments = calculate_salaries(request.user.farm, month, year)
+        return Response(SalaryPaymentSerializer(payments, many=True).data)
+
+
+class SalaryPaymentPayView(APIView):
+    """POST /api/salary-payments/{id}/pay/ — marks one SalaryPayment PAID, stamps `paid_date`,
+    and creates the matching `Expense` (category=LABOR, batch=null, amount=payment.amount,
+    expense_date=paid_date, supplier=employee name) — all in one transaction (this task's own
+    rule). This is what feeds "Main-d'œuvre" into the Achats/Globale expense breakdowns. Once
+    PAID an payment is final, matching PurchaseOrder's own finality precedent in this codebase —
+    a second call is rejected, not silently re-applied."""
+
+    permission_classes = [IsAdminOrFarmManager]
+
+    def post(self, request, pk):
+        payment = get_object_or_404(SalaryPayment, pk=pk, farm=request.user.farm)
+        if payment.status == SalaryPaymentStatus.PAID:
+            return Response({'detail': 'Ce paiement est déjà marqué comme payé.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            payment.status = SalaryPaymentStatus.PAID
+            payment.paid_date = date.today()
+            payment.save(update_fields=['status', 'paid_date'])
+            Expense.objects.create(
+                farm=request.user.farm, category=ExpenseCategory.LABOR, amount=payment.amount,
+                batch=None, expense_date=payment.paid_date, supplier=payment.user.name,
+            )
+        record_audit_log(
+            request.user, 'salary_payment.paid',
+            f'{payment.user.name} · {payment.period_month}/{payment.period_year} · {payment.amount}',
+        )
+        return Response(SalaryPaymentSerializer(payment).data)

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 from apps.houses.models import PoultryHouse
@@ -69,10 +70,24 @@ class ProtocolTemplate(models.Model):
 
     `to_value`/`to_unit` are ignored when `until_end` is True (the line runs to the end of the
     cycle instead of a fixed bound) — enforced by the frontend form, not a DB constraint.
+
+    `assigned_to` (2026-08-26, docs/deviations.md Part 15) is the task-assignment target for
+    this line's occurrences in "tâches à effectuer maintenant" (`apps.houses.views.
+    HouseTasksNowView` reuses this line's own row as the one persisted "task" identity, matching
+    how it's already keyed by `line.id` there). Purely additive — `null` still shows normally
+    for anyone with house access, only Admin/Farm Manager/Farmer (`CanEditHouseProtocol`) can
+    set it. Known limitation, accepted rather than engineered around: `HouseProtocolView.put`
+    does a full delete-and-recreate of a house's `ProtocolTemplate` rows on every protocol save
+    (see that view), so any assignment is cleared the next time the protocol is edited at all,
+    not just the assigned line — the same full-replace semantics the rows themselves already
+    have, not a new fragility this field introduces.
     """
 
     house = models.ForeignKey(PoultryHouse, on_delete=models.CASCADE, related_name='protocol_lines')
     category = models.ForeignKey(ProtocolCategory, on_delete=models.CASCADE, related_name='protocol_lines')
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_protocol_tasks',
+    )
     from_value = models.PositiveIntegerField()
     from_unit = models.CharField(max_length=8, choices=ProtocolUnit.choices, default=ProtocolUnit.DAY)
     to_value = models.PositiveIntegerField(null=True, blank=True)
@@ -80,6 +95,15 @@ class ProtocolTemplate(models.Model):
     until_end = models.BooleanField(default=False)
     what = models.CharField(max_length=255)
     details = models.CharField(max_length=500, blank=True)
+    # Optional stock consumption (2026-08-28): a row can declare "this task consumes
+    # `quantity_per_day` units/day of `stock_item`" (e.g. a Feeding row → an "Aliment démarrage"
+    # StockItem at 40 kg/day). Left null for rows that aren't stock consumption (cleaning, health
+    # checks). Drives the daily automated StockMovement (apps.stock.services.run_daily_consumption)
+    # and the form's inline insufficient-stock warning (apps.stock.calculations.coverage_for).
+    stock_item = models.ForeignKey(
+        'stock.StockItem', on_delete=models.SET_NULL, null=True, blank=True, related_name='protocol_lines',
+    )
+    quantity_per_day = models.FloatField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -87,3 +111,34 @@ class ProtocolTemplate(models.Model):
 
     def __str__(self):
         return f'{self.house_id} · {self.category_id} · {self.what}'
+
+
+class ProtocolTimeSlot(models.Model):
+    """A time window a `ProtocolTemplate` line recurs at on each of its due days (e.g. feeding
+    07h00-09h00 and 18h00-20h00) — added 2026-08-27 for `apps.alerts.templates.
+    build_task_reminders`, which generates one correctly-timed personal reminder per slot
+    (keyed off `start_time` — see that module) instead of one reminder with no time or an
+    ambiguous combined one; a line with no rows here is a day-range task with no specific time
+    (renders "...aujourd'hui" instead).
+
+    `end_time` (2026-08-27 bugfix, docs/deviations.md — "Bug 1") was added once the "Modifier"
+    UI for these was actually built: the frontend shows each slot as a removable "07h00–09h00"
+    chip and needs both ends of the window to render/validate it, even though the SMS reminder
+    template still only ever reads `start_time` (unchanged, per that task's own "don't touch
+    SMS/notification logic" rule).
+
+    Editable via the shared `HouseProtocolForm` component (onboarding step 1 and the "Modifier"
+    edit modal/page) — see `apps.protocols.serializers.ProtocolTimeSlotSerializer` and
+    `apps.houses.views.protocol.HouseProtocolView`/`apps.protocols.views.OnboardingView` for how
+    they're written.
+    """
+
+    protocol_line = models.ForeignKey(ProtocolTemplate, on_delete=models.CASCADE, related_name='time_slots')
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+
+    class Meta:
+        ordering = ['start_time']
+
+    def __str__(self):
+        return f'{self.protocol_line_id} · {self.start_time}-{self.end_time}'

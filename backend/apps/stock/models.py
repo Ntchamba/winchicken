@@ -5,10 +5,66 @@ from apps.core.models import Farm
 
 
 class ItemCategory(models.TextChoices):
+    """Kept as a *kind* discriminator, not the category itself (2026-08-28 — custom stock
+    categories). Since `StockItem.category` became an FK to `StockCategory`, this enum now lives
+    on `StockCategory.kind`: the four defaults seeded per farm carry `FEED`/`VETERINARY`/
+    `EQUIPMENT`/`BEDDING` so `StockItem.feed_stage` / `cold_chain_required` semantics and the
+    finance breakdown mapping survive a category label rename; user-added categories are
+    `CUSTOM`. Name unchanged so `apps.finance.calculations`'s existing import keeps working."""
+
     FEED = 'FEED', 'Feed'
     VETERINARY = 'VETERINARY', 'Veterinary'
     EQUIPMENT = 'EQUIPMENT', 'Equipment'
     BEDDING = 'BEDDING', 'Bedding'
+    CUSTOM = 'CUSTOM', 'Custom'
+
+
+# Mirrors apps.protocols.models.DEFAULT_PROTOCOL_CATEGORIES: the four categories seeded for
+# every Farm (apps.stock.signals) — structural UI scaffolding, empty of items, so seeding them
+# automatically doesn't violate the no-default-data rule. `icon` values are lucide-react icon
+# component names, resolved on the frontend via a lookup map (fallback: Package).
+DEFAULT_STOCK_CATEGORIES = [
+    {'label': 'Aliment', 'icon': 'Wheat', 'kind': ItemCategory.FEED},
+    {'label': 'Vétérinaire', 'icon': 'Stethoscope', 'kind': ItemCategory.VETERINARY},
+    {'label': 'Équipement', 'icon': 'Wrench', 'kind': ItemCategory.EQUIPMENT},
+    {'label': 'Litière', 'icon': 'Layers', 'kind': ItemCategory.BEDDING},
+]
+
+# Curated icon picker for custom stock categories — kept in sync by hand with
+# frontend/src/components/StockParametersForm.jsx's STOCK_ICON_OPTIONS. The four defaults' own
+# icons are always valid too.
+STOCK_CATEGORY_ICON_CHOICES = [
+    'Wheat', 'Stethoscope', 'Wrench', 'Layers', 'Package', 'Syringe', 'Droplets', 'Boxes',
+    'ShoppingCart', 'Thermometer', 'Bug', 'ClipboardList', 'Egg', 'Wind',
+]
+
+
+class StockCategory(models.Model):
+    """A stock parameter tab for one farm — the four defaults (Aliment/Vétérinaire/Équipement/
+    Litière) plus any custom categories a user adds via
+    POST /api/farms/{farmId}/stock-categories/. Same structure as
+    `apps.protocols.models.ProtocolCategory`, plus a `kind` discriminator (see `ItemCategory`).
+
+    Deleting a category cascades to delete its StockItem rows (`StockItem.category` is
+    `on_delete=CASCADE`), mirroring how deleting a ProtocolCategory cascades to its
+    ProtocolTemplate rows — the frontend confirm dialog states this before calling DELETE.
+    """
+
+    farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='stock_categories')
+    label = models.CharField(max_length=100)
+    icon = models.CharField(max_length=50, help_text='A lucide-react icon component name (e.g. "Wheat").')
+    sort_order = models.PositiveIntegerField(default=0)
+    kind = models.CharField(
+        max_length=16, choices=ItemCategory.choices, default=ItemCategory.CUSTOM,
+        help_text='Discriminator for the four seeded defaults; user-added categories are CUSTOM.',
+    )
+
+    class Meta:
+        ordering = ['sort_order', 'id']
+        verbose_name_plural = 'stock categories'
+
+    def __str__(self):
+        return f'{self.farm_id} · {self.label}'
 
 
 class FeedStage(models.TextChoices):
@@ -18,6 +74,25 @@ class FeedStage(models.TextChoices):
     PULLET_STAGE = 'PULLET_STAGE', 'Pullet stage'
     LAYER_STAGE = 'LAYER_STAGE', 'Layer stage'
     NOT_APPLICABLE = 'NOT_APPLICABLE', 'Not applicable'
+
+
+class Supplier(models.Model):
+    """A supplier in the farm's directory (2026-08-28). New table, deliberately separate from
+    the pre-existing free-text `PurchaseOrder.supplier` / `StockMovement.supplier` fields, which
+    stay unchanged — a future task could migrate those to reference this row (see
+    docs/deviations.md). `StockItem.supplier` points here for an item's default/primary supplier.
+    """
+
+    farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='suppliers')
+    name = models.CharField(max_length=255)
+    contact = models.CharField(max_length=64, blank=True, help_text='Phone number.')
+    email = models.EmailField(blank=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
 
 
 class StockItem(models.Model):
@@ -31,17 +106,22 @@ class StockItem(models.Model):
 
     item_code = models.CharField(max_length=32, primary_key=True)
     farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='stock_items')
-    category = models.CharField(max_length=16, choices=ItemCategory.choices)
+    category = models.ForeignKey('stock.StockCategory', on_delete=models.CASCADE, related_name='items')
     name = models.CharField(max_length=255)
     unit = models.CharField(max_length=16)
     feed_stage = models.CharField(max_length=16, choices=FeedStage.choices, default=FeedStage.NOT_APPLICABLE)
     cold_chain_required = models.BooleanField(default=False)
     alert_threshold = models.FloatField(default=0)
     unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    supplier = models.ForeignKey(
+        Supplier, on_delete=models.SET_NULL, null=True, blank=True, related_name='items',
+        help_text="Default/primary supplier for this item (2026-08-28). Free-text supplier fields "
+                   "on PurchaseOrder/StockMovement are unaffected.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['category', 'name']
+        ordering = ['category__sort_order', 'name']
 
     def __str__(self):
         return self.name
@@ -59,10 +139,19 @@ class StockMovement(models.Model):
     """One inventory transaction for a StockItem. `current_quantity(item)` is
     `SUM(quantity WHERE movement_type=IN) - SUM(quantity WHERE movement_type=OUT)` computed at
     read time (apps.stock.calculations.current_quantity) — never cached on StockItem. Saving one
-    triggers a LOW_STOCK check for its item via the `on_stock_movement_saved` signal."""
+    triggers a LOW_STOCK check for its item via the `on_stock_movement_saved` signal.
+
+    `protocol_line` (2026-08-28) is set only on rows generated by
+    `apps.stock.services.run_daily_consumption` (the daily automated OUT for a protocol row that
+    declares `stock_item` + `quantity_per_day`). It is the idempotency key for that task —
+    "one movement per batch per protocol row per calendar date" — and marks a movement as
+    machine-generated vs. a manual entry. `supplier` (free text) stays untouched by this."""
 
     item = models.ForeignKey(StockItem, on_delete=models.CASCADE, related_name='movements')
     batch = models.ForeignKey(PoultryBatch, on_delete=models.SET_NULL, null=True, blank=True, related_name='stock_movements')
+    protocol_line = models.ForeignKey(
+        'protocols.ProtocolTemplate', on_delete=models.SET_NULL, null=True, blank=True, related_name='stock_movements',
+    )
     movement_type = models.CharField(max_length=4, choices=MovementType.choices)
     quantity = models.FloatField()
     movement_date = models.DateField()
