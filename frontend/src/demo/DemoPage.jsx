@@ -4,7 +4,8 @@ import { Info } from "lucide-react";
 import HomeDashboard from "../components/HomeDashboard";
 import HouseProtocolForm from "../components/HouseProtocolForm";
 import StockParametersForm from "../components/StockParametersForm";
-import { DEMO_ALERTS, DEMO_HOUSES, DEMO_HOUSE_HEADER, DEMO_SCHEDULES, DEMO_STOCK } from "./demoData";
+import { DEMO_ALERTS, DEMO_HOUSES, DEMO_HOUSE_HEADER, DEMO_SCHEDULES, DEMO_STOCK, DEMO_STOCK_CATEGORIES } from "./demoData";
+import useDocumentTitle from "../hooks/useDocumentTitle";
 import "../styles/house-protocol-theme-light.css";
 import "../styles/dashboard-theme.css";
 
@@ -16,6 +17,7 @@ const VIEWS = [
 
 // Entirely client-side: no network calls, no writes to the database (cahier des charges 5.4).
 export default function DemoPage() {
+  useDocumentTitle("Démo");
   const [view, setView] = useState("dashboard");
 
   return (
@@ -43,7 +45,12 @@ export default function DemoPage() {
         <HouseProtocolForm initialHeader={DEMO_HOUSE_HEADER} initialSchedules={DEMO_SCHEDULES} mode="management" onSave={() => {}} />
       )}
       {view === "stock" && (
-        <StockParametersForm initialData={DEMO_STOCK} mode="management" onSave={() => {}} />
+        <StockParametersForm
+          initialData={DEMO_STOCK}
+          initialCategories={DEMO_STOCK_CATEGORIES}
+          mode="management"
+          onSave={() => {}}
+        />
       )}
     </div>
   );

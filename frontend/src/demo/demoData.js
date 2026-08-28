@@ -23,14 +23,21 @@ export const DEMO_SCHEDULES = {
   ],
 };
 
-// `detail` values must match HouseProtocolForm/StockParametersForm's option values
-// exactly (English for `feed`, per the FeedStage backend enum; French elsewhere,
-// since those aren't sent to any backend enum) — never the raw display label.
+// Client-side demo only. `initialCategories` uses the same shape the backend returns
+// (`{ id, label, icon, kind }`); `DEMO_STOCK` is keyed by those ids. Feed-stage values stay
+// English (backend FeedStage enum); `farmId` is omitted on the demo form so no write fires.
+export const DEMO_STOCK_CATEGORIES = [
+  { id: "demo-feed", label: "Aliment", icon: "Wheat", kind: "FEED" },
+  { id: "demo-vet", label: "Vétérinaire", icon: "Stethoscope", kind: "VETERINARY" },
+  { id: "demo-equip", label: "Équipement", icon: "Wrench", kind: "EQUIPMENT" },
+  { id: "demo-bedding", label: "Litière", icon: "Layers", kind: "BEDDING" },
+];
+
 export const DEMO_STOCK = {
-  feed: [{ id: 1, item: "Aliment démarrage", detail: "Starter", threshold: 200, unit: "kg", price: 450 }],
-  veterinary: [{ id: 2, item: "Newcastle (HB1)", detail: "Chaîne du froid : Oui", threshold: 20, unit: "dose", price: 15 }],
-  equipment: [{ id: 3, item: "Abreuvoirs cloche", detail: "Pour 15 volailles", threshold: 5, unit: "unité", price: 3000 }],
-  bedding: [{ id: 4, item: "Copeaux de bois", detail: "Bois tendre", threshold: 50, unit: "sac", price: 2000 }],
+  "demo-feed": [{ id: 1, item: "Aliment démarrage", feedStage: "STARTER", coldChain: false, threshold: 200, unit: "kg", price: 450, supplier: null }],
+  "demo-vet": [{ id: 2, item: "Newcastle (HB1)", feedStage: "NOT_APPLICABLE", coldChain: true, threshold: 20, unit: "dose", price: 15, supplier: null }],
+  "demo-equip": [{ id: 3, item: "Abreuvoirs cloche", feedStage: "NOT_APPLICABLE", coldChain: false, threshold: 5, unit: "unité", price: 3000, supplier: null }],
+  "demo-bedding": [{ id: 4, item: "Copeaux de bois", feedStage: "NOT_APPLICABLE", coldChain: false, threshold: 50, unit: "sac", price: 2000, supplier: null }],
 };
 
 // `type` stays English ("Broiler"/"Layer") — matches HomeDashboard's HOUSE_TYPE_LABELS

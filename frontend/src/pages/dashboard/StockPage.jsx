@@ -1,45 +1,68 @@
-import { useEffect, useState } from "react";
-import StockParametersForm from "../../components/StockParametersForm";
+import { useCallback, useEffect, useState } from "react";
+import { Pencil } from "lucide-react";
+import StockEvolutionChart from "../../components/StockEvolutionChart";
+import SuppliersSection from "../../components/SuppliersSection";
+import StockParametersModal from "../../components/StockParametersModal";
 import { stockApi } from "../../api/endpoints";
 import { useAuth } from "../../context/AuthContext";
+import useDocumentTitle from "../../hooks/useDocumentTitle";
 
-const CATEGORY_TO_TAB = { FEED: "feed", VETERINARY: "veterinary", EQUIPMENT: "equipment", BEDDING: "bedding" };
-
+/**
+ * /dashboard/stock — a batch-view-style dashboard: stock evolution charts + a "Fournisseurs"
+ * section by default. The stock parameter form is no longer shown here; it opens in the
+ * "Mettre à jour le stock" modal (same backdrop-blur pattern as the batch "Modifier" modal).
+ * On save the modal closes and the charts/suppliers below refresh immediately.
+ */
 export default function StockPage() {
+  useDocumentTitle("Stock");
   const { user } = useAuth();
-  const [initialData, setInitialData] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const farmId = user.farm;
 
-  useEffect(() => {
-    stockApi.items(user.farm).then(({ data }) => {
-      const tabbed = { feed: [], veterinary: [], equipment: [], bedding: [] };
-      for (const item of data.items) {
-        const tab = CATEGORY_TO_TAB[item.category];
-        tabbed[tab].push({
-          id: item.item_code,
-          itemCode: item.item_code,
-          item: item.name,
-          detail: tab === "feed" ? item.feed_stage : tab === "veterinary" ? (item.cold_chain_required ? "Chaîne du froid : Oui" : "Chaîne du froid : Non") : "",
-          threshold: item.alert_threshold,
-          unit: item.unit,
-          price: item.unit_price,
-          currentQuantity: item.current_quantity,
-        });
+  const [evolution, setEvolution] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const refresh = useCallback(() => {
+    return Promise.all([stockApi.evolution(farmId), stockApi.suppliers(farmId)]).then(
+      ([evoRes, supRes]) => {
+        setEvolution(evoRes.data);
+        setSuppliers(supRes.data.results || supRes.data);
+        setLoading(false);
       }
-      setInitialData(tabbed);
-    });
-  }, [user.farm]);
+    );
+  }, [farmId]);
 
-  const handleSave = async (payload) => {
-    setSaving(true);
-    try {
-      await stockApi.putItems(user.farm, payload.items);
-    } finally {
-      setSaving(false);
-    }
-  };
+  useEffect(() => { refresh(); }, [refresh]);
 
-  if (!initialData) return <div className="page-wrap"><p className="empty-state">Chargement…</p></div>;
+  return (
+    <div className="page-wrap">
+      <div className="brand-row">
+        <div>
+          <p className="eyebrow">WINCHICKEN</p>
+          <p className="brand-subtitle">Stock</p>
+        </div>
+        <button className="save-button" style={{ marginLeft: "auto", width: "auto", padding: "0 18px" }} onClick={() => setModalOpen(true)}>
+          <Pencil size={15} strokeWidth={2} />
+          Mettre à jour le stock
+        </button>
+      </div>
 
-  return <StockParametersForm initialData={initialData} mode="management" saving={saving} onSave={handleSave} />;
+      {loading ? (
+        <p className="empty-state">Chargement…</p>
+      ) : (
+        <>
+          <StockEvolutionChart series={evolution} />
+          <SuppliersSection suppliers={suppliers} farmId={farmId} onChanged={refresh} />
+        </>
+      )}
+
+      <StockParametersModal
+        open={modalOpen}
+        farmId={farmId}
+        onClose={() => setModalOpen(false)}
+        onSaved={refresh}
+      />
+    </div>
+  );
 }

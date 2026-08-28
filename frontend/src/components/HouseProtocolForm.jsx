@@ -3,7 +3,8 @@ import {
   Soup, Thermometer, Stethoscope, Syringe, SprayCan, ShieldCheck, Droplets, Wind, Egg, Bug,
   ClipboardList, Package, Plus, Trash2, Loader2, Sparkles, HelpCircle, X, Check,
 } from "lucide-react";
-import { housesApi } from "../api/endpoints";
+import { housesApi, stockApi } from "../api/endpoints";
+import { getServerErrorMessage } from "../api/errors";
 import "../styles/house-protocol-theme-light.css";
 
 // Curated icon picker for custom categories — kept in sync by hand with the backend's
@@ -18,7 +19,7 @@ const ICON_OPTIONS = [
   { name: "ClipboardList", Icon: ClipboardList }, { name: "Package", Icon: Package },
 ];
 const ICON_MAP = Object.fromEntries(ICON_OPTIONS.map((o) => [o.name, o.Icon]));
-const iconFor = (name) => ICON_MAP[name] || ClipboardList;
+export const iconFor = (name) => ICON_MAP[name] || ClipboardList;
 
 // Mirrors apps.protocols.models.DEFAULT_PROTOCOL_CATEGORIES exactly (label + icon + order) —
 // used as the starting category list in onboarding mode, before the house (and its real,
@@ -36,6 +37,7 @@ const DEFAULT_CATEGORIES = [
 const UNITS = ["Day", "Week", "Month"];
 const UNIT_LABELS = { Day: "Jour", Week: "Semaine", Month: "Mois" };
 const UNIT_LABELS_PLURAL = { Day: "Jours", Week: "Semaines", Month: "Mois" };
+const UNIT_TO_DAYS = { Day: 1, Week: 7, Month: 30 };
 
 let nextId = 100;
 const makeRow = (overrides = {}) => ({
@@ -47,8 +49,18 @@ const makeRow = (overrides = {}) => ({
   untilEnd: false,
   what: "",
   details: "",
+  timeSlots: [],
+  stockItemCode: null,
+  quantityPerDay: "",
+  coverageWarning: "",
   ...overrides,
 });
+
+function formatSlotTime(value) {
+  // Backend TimeField values come back "HH:MM:SS" (DRF's default TimeField output); <input
+  // type="time"> and the "07h00–09h00" chip label both only ever want "HH:MM".
+  return typeof value === "string" ? value.slice(0, 5) : value;
+}
 
 // Reference starter template — only ever applied via the explicit "Load starter template"
 // button (cahier des charges 7.3): never pre-filled automatically (no-default-data rule).
@@ -103,8 +115,10 @@ const HELP_EXAMPLES = [
  * 7.3 "no default data" rule; see root README.md "Autonomous decisions" for why this button
  * exists instead of auto-loading).
  *
- * @param {Object} [initialHeader] - `{ buildingName, chicksPlaced, growthCycle, growthCycleUnit, batchName }`
- *   seed values for the house/batch header fields.
+ * @param {Object} [initialHeader] - `{ buildingName, chicksPlaced, growthCycle, growthCycleUnit, batchName, weighingFrequency }`
+ *   seed values for the house/batch header fields. `weighingFrequency` (2026-08-25) is
+ *   `"DAY"|"WEEK"|"MONTH"|""` — optional, drives a recurring weighing reminder
+ *   (`AlertRule`), never restricts when a weight can actually be logged via quick-entry.
  * @param {Object[]} [initialCategories] - `[{ id, label, icon }]` in display order. Defaults to
  *   the 5 built-in categories (onboarding — no house/real ids exist yet). Pass the house's real
  *   categories (from GET /api/houses/{houseCode}/protocol-categories/) in management mode.
@@ -131,6 +145,17 @@ const HELP_EXAMPLES = [
  *   persisted via the live add/delete calls).
  * @param {string} [helpDocUrl] - Link target for the help panel's "En savoir plus" — see
  *   docs/protocol-configuration.md.
+ * @param {string} [submitLabel] - Overrides the default save-button text ("Suivant" in
+ *   onboarding mode, "Enregistrer le protocole" in management mode) — 2026-08-27, for the
+ *   "+ Nouvelle bande" add-a-house flow, where "Suivant" was misleading (this button returns
+ *   straight to the dashboard, there is no next wizard step to go to).
+ * @param {(payload: object) => Promise<void>} [onAddAnother] - 2026-08-27, multi-batch
+ *   first-time onboarding: when provided, renders a second button that submits the current
+ *   house via the same payload shape as `onSave` but *doesn't* advance the wizard — the caller
+ *   is expected to reset `initialHeader`/`initialCategories`/`initialSchedules` (via a changed
+ *   `key`, so this component actually remounts with fresh state) so the form is ready for
+ *   another house. Onboarding mode only; unused/omit everywhere else, including the
+ *   "+ Nouvelle bande" single-house add flow.
  */
 export default function HouseProtocolForm({
   initialHeader = {},
@@ -140,13 +165,17 @@ export default function HouseProtocolForm({
   houseCode = null,
   saving = false,
   onSave,
+  onAddAnother,
   helpDocUrl = "/docs/protocol-configuration.md",
+  submitLabel,
+  stockItems = [],
 }) {
   const [buildingName, setBuildingName] = useState(initialHeader.buildingName || "");
   const [chicksPlaced, setChicksPlaced] = useState(initialHeader.chicksPlaced || "");
   const [growthCycle, setGrowthCycle] = useState(initialHeader.growthCycle || 56);
   const [growthCycleUnit, setGrowthCycleUnit] = useState(initialHeader.growthCycleUnit || "Day");
   const [batchName, setBatchName] = useState(initialHeader.batchName || "");
+  const [weighingFrequency, setWeighingFrequency] = useState(initialHeader.weighingFrequency || "");
   const [categories, setCategories] = useState(initialCategories || DEFAULT_CATEGORIES);
   const [activeCategoryId, setActiveCategoryId] = useState((initialCategories || DEFAULT_CATEGORIES)[0]?.id);
   const [schedules, setSchedules] = useState(initialSchedules);
@@ -160,6 +189,11 @@ export default function HouseProtocolForm({
   const [categoryBusy, setCategoryBusy] = useState(false);
   const [confirmDeleteCategory, setConfirmDeleteCategory] = useState(null);
 
+  const [addingSlotForRow, setAddingSlotForRow] = useState(null);
+  const [slotStart, setSlotStart] = useState("");
+  const [slotEnd, setSlotEnd] = useState("");
+  const [slotError, setSlotError] = useState("");
+
   const rows = schedules[activeCategoryId] || [];
   const totalRows = Object.values(schedules).reduce((sum, arr) => sum + arr.length, 0);
 
@@ -168,6 +202,45 @@ export default function HouseProtocolForm({
       ...prev,
       [activeCategoryId]: (prev[activeCategoryId] || []).map((r) => (r.id === rowId ? { ...r, [field]: value } : r)),
     }));
+  };
+
+  // Row day-span in days: `to - from + 1`, or `growthCycle - from + 1` for until-end rows.
+  const rowSpanDays = (row) => {
+    const fromDay = (Number(row.fromValue) || 0) * (UNIT_TO_DAYS[row.fromUnit] || 1);
+    const cycleDays = (Number(growthCycle) || 0) * (UNIT_TO_DAYS[growthCycleUnit] || 1);
+    const toDay = row.untilEnd
+      ? Math.max(fromDay, cycleDays)
+      : (Number(row.toValue) || 0) * (UNIT_TO_DAYS[row.toUnit] || 1);
+    return Math.max(1, toDay - fromDay + 1);
+  };
+
+  // Inline, non-blocking "stock insuffisant" check (spec Part E.3). Called on change of the
+  // linked item / quantity-per-day; clears when either is unset.
+  const checkCoverage = async (rowId, next) => {
+    const row = { ...rows.find((r) => r.id === rowId), ...next };
+    if (!row.stockItemCode || !row.quantityPerDay) {
+      updateRow(rowId, "coverageWarning", "");
+      return;
+    }
+    try {
+      const { data } = await stockApi.coverage(row.stockItemCode, {
+        quantity_per_day: Number(row.quantityPerDay),
+        days: rowSpanDays(row),
+      });
+      if (data.sufficient) {
+        updateRow(rowId, "coverageWarning", "");
+      } else {
+        const item = stockItems.find((s) => s.item_code === row.stockItemCode);
+        updateRow(
+          rowId,
+          "coverageWarning",
+          `Stock insuffisant : à ce rythme, ${item?.name || "cet article"} sera épuisé avant la fin de cette période — ` +
+            `${data.daysRemaining ?? 0} jour(s) de stock restant(s) pour ${data.daysNeeded} jour(s) prévu(s).`
+        );
+      }
+    } catch {
+      updateRow(rowId, "coverageWarning", "");
+    }
   };
 
   const addRow = () => {
@@ -180,6 +253,32 @@ export default function HouseProtocolForm({
 
   const loadStarterTemplate = () => {
     setSchedules(STARTER_TEMPLATE);
+  };
+
+  const openAddSlot = (rowId) => {
+    setAddingSlotForRow(rowId);
+    setSlotStart("");
+    setSlotEnd("");
+    setSlotError("");
+  };
+
+  const confirmAddSlot = (rowId) => {
+    if (!slotStart || !slotEnd) {
+      setSlotError("Les deux heures sont requises.");
+      return;
+    }
+    if (slotEnd <= slotStart) {
+      setSlotError("L'heure de fin doit être après l'heure de début.");
+      return;
+    }
+    const row = rows.find((r) => r.id === rowId);
+    updateRow(rowId, "timeSlots", [...(row?.timeSlots || []), { id: nextId++, startTime: slotStart, endTime: slotEnd }]);
+    setAddingSlotForRow(null);
+  };
+
+  const removeTimeSlot = (rowId, slotId) => {
+    const row = rows.find((r) => r.id === rowId);
+    updateRow(rowId, "timeSlots", (row?.timeSlots || []).filter((s) => s.id !== slotId));
   };
 
   const addCategory = async () => {
@@ -204,7 +303,7 @@ export default function HouseProtocolForm({
       } catch (err) {
         setCategories((prev) => prev.filter((c) => c.id !== tempId));
         setActiveCategoryId((cur) => (cur === tempId ? categories[0]?.id : cur));
-        setCategoryError(err.response?.data?.label?.[0] || err.response?.data?.icon?.[0] || "Impossible d'ajouter la catégorie.");
+        setCategoryError(getServerErrorMessage(err, "Impossible d'ajouter la catégorie."));
       }
     }
   };
@@ -236,6 +335,7 @@ export default function HouseProtocolForm({
       return {
         house,
         batchName,
+        weighingFrequency: weighingFrequency || null,
         categories,
         protocolLines: categories.flatMap((cat, index) =>
           (schedules[cat.id] || []).map((row) => ({
@@ -247,6 +347,9 @@ export default function HouseProtocolForm({
             until_end: row.untilEnd,
             what: row.what,
             details: row.details,
+            time_slots: (row.timeSlots || []).map((s) => ({ start_time: s.startTime, end_time: s.endTime })),
+            stock_item: row.stockItemCode || null,
+            quantity_per_day: row.quantityPerDay === "" || row.quantityPerDay == null ? null : Number(row.quantityPerDay),
           }))
         ),
       };
@@ -254,6 +357,7 @@ export default function HouseProtocolForm({
     return {
       house,
       batchName,
+      weighingFrequency: weighingFrequency || null,
       protocolLines: categories.flatMap((cat) =>
         (schedules[cat.id] || []).map((row) => ({
           category: cat.id,
@@ -264,6 +368,9 @@ export default function HouseProtocolForm({
           until_end: row.untilEnd,
           what: row.what,
           details: row.details,
+          time_slots: (row.timeSlots || []).map((s) => ({ start_time: s.startTime, end_time: s.endTime })),
+          stock_item: row.stockItemCode || null,
+          quantity_per_day: row.quantityPerDay === "" || row.quantityPerDay == null ? null : Number(row.quantityPerDay),
         }))
       ),
     };
@@ -276,6 +383,11 @@ export default function HouseProtocolForm({
       setSaveMessage("Enregistré");
       setTimeout(() => setSaveMessage(""), 3000);
     }
+  };
+
+  const handleAddAnother = async () => {
+    if (!onAddAnother) return;
+    await onAddAnother(buildPayload());
   };
 
   return (
@@ -347,6 +459,15 @@ export default function HouseProtocolForm({
               placeholder="ex. Bande printemps 2026"
               required={mode === "onboarding"}
             />
+          </label>
+          <label className="field">
+            <span>Fréquence de pesée (optionnel)</span>
+            <select value={weighingFrequency} onChange={(e) => setWeighingFrequency(e.target.value)}>
+              <option value="">Aucun rappel</option>
+              {UNITS.map((u) => (
+                <option key={u} value={u.toUpperCase()}>{UNIT_LABELS_PLURAL[u]}</option>
+              ))}
+            </select>
           </label>
         </div>
       </div>
@@ -483,6 +604,103 @@ export default function HouseProtocolForm({
               <button className="delete-button" aria-label="Supprimer la ligne" onClick={() => deleteRow(row.id)}>
                 <Trash2 size={16} strokeWidth={1.8} />
               </button>
+
+              <div
+                className="schedule-row-timeslots"
+                style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 4 }}
+              >
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", letterSpacing: ".1em", textTransform: "uppercase" }}>
+                  Horaires
+                </span>
+                {(row.timeSlots || []).map((slot) => (
+                  <span
+                    key={slot.id}
+                    className="time-slot-chip"
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 9px", borderRadius: 999,
+                      background: "var(--mint-soft)", color: "#0b6e52", fontSize: 12, fontWeight: 600,
+                    }}
+                  >
+                    {formatSlotTime(slot.startTime)}–{formatSlotTime(slot.endTime)}
+                    <button
+                      type="button"
+                      onClick={() => removeTimeSlot(row.id, slot.id)}
+                      aria-label={`Supprimer le créneau ${formatSlotTime(slot.startTime)}–${formatSlotTime(slot.endTime)}`}
+                      style={{ border: 0, background: "none", padding: 0, cursor: "pointer", color: "inherit", display: "flex" }}
+                    >
+                      <X size={11} strokeWidth={2.5} />
+                    </button>
+                  </span>
+                ))}
+
+                {addingSlotForRow === row.id ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <input type="time" value={slotStart} onChange={(e) => setSlotStart(e.target.value)} style={{ width: 100 }} />
+                    <span style={{ color: "var(--muted)" }}>–</span>
+                    <input type="time" value={slotEnd} onChange={(e) => setSlotEnd(e.target.value)} style={{ width: 100 }} />
+                    <button type="button" className="icon-button" onClick={() => confirmAddSlot(row.id)} aria-label="Confirmer le créneau">
+                      <Check size={13} strokeWidth={2.2} />
+                    </button>
+                    <button type="button" className="icon-button" onClick={() => setAddingSlotForRow(null)} aria-label="Annuler le créneau">
+                      <X size={13} strokeWidth={2.2} />
+                    </button>
+                    {slotError && <span className="field-error" style={{ fontSize: 11, margin: 0 }}>{slotError}</span>}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="add-button"
+                    style={{ marginTop: 0, padding: "4px 10px", fontSize: 11 }}
+                    onClick={() => openAddSlot(row.id)}
+                  >
+                    <Plus size={12} strokeWidth={2.2} />
+                    Ajouter un créneau
+                  </button>
+                )}
+              </div>
+
+              {stockItems.length > 0 && (
+                <div
+                  className="schedule-row-consumption"
+                  style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 4 }}
+                >
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", letterSpacing: ".1em", textTransform: "uppercase" }}>
+                    Consommation
+                  </span>
+                  <select
+                    aria-label="Article de stock consommé"
+                    value={row.stockItemCode || ""}
+                    onChange={(e) => {
+                      const v = e.target.value || null;
+                      updateRow(row.id, "stockItemCode", v);
+                      checkCoverage(row.id, { stockItemCode: v });
+                    }}
+                    style={{ minWidth: 200 }}
+                  >
+                    <option value="">Aucun article de stock consommé</option>
+                    {stockItems.map((s) => (
+                      <option key={s.item_code} value={s.item_code}>{s.name}{s.unit ? ` (${s.unit})` : ""}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="Quantité/jour"
+                    aria-label="Quantité par jour"
+                    value={row.quantityPerDay}
+                    onChange={(e) => updateRow(row.id, "quantityPerDay", e.target.value)}
+                    onBlur={(e) => checkCoverage(row.id, { quantityPerDay: e.target.value })}
+                    style={{ width: 130 }}
+                    disabled={!row.stockItemCode}
+                  />
+                  {row.coverageWarning && (
+                    <span className="field-error" style={{ flexBasis: "100%", margin: 0, fontSize: 12 }}>
+                      {row.coverageWarning}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           ))}
           {rows.length === 0 && <p className="empty-state">Aucune ligne dans cette catégorie pour le moment.</p>}
@@ -496,8 +714,13 @@ export default function HouseProtocolForm({
 
       <div className="save-bar">
         <span className={`save-message ${saveMessage ? "success" : ""}`}>{saveMessage}</span>
+        {onAddAnother && (
+          <button className="add-button" style={{ marginTop: 0 }} onClick={handleAddAnother} disabled={saving || totalRows === 0}>
+            {saving ? <Loader2 size={16} className="spin" /> : "Ajouter ce bâtiment et en configurer un autre"}
+          </button>
+        )}
         <button className="save-button" onClick={handleSave} disabled={saving || totalRows === 0}>
-          {saving ? <Loader2 size={16} className="spin" /> : mode === "onboarding" ? "Suivant" : "Enregistrer le protocole"}
+          {saving ? <Loader2 size={16} className="spin" /> : submitLabel || (mode === "onboarding" ? "Suivant" : "Enregistrer le protocole")}
         </button>
       </div>
 

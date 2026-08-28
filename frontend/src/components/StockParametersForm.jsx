@@ -1,100 +1,198 @@
 import { useState } from "react";
-import { Package, Plus, Trash2, Loader2 } from "lucide-react";
+import {
+  Wheat, Stethoscope, Wrench, Layers, Package, Syringe, Droplets, Boxes, ShoppingCart,
+  Thermometer, Bug, ClipboardList, Egg, Wind, Plus, Trash2, Loader2, X, Check, RotateCcw,
+} from "lucide-react";
+import { stockApi } from "../api/endpoints";
+import { getServerErrorMessage } from "../api/errors";
 import "../styles/house-protocol-theme-light.css";
 
-const TABS = ["feed", "veterinary", "equipment", "bedding"];
-const CATEGORY_BY_TAB = { feed: "FEED", veterinary: "VETERINARY", equipment: "EQUIPMENT", bedding: "BEDDING" };
+// Curated icon picker for custom stock categories — kept in sync by hand with the backend's
+// STOCK_CATEGORY_ICON_CHOICES (apps/stock/models.py). The four defaults' icons are a subset.
+const STOCK_ICON_OPTIONS = [
+  { name: "Wheat", Icon: Wheat }, { name: "Stethoscope", Icon: Stethoscope },
+  { name: "Wrench", Icon: Wrench }, { name: "Layers", Icon: Layers },
+  { name: "Package", Icon: Package }, { name: "Syringe", Icon: Syringe },
+  { name: "Droplets", Icon: Droplets }, { name: "Boxes", Icon: Boxes },
+  { name: "ShoppingCart", Icon: ShoppingCart }, { name: "Thermometer", Icon: Thermometer },
+  { name: "Bug", Icon: Bug }, { name: "ClipboardList", Icon: ClipboardList },
+  { name: "Egg", Icon: Egg }, { name: "Wind", Icon: Wind },
+];
+const ICON_MAP = Object.fromEntries(STOCK_ICON_OPTIONS.map((o) => [o.name, o.Icon]));
+export const stockIconFor = (name) => ICON_MAP[name] || Package;
 
-const PANEL_META = {
-  feed: { title: "Aliment", note: "Rations par stade suivies pour cet entrepôt." },
-  veterinary: { title: "Vétérinaire", note: "Vaccins et traitements — signalez les articles à chaîne du froid." },
-  equipment: { title: "Équipement", note: "Ratios et seuils de réapprovisionnement pour le matériel." },
-  bedding: { title: "Litière", note: "Matériaux de litière et seuils de réapprovisionnement." },
-};
-
-// feed's values stay English — .toUpperCase() feeds `feed_stage` (backend FeedStage enum)
-// directly. FEED_STAGE_LABELS is the French label shown instead of the raw value.
-const DETAIL_OPTIONS = {
-  feed: ["Starter", "Grower", "Finisher", "Pullet", "Layer"],
-  veterinary: ["Chaîne du froid : Oui", "Chaîne du froid : Non"],
-  equipment: ["Pour 5 volailles", "Pour 10 volailles", "Pour 15 volailles", "Pour 250 volailles"],
-  bedding: ["Bois tendre", "Bois dur", "Paille", "Balle de riz"],
-};
-const FEED_STAGE_LABELS = { Starter: "Démarrage", Grower: "Croissance", Finisher: "Finition", Pullet: "Poulette", Layer: "Pondeuse" };
+// feed_stage: internal values stay English (backend FeedStage enum); French labels shown.
+const FEED_STAGE_OPTIONS = [
+  { value: "STARTER", label: "Démarrage" },
+  { value: "GROWER", label: "Croissance" },
+  { value: "FINISHER", label: "Finition" },
+  { value: "PULLET_STAGE", label: "Poulette" },
+  { value: "LAYER_STAGE", label: "Pondeuse" },
+  { value: "NOT_APPLICABLE", label: "Non applicable" },
+];
 
 const UNITS = ["kg", "L", "dose", "unité", "sac"];
 
-let nextId = 100;
+let nextRowId = 1000;
 const makeRow = (overrides = {}) => ({
-  id: nextId++,
+  id: nextRowId++,
+  itemCode: null,
   item: "",
-  detail: DETAIL_OPTIONS.feed[0],
+  feedStage: "STARTER",
+  coldChain: false,
   threshold: 0,
   unit: UNITS[0],
   price: 0,
+  supplier: null,
   ...overrides,
 });
 
-const EMPTY_DATA = { feed: [], veterinary: [], equipment: [], bedding: [] };
-
 /**
- * Stock parameters editor — 4 category tabs (feed/veterinary/equipment/bedding), each a table of
- * StockItem-shaped rows with alert threshold and unit price. Used both for onboarding step 2 and
- * for editing the farm's stock parameters from /dashboard/stock.
+ * Stock parameters editor — dynamic category tabs (the four per-farm defaults +
+ * any custom ones added via "+"), each a table of StockItem-shaped rows. Used for onboarding
+ * step 2 and, from /dashboard/stock, inside the "Mettre à jour le stock" modal.
  *
- * @param {Object} [initialData] - `{ feed: [...], veterinary: [...], equipment: [...], bedding: [...] }`,
- *   each row shaped like `{ id, item, detail, threshold, unit, price, itemCode? }`. Empty for
- *   onboarding (spec 7.4); pre-filled with the farm's real StockItem rows when reused from
- *   /dashboard/stock (spec 8.4).
- * @param {Object} [warehouse] - `{ name, currency, leadTime, leadTimeUnit }` seed values for the
- *   warehouse header fields (display-only concepts — `warehouseName`/`currency`/`leadTime` are
- *   NOT part of the StockItem model and are not persisted anywhere by
- *   `PUT /api/farms/{farmId}/stock-items/`, which only accepts `items`).
- * @param {"onboarding"|"management"} [mode] - "onboarding" shows Retour/Suivant; "management"
- *   shows a single "Enregistrer" bar with an inline "Saved" confirmation (spec section 4.4).
- * @param {boolean} [saving] - Disables the save/next/back buttons and shows a spinner while a
- *   save request is in flight.
- * @param {(payload: {warehouseName: string, currency: string, leadTime: number, leadTimeUnit: string, items: object[]}) => Promise<void>} [onSave] -
- *   Called with the full form payload on Save/Next; `items` entries match
- *   `StockItemSerializer`'s field names (item_code, category, name, unit, feed_stage,
- *   cold_chain_required, alert_threshold, unit_price) — only `items` maps to real backend fields.
- * @param {() => void} [onBack] - Called when "Back" is clicked (onboarding mode only).
+ * Categories come from the backend (`GET /api/farms/{farmId}/stock-categories/`) — the farm
+ * already exists in both contexts, so add/delete persist immediately (optimistic), mirroring
+ * `HouseProtocolForm`'s management-mode behaviour. `kind` drives the per-row "Détail" cell:
+ * FEED → feed-stage select, VETERINARY → cold-chain toggle, everything else → no detail.
+ *
+ * @param {Object} initialData - `{ [categoryId]: [row, ...] }`, row =
+ *   `{ id, itemCode?, item, feedStage, coldChain, threshold, unit, price, supplier }`.
+ * @param {Object[]} initialCategories - `[{ id, label, icon, kind }]` in display order.
+ * @param {Object[]} [initialSuppliers] - `[{ id, name }]` for the per-row supplier dropdown.
+ * @param {number} [farmId] - enables live category/supplier writes; omit for the read-only demo.
+ * @param {Object} [warehouse] - display-only header seed `{ name, currency, leadTime, leadTimeUnit }`.
+ * @param {"onboarding"|"management"} [mode]
+ * @param {boolean} [saving]
+ * @param {(payload) => Promise<void>} [onSave] - payload.items entries match StockItemSerializer
+ *   field names (item_code, category, name, unit, feed_stage, cold_chain_required,
+ *   alert_threshold, unit_price, supplier).
+ * @param {() => void} [onBack] - onboarding only.
+ * @param {() => void} [onSuppliersChanged] - called after an inline "+ Nouveau fournisseur".
  */
 export default function StockParametersForm({
-  initialData = EMPTY_DATA,
+  initialData = {},
+  initialCategories = [],
+  initialSuppliers = [],
+  farmId = null,
   warehouse = {},
   mode = "management",
   saving = false,
   onSave,
   onBack,
+  onSuppliersChanged,
 }) {
-  const [warehouseName, setWarehouseName] = useState(warehouse.name || "Main store");
+  const [warehouseName, setWarehouseName] = useState(warehouse.name || "Entrepôt principal");
   const [currency, setCurrency] = useState(warehouse.currency || "XAF");
   const [leadTime, setLeadTime] = useState(warehouse.leadTime ?? 3);
   const [leadTimeUnit, setLeadTimeUnit] = useState(warehouse.leadTimeUnit || "Days");
-  const [activeTab, setActiveTab] = useState("feed");
+
+  const [categories, setCategories] = useState(initialCategories);
+  const [activeCategoryId, setActiveCategoryId] = useState(initialCategories[0]?.id ?? null);
   const [data, setData] = useState(initialData);
+  const [suppliers, setSuppliers] = useState(initialSuppliers);
   const [saveMessage, setSaveMessage] = useState("");
 
-  const rows = data[activeTab];
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategoryLabel, setNewCategoryLabel] = useState("");
+  const [newCategoryIcon, setNewCategoryIcon] = useState(STOCK_ICON_OPTIONS[0].name);
+  const [categoryError, setCategoryError] = useState("");
+  const [categoryBusy, setCategoryBusy] = useState(false);
+  const [confirmDeleteCategory, setConfirmDeleteCategory] = useState(null);
+
+  const [addingSupplierForRow, setAddingSupplierForRow] = useState(null);
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [supplierBusy, setSupplierBusy] = useState(false);
+
+  const activeCategory = categories.find((c) => c.id === activeCategoryId) || null;
+  const rows = data[activeCategoryId] || [];
   const totalItems = Object.values(data).reduce((sum, arr) => sum + arr.length, 0);
 
   const updateRow = (rowId, field, value) => {
     setData((prev) => ({
       ...prev,
-      [activeTab]: prev[activeTab].map((r) => (r.id === rowId ? { ...r, [field]: value } : r)),
+      [activeCategoryId]: (prev[activeCategoryId] || []).map((r) => (r.id === rowId ? { ...r, [field]: value } : r)),
     }));
   };
 
   const addRow = () => {
-    setData((prev) => ({
-      ...prev,
-      [activeTab]: [...prev[activeTab], makeRow({ detail: DETAIL_OPTIONS[activeTab][0] })],
-    }));
+    setData((prev) => ({ ...prev, [activeCategoryId]: [...(prev[activeCategoryId] || []), makeRow()] }));
   };
 
   const deleteRow = (rowId) => {
-    setData((prev) => ({ ...prev, [activeTab]: prev[activeTab].filter((r) => r.id !== rowId) }));
+    setData((prev) => ({ ...prev, [activeCategoryId]: (prev[activeCategoryId] || []).filter((r) => r.id !== rowId) }));
+  };
+
+  const resetForm = () => {
+    setData(initialData);
+    setCategories(initialCategories);
+    setActiveCategoryId(initialCategories[0]?.id ?? null);
+    setSaveMessage("");
+  };
+
+  const addCategory = async () => {
+    const label = newCategoryLabel.trim();
+    if (!label) {
+      setCategoryError("Le nom de la catégorie est requis.");
+      return;
+    }
+    setCategoryError("");
+    const tempId = `pending-${Date.now()}`;
+    setCategories((prev) => [...prev, { id: tempId, label, icon: newCategoryIcon, kind: "CUSTOM" }]);
+    setActiveCategoryId(tempId);
+    setAddingCategory(false);
+    setNewCategoryLabel("");
+    setNewCategoryIcon(STOCK_ICON_OPTIONS[0].name);
+
+    if (!farmId) return;
+    try {
+      const { data: created } = await stockApi.addCategory(farmId, { label, icon: newCategoryIcon });
+      setCategories((prev) => prev.map((c) => (c.id === tempId ? created : c)));
+      setActiveCategoryId((cur) => (cur === tempId ? created.id : cur));
+      setData((prev) => ({ ...prev, [created.id]: prev[tempId] || [] }));
+    } catch (err) {
+      setCategories((prev) => prev.filter((c) => c.id !== tempId));
+      setActiveCategoryId((cur) => (cur === tempId ? categories[0]?.id : cur));
+      setCategoryError(getServerErrorMessage(err, "Impossible d'ajouter la catégorie."));
+    }
+  };
+
+  const deleteCategory = async (category) => {
+    setCategoryBusy(true);
+    try {
+      if (farmId && typeof category.id === "number") {
+        await stockApi.removeCategory(category.id);
+      }
+      setCategories((prev) => {
+        const next = prev.filter((c) => c.id !== category.id);
+        setActiveCategoryId((cur) => (cur === category.id ? next[0]?.id ?? null : cur));
+        return next;
+      });
+      setData((prev) => {
+        const { [category.id]: _dropped, ...rest } = prev;
+        return rest;
+      });
+    } finally {
+      setCategoryBusy(false);
+      setConfirmDeleteCategory(null);
+    }
+  };
+
+  const addSupplierInline = async (rowId) => {
+    const name = newSupplierName.trim();
+    if (!name || !farmId) return;
+    setSupplierBusy(true);
+    try {
+      const { data: created } = await stockApi.addSupplier(farmId, { name });
+      setSuppliers((prev) => [...prev, created]);
+      updateRow(rowId, "supplier", created.id);
+      setAddingSupplierForRow(null);
+      setNewSupplierName("");
+      onSuppliersChanged?.();
+    } finally {
+      setSupplierBusy(false);
+    }
   };
 
   const buildPayload = () => ({
@@ -102,16 +200,17 @@ export default function StockParametersForm({
     currency,
     leadTime,
     leadTimeUnit,
-    items: Object.entries(data).flatMap(([tab, tabRows]) =>
-      tabRows.map((row) => ({
-        item_code: row.itemCode,
-        category: CATEGORY_BY_TAB[tab],
+    items: categories.flatMap((cat) =>
+      (data[cat.id] || []).map((row) => ({
+        item_code: row.itemCode || undefined,
+        category: typeof cat.id === "number" ? cat.id : undefined,
         name: row.item,
         unit: row.unit,
-        feed_stage: tab === "feed" ? row.detail.toUpperCase() : "NOT_APPLICABLE",
-        cold_chain_required: tab === "veterinary" ? row.detail === "Chaîne du froid : Oui" : false,
+        feed_stage: cat.kind === "FEED" ? row.feedStage : "NOT_APPLICABLE",
+        cold_chain_required: cat.kind === "VETERINARY" ? !!row.coldChain : false,
         alert_threshold: Number(row.threshold) || 0,
         unit_price: Number(row.price) || 0,
+        supplier: row.supplier ?? null,
       }))
     ),
   });
@@ -119,12 +218,10 @@ export default function StockParametersForm({
   const handleSave = async () => {
     if (!onSave) return;
     await onSave(buildPayload());
-    setSaveMessage("Enregistré");
-    setTimeout(() => setSaveMessage(""), 3000);
-  };
-
-  const handleNext = async () => {
-    if (onSave) await onSave(buildPayload());
+    if (mode !== "onboarding") {
+      setSaveMessage("Enregistré");
+      setTimeout(() => setSaveMessage(""), 3000);
+    }
   };
 
   return (
@@ -146,8 +243,8 @@ export default function StockParametersForm({
       <div className="intro">
         <p>Configurez votre stock</p>
         <span>
-          Définissez les seuils d'alerte, les unités et les prix pour chaque article stocké dans l'entrepôt —
-          aliment, vétérinaire, équipement et litière.
+          Définissez les seuils d'alerte, les unités, les prix et le fournisseur par défaut de chaque article.
+          Ajoutez vos propres catégories avec le bouton « + ».
         </span>
       </div>
 
@@ -187,24 +284,91 @@ export default function StockParametersForm({
       </div>
 
       <div className="tabs">
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            className={`tab ${tab === activeTab ? "active" : ""}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {PANEL_META[tab].title}
-            <span className="tab-count">{data[tab].length}</span>
+        {categories.map((cat) => {
+          const Icon = stockIconFor(cat.icon);
+          return (
+            <button
+              key={cat.id}
+              className={`tab ${cat.id === activeCategoryId ? "active" : ""}`}
+              onClick={() => setActiveCategoryId(cat.id)}
+              type="button"
+            >
+              <Icon size={15} strokeWidth={1.8} />
+              {cat.label}
+              <span className="tab-count">{(data[cat.id] || []).length}</span>
+              <span
+                className="tab-delete"
+                role="button"
+                tabIndex={0}
+                aria-label={`Supprimer la catégorie ${cat.label}`}
+                onClick={(e) => { e.stopPropagation(); setConfirmDeleteCategory(cat); }}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setConfirmDeleteCategory(cat); } }}
+              >
+                <X size={12} strokeWidth={2.5} />
+              </span>
+            </button>
+          );
+        })}
+
+        {addingCategory ? (
+          <div className="tab-add-form">
+            <input
+              autoFocus
+              value={newCategoryLabel}
+              onChange={(e) => setNewCategoryLabel(e.target.value)}
+              placeholder="Nom de la catégorie"
+              onKeyDown={(e) => { if (e.key === "Enter") addCategory(); if (e.key === "Escape") setAddingCategory(false); }}
+            />
+            <div className="icon-picker">
+              {STOCK_ICON_OPTIONS.map(({ name, Icon }) => (
+                <button
+                  key={name}
+                  type="button"
+                  className={`icon-picker-option ${newCategoryIcon === name ? "active" : ""}`}
+                  onClick={() => setNewCategoryIcon(name)}
+                  aria-label={name}
+                >
+                  <Icon size={15} strokeWidth={1.8} />
+                </button>
+              ))}
+            </div>
+            <div className="tab-add-actions">
+              <button type="button" className="icon-button" onClick={() => setAddingCategory(false)} aria-label="Annuler">
+                <X size={14} strokeWidth={2} />
+              </button>
+              <button type="button" className="icon-button" onClick={addCategory} aria-label="Confirmer">
+                <Check size={14} strokeWidth={2} />
+              </button>
+            </div>
+            {categoryError && <p className="field-error" style={{ margin: "6px 0 0" }}>{categoryError}</p>}
+          </div>
+        ) : (
+          <button className="tab tab-add" onClick={() => setAddingCategory(true)} type="button" aria-label="Ajouter une catégorie">
+            <Plus size={15} strokeWidth={2.2} />
           </button>
-        ))}
+        )}
       </div>
+
+      {confirmDeleteCategory && (
+        <div className="card schedule-card" style={{ marginBottom: 18, borderColor: "var(--danger)" }}>
+          <p style={{ margin: "0 0 12px", fontSize: 14 }}>
+            Supprimer la catégorie « {confirmDeleteCategory.label} » supprimera aussi tous ses articles
+            ({(data[confirmDeleteCategory.id] || []).length} article(s)). Cette action est définitive. Continuer ?
+          </p>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="delete-button" style={{ width: "auto", padding: "0 16px" }} onClick={() => deleteCategory(confirmDeleteCategory)} disabled={categoryBusy}>
+              {categoryBusy ? <Loader2 size={16} className="spin" /> : "Supprimer la catégorie"}
+            </button>
+            <button className="add-button" onClick={() => setConfirmDeleteCategory(null)}>Annuler</button>
+          </div>
+        </div>
+      )}
 
       <div className="card schedule-card">
         <div className="schedule-heading">
           <div>
             <span className="section-kicker">CATÉGORIE</span>
-            <h2>{PANEL_META[activeTab].title}</h2>
-            <p className="schedule-note">{PANEL_META[activeTab].note}</p>
+            <h2>{activeCategory?.label || "—"}</h2>
           </div>
         </div>
 
@@ -213,6 +377,7 @@ export default function StockParametersForm({
           <span>Détail</span>
           <span>Seuil d'alerte</span>
           <span>Prix unitaire</span>
+          <span>Fournisseur</span>
           <span />
         </div>
 
@@ -224,11 +389,23 @@ export default function StockParametersForm({
                 onChange={(e) => updateRow(row.id, "item", e.target.value)}
                 placeholder="Nom de l'article"
               />
-              <select value={row.detail} onChange={(e) => updateRow(row.id, "detail", e.target.value)}>
-                {DETAIL_OPTIONS[activeTab].map((d) => (
-                  <option key={d} value={d}>{activeTab === "feed" ? FEED_STAGE_LABELS[d] || d : d}</option>
-                ))}
-              </select>
+
+              {activeCategory?.kind === "FEED" ? (
+                <select value={row.feedStage} onChange={(e) => updateRow(row.id, "feedStage", e.target.value)}>
+                  {FEED_STAGE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              ) : activeCategory?.kind === "VETERINARY" ? (
+                <select
+                  value={row.coldChain ? "yes" : "no"}
+                  onChange={(e) => updateRow(row.id, "coldChain", e.target.value === "yes")}
+                >
+                  <option value="no">Chaîne du froid : Non</option>
+                  <option value="yes">Chaîne du froid : Oui</option>
+                </select>
+              ) : (
+                <span className="schedule-note" style={{ alignSelf: "center" }}>—</span>
+              )}
+
               <div className="bound-input">
                 <input
                   type="number"
@@ -236,16 +413,46 @@ export default function StockParametersForm({
                   onChange={(e) => updateRow(row.id, "threshold", e.target.value)}
                 />
                 <select value={row.unit} onChange={(e) => updateRow(row.id, "unit", e.target.value)}>
-                  {UNITS.map((u) => (
-                    <option key={u}>{u}</option>
-                  ))}
+                  {UNITS.map((u) => <option key={u}>{u}</option>)}
                 </select>
               </div>
+
               <input
                 value={row.price}
                 onChange={(e) => updateRow(row.id, "price", e.target.value)}
                 placeholder="Prix unitaire"
               />
+
+              {addingSupplierForRow === row.id ? (
+                <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                  <input
+                    autoFocus
+                    value={newSupplierName}
+                    onChange={(e) => setNewSupplierName(e.target.value)}
+                    placeholder="Nom du fournisseur"
+                    onKeyDown={(e) => { if (e.key === "Enter") addSupplierInline(row.id); if (e.key === "Escape") setAddingSupplierForRow(null); }}
+                  />
+                  <button type="button" className="icon-button" onClick={() => addSupplierInline(row.id)} aria-label="Confirmer" disabled={supplierBusy}>
+                    <Check size={13} strokeWidth={2.2} />
+                  </button>
+                  <button type="button" className="icon-button" onClick={() => setAddingSupplierForRow(null)} aria-label="Annuler">
+                    <X size={13} strokeWidth={2.2} />
+                  </button>
+                </span>
+              ) : (
+                <select
+                  value={row.supplier ?? ""}
+                  onChange={(e) => {
+                    if (e.target.value === "__new__") { setNewSupplierName(""); setAddingSupplierForRow(row.id); return; }
+                    updateRow(row.id, "supplier", e.target.value ? Number(e.target.value) : null);
+                  }}
+                >
+                  <option value="">Aucun</option>
+                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {farmId && <option value="__new__">+ Nouveau fournisseur</option>}
+                </select>
+              )}
+
               <button className="delete-button" aria-label="Supprimer l'article" onClick={() => deleteRow(row.id)}>
                 <Trash2 size={16} strokeWidth={1.8} />
               </button>
@@ -254,7 +461,7 @@ export default function StockParametersForm({
           {rows.length === 0 && <p className="empty-state">Aucun article dans cette catégorie pour le moment.</p>}
         </div>
 
-        <button className="add-button" onClick={addRow}>
+        <button className="add-button" onClick={addRow} type="button">
           <Plus size={14} strokeWidth={2.5} />
           Ajouter un article
         </button>
@@ -263,18 +470,20 @@ export default function StockParametersForm({
       {mode === "onboarding" ? (
         <div className="save-bar">
           {onBack && (
-            <button className="add-button" onClick={onBack} disabled={saving}>
-              Retour
-            </button>
+            <button className="add-button" onClick={onBack} disabled={saving}>Retour</button>
           )}
           <span style={{ flex: 1 }} />
-          <button className="save-button" onClick={handleNext} disabled={saving || totalItems === 0}>
+          <button className="save-button" onClick={handleSave} disabled={saving || totalItems === 0}>
             {saving ? <Loader2 size={16} className="spin" /> : "Suivant"}
           </button>
         </div>
       ) : (
         <div className="save-bar">
           <span className={`save-message ${saveMessage ? "success" : ""}`}>{saveMessage}</span>
+          <button className="add-button" style={{ marginTop: 0 }} onClick={resetForm} disabled={saving} type="button">
+            <RotateCcw size={14} strokeWidth={2.2} />
+            Réinitialiser
+          </button>
           <button className="save-button" onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 size={16} className="spin" /> : "Enregistrer les paramètres"}
           </button>
