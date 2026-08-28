@@ -8,6 +8,13 @@ backend/venv/
 # Django
 backend/staticfiles/
 backend/media/
+backend/.pytest_cache/
+
+# Factory-reset audit trail (backend/config/settings.py LOGGING) — server-local, not source
+backend/logs/*.log
+
+# Database backups (backend/apps/core/management/commands/backup_db.py) — server-local, not source
+backend/backups/*.dump
 
 # Node
 frontend/node_modules/
@@ -25,3 +32,6 @@ frontend/.env
 # Unrelated personal media accidentally living in the project root
 Videos/
 Images/
+
+# Root-owned leftover from a rootless-Docker run (see docs/deviations.md Part 1); recreated by Django as logs/
+backend/logs.docker-owned/
