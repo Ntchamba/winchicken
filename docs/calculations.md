@@ -132,6 +132,23 @@ below `StockItem.alert_threshold` is what fires a `LOW_STOCK` `Alert` (see
 `apps.alerts.services.check_low_stock`, triggered by `StockMovement`'s `post_save` signal in
 `apps/alerts/signals.py`) — that comparison itself lives in the alerts app, not here.
 
+### `stock_evolution(farm)` — `apps/stock/calculations.py:stock_evolution`
+
+Per-item series for the `/dashboard/stock` charts (2026-08-28). For each `StockItem`, walks
+its `StockMovement` rows ordered by `movement_date` (then id), running `+quantity` for `IN` /
+`-quantity` for `OUT`, and emits one `{date, quantity}` point per distinct movement date
+(calendar date, **not** day-of-cycle — stock is farm-scoped). Also echoes `alertThreshold`
+so the frontend can draw a reference line. Items with no movements get `points: []`.
+
+### `coverage_for(item, quantity_per_day, days)` — `apps/stock/calculations.py:coverage_for`
+
+Planning heuristic behind the protocol form's inline "stock insuffisant" warning (2026-08-28).
+`dailyRate` = `quantity_per_day` for the row being edited **plus** the sum of
+`quantity_per_day` over every *other* `ProtocolTemplate` row across the farm linked to the
+same item (a forward-looking figure — it does not test whether those rows' ranges overlap).
+`daysRemaining = current_quantity(item) / dailyRate`; `sufficient = daysRemaining >= days`.
+Non-blocking — the caller only shows a warning, never rejects a save.
+
 ## apps/finance/calculations.py — farm-wide finance
 
 ### `_month_range(range_param)` — `apps/finance/calculations.py:_month_range`

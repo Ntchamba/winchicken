@@ -50,10 +50,15 @@ under `/api/` in `backend/config/urls.py`.
   mortality/feed/water/weight entry), `BatchClosingReport` (computed
   snapshot at closing), and `calculations.py` (mortality/FCR/weekly-KPI/BFR
   formulas — see `docs/calculations.md`).
-- **`apps.stock`** — `StockItem` (warehouse item definitions),
-  `StockMovement` (IN/OUT transactions — on-hand quantity is always derived
-  from these, never stored), `Vaccination`. `calculations.py` holds
-  `current_quantity`.
+- **`apps.stock`** — `StockCategory` (per-farm, four seeded defaults +
+  custom, via `signals.py`), `Supplier` (directory), `StockItem` (item
+  definitions; `category`/`supplier` FKs), `StockMovement` (IN/OUT — on-hand
+  quantity always derived, never stored; `protocol_line` marks auto-generated
+  rows), `Vaccination`. `calculations.py` holds `current_quantity`,
+  `stock_evolution`, `coverage_for`; `services.py` holds
+  `run_daily_consumption` (the protocol-driven daily deduction, wired to a
+  once-daily Celery Beat schedule in `config/celery.py` — the project's only
+  Beat entry — and to `manage.py run_stock_consumption`).
 - **`apps.maintenance`** — `EquipmentFault`, `UnusualCase`. The smallest app:
   declare-and-list only, no status-transition endpoints (see
   `docs/deviations.md`).
@@ -168,6 +173,38 @@ not merely greyed out.
 
    Onboarding routes themselves use `allowUnconfigured` so a user who hasn't
    finished onboarding isn't redirected away from the onboarding flow itself.
+
+## Code organization conventions (established 2026-08-25, `apps/batches` + dashboard frontend)
+
+Adopted for `apps/batches` and the dashboard-adjacent frontend pieces during the sidebar-fix/
+batch-deletion task (`docs/deviations.md` Part 9); not yet retroactively applied to every other
+app/page — apply it incrementally to a file the next time you're already touching it for an
+unrelated reason, per that task's own scoping rule, rather than as a standalone sweep.
+
+**Backend:**
+- Views/viewsets stay thin — parse the request, check permissions, call a service, shape the
+  response. Anything with more than one DB write or non-trivial computation belongs in a
+  `services.py` per app (see `apps/batches/services.py`, `apps/protocols/services.py`).
+- Serializers handle shape/validation only. A serializer that needs real logic beyond a
+  one-line `validate_*`/`create`/`update` is a sign the logic belongs in `services.py` instead.
+- Once a single `views.py` covers more than one clearly distinct resource, split it into a
+  `views/` package by resource (e.g. `apps/batches/views/{batches,daily_logs,kpi}.py`), with
+  `views/__init__.py` re-exporting every class so existing `from apps.<app> import views` /
+  `views.XxxView` call sites in `urls.py` need no changes.
+
+**Frontend:**
+- A component crossing ~200-250 lines, or mixing data-fetching + form state + modal chrome +
+  validation, gets split: data-fetching into a small hook (`useHouses()` — `{data, loading,
+  error, refetch}`), single presentational pieces (a card, a row, a chart) into their own file
+  under `components/`, page-level composition staying in `pages/`.
+- State genuinely shared across sibling parts of the tree (not just parent→child props) goes
+  through a small Context (`context/HousesContext.jsx`), not a callback threaded through
+  `useOutletContext()` at every call site — that pattern is easy to wire correctly once and
+  forget on the next new consumer (see `docs/deviations.md` Part 9 item 74 for the bug that
+  came from exactly that).
+- API calls stay centralized in `api/endpoints.js`, never inline `axios`/`fetch` in a component.
+- Repeated UI patterns (a destructive-action confirm card, previously duplicated three times)
+  get pulled into a shared component (`components/ConfirmDialog.jsx`) rather than a fourth copy.
 
 ## Maintainability note
 

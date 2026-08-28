@@ -190,19 +190,35 @@ from what the code actually returns; see `docs/deviations.md`.
 |---|---|---|---|
 | GET | `/api/farms/{farmId}/stock-items/` | JWT | `IsAuthenticated` |
 | PUT | `/api/farms/{farmId}/stock-items/` | JWT | `IsAuthenticated`, further gated in-view by `IsAdminOrFarmManagerOrFarmer` |
+| GET/POST | `/api/farms/{farmId}/stock-categories/` | JWT | GET: `IsAuthenticated`; POST: `IsAdminOrFarmManagerOrFarmer` |
+| DELETE | `/api/stock-categories/{id}/` | JWT | `IsAdminOrFarmManagerOrFarmer` (cascades to the category's `StockItem` rows) |
+| GET/POST | `/api/farms/{farmId}/suppliers/` | JWT | GET: `IsAuthenticated`; POST: `IsAdminOrFarmManagerOrFarmer` |
+| GET/PUT/PATCH/DELETE | `/api/suppliers/{id}/` | JWT | GET: `IsAuthenticated`; write: `IsAdminOrFarmManagerOrFarmer` |
+| GET | `/api/farms/{farmId}/stock-evolution/` | JWT | `IsAuthenticated` — per-item running `StockMovement` balance by calendar date |
+| GET | `/api/stock-items/{itemCode}/coverage/?quantity_per_day=&days=` | JWT | `IsAuthenticated` — non-blocking insufficient-stock heuristic for the protocol form |
 | GET/POST | `/api/stock-movements/` | JWT | GET: `IsAuthenticated`; POST: `IsAdminOrFarmManagerOrFarmer` |
 | GET/POST | `/api/vaccinations/` | JWT | `IsAuthenticated` for both (no extra role restriction coded, despite this being a clinical action) |
 
 ```json
-// PUT /api/farms/1/stock-items/
+// PUT /api/farms/1/stock-items/   (category is a StockCategory id; supplier a Supplier id or null)
 {
   "items": [
-    {"category": "FEED", "name": "Starter feed", "unit": "kg", "feed_stage": "STARTER", "cold_chain_required": false, "alert_threshold": 100, "unit_price": 350},
-    {"category": "VETERINARY", "name": "Newcastle vaccine", "unit": "dose", "feed_stage": "NOT_APPLICABLE", "cold_chain_required": true, "alert_threshold": 50, "unit_price": 120}
+    {"category": 1, "name": "Starter feed", "unit": "kg", "feed_stage": "STARTER", "cold_chain_required": false, "alert_threshold": 100, "unit_price": 350, "supplier": 4},
+    {"category": 2, "name": "Newcastle vaccine", "unit": "dose", "feed_stage": "NOT_APPLICABLE", "cold_chain_required": true, "alert_threshold": 50, "unit_price": 120, "supplier": null}
   ]
 }
 // -> 200
-{"items": [{"item_code": "FEE-1-001", "category": "FEED", "name": "Starter feed", "unit": "kg", "feed_stage": "STARTER", "cold_chain_required": false, "alert_threshold": 100.0, "unit_price": "350.00", "current_quantity": 0}, ...]}
+{"items": [{"item_code": "FEE-1-001", "category": 1, "category_label": "Aliment", "category_kind": "FEED", "name": "Starter feed", "unit": "kg", "feed_stage": "STARTER", "cold_chain_required": false, "alert_threshold": 100.0, "unit_price": "350.00", "current_quantity": 0, "supplier": 4, "supplier_name": "Provende SARL"}, ...]}
+```
+
+```json
+// POST /api/farms/1/stock-categories/    -> 201 {"id": 9, "label": "Biosécurité", "icon": "ShoppingCart", "sort_order": 4, "kind": "CUSTOM"}
+{"label": "Biosécurité", "icon": "ShoppingCart"}
+
+// GET /api/farms/1/suppliers/   -> [{"id": 4, "name": "Provende SARL", "contact": "+237…", "email": "…", "item_names": ["Starter feed"]}]
+
+// GET /api/stock-items/FEE-1-001/coverage/?quantity_per_day=40&days=10
+// -> {"currentQuantity": 100.0, "dailyRate": 40.0, "daysRemaining": 2.5, "daysNeeded": 10, "sufficient": false}
 ```
 
 ```json
