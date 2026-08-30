@@ -41,12 +41,16 @@ vi.mock("../../context/AuthContext", () => ({
   useAuth: () => ({ user: { farm: 1 } }),
 }));
 
+const formProps = vi.fn();
 vi.mock("../HouseProtocolForm", () => ({
-  default: ({ onSave }) => (
-    <button onClick={() => onSave({ protocolLines: [], batchName: "Bande Renommée", weighingFrequency: null })}>
-      Fake Save
-    </button>
-  ),
+  default: (props) => {
+    formProps(props);
+    return (
+      <button onClick={() => props.onSave({ protocolLines: [], batchName: "Bande Renommée", weighingFrequency: null })}>
+        Fake Save
+      </button>
+    );
+  },
 }));
 
 describe("ProtocolEditModal — sidebar staleness regression", () => {
@@ -64,6 +68,25 @@ describe("ProtocolEditModal — sidebar staleness regression", () => {
     housesApi.putProtocol.mockResolvedValue({ data: [] });
     batchesApi.quickEdit.mockResolvedValue({ data: {} });
     stockApi.items.mockResolvedValue({ data: { items: [] } });
+  });
+
+  test("loads the existing protocol into the form in management mode (no wizard chrome)", async () => {
+    housesApi.getProtocol.mockResolvedValue({
+      data: [{
+        id: 9, category: 3, from_value: 1, from_unit: "DAY", to_value: 5, to_unit: "DAY",
+        until_end: false, what: "Aliment démarrage", details: "", time_slots: [],
+      }],
+    });
+    housesApi.listProtocolCategories.mockResolvedValue({ data: [{ id: 3, label: "Alimentation", icon: "Soup" }] });
+
+    render(<ProtocolEditModal houseCode="H-1" onClose={() => {}} onSaved={() => {}} />);
+    await screen.findByText("Fake Save");
+
+    const props = formProps.mock.calls.at(-1)[0];
+    expect(props.mode).toBe("management");            // never "onboarding"
+    expect(props.onBack).toBeUndefined();             // wizard "Retour" wiring not passed
+    expect(props.initialSchedules[3]).toHaveLength(1); // fetched line is pre-loaded, not empty
+    expect(props.initialSchedules[3][0].what).toBe("Aliment démarrage");
   });
 
   test("saving refetches the shared houses/batches list", async () => {
