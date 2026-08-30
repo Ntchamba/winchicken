@@ -403,3 +403,54 @@ class FinanceEvolutionTests(APITestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data['totalSpent'], 2000.0)
         self.assertEqual(resp.data['breakdown'], [{'category': 'FEED', 'amount': 2000.0}])
+
+
+class BatchClosingReportCalculationTests(APITestCase):
+    """apps.batches.calculations.build_closing_report — every figure derived from Expense/Sale/
+    DailyLog rows against the documented formulas (implementation-detail spec 5.1 / 5.3)."""
+
+    def setUp(self):
+        from apps.batches.models import DailyLog, PoultryBatch, ProductionType
+        from apps.houses.models import PoultryHouse
+
+        self.farm = Farm.objects.create(name='Ferme Clôture')
+        house = PoultryHouse.objects.create(house_code='H-CL-1', farm=self.farm, name='Salle', max_capacity=2000)
+        self.batch = PoultryBatch.objects.create(
+            batch_code='BATCH-CL-1', house=house, production_type=ProductionType.BROILER,
+            initial_count=1000, start_date=date(2026, 1, 1),
+        )
+        # mortality 100 -> current_count 900 ; feed 1800 kg ; latest sample weight 2.0 kg
+        DailyLog.objects.create(batch=self.batch, log_date=date(2026, 1, 2), mortality=60, feed_consumed_kg=900, avg_sample_weight=1.0)
+        DailyLog.objects.create(batch=self.batch, log_date=date(2026, 1, 9), mortality=40, feed_consumed_kg=900, avg_sample_weight=2.0)
+        # variable costs = 900_000 -> unit_cost_price 900_000 / 900 = 1000.00
+        Expense.objects.create(farm=self.farm, batch=self.batch, category=ExpenseCategory.FEED, amount=Decimal('800000'), expense_date=date(2026, 1, 15))
+        Expense.objects.create(farm=self.farm, batch=self.batch, category=ExpenseCategory.VETERINARY, amount=Decimal('60000'), expense_date=date(2026, 1, 15))
+        Expense.objects.create(farm=self.farm, batch=self.batch, category=ExpenseCategory.MISC, amount=Decimal('40000'), expense_date=date(2026, 1, 15))
+        # fixed costs = 150_000 (subtracted from gross to get net margin)
+        Expense.objects.create(farm=self.farm, batch=self.batch, category=ExpenseCategory.LABOR, amount=Decimal('100000'), expense_date=date(2026, 1, 15))
+        Expense.objects.create(farm=self.farm, batch=self.batch, category=ExpenseCategory.DEPRECIATION, amount=Decimal('50000'), expense_date=date(2026, 1, 15))
+        # revenue = 900 birds * 1200 = 1_080_000
+        Sale.objects.create(farm=self.farm, batch=self.batch, product_type=ProductType.BIRD, quantity=900, unit_price=Decimal('1200'), sale_date=date(2026, 2, 1))
+
+    def test_every_figure_matches_the_documented_formula(self):
+        from apps.batches.calculations import build_closing_report
+
+        report = build_closing_report(self.batch)
+
+        self.assertEqual(report.total_mortality_pct, 10.0)          # 100 / 1000 * 100
+        self.assertEqual(report.feed_conversion_ratio, 1.0)         # 1800 / (900 * 2.0)
+        self.assertEqual(float(report.revenue), 1_080_000.0)
+        self.assertEqual(float(report.total_variable_cost), 900_000.0)  # FEED+VET+MISC
+        self.assertEqual(float(report.unit_cost_price), 1000.0)     # 900_000 / 900
+        self.assertEqual(float(report.total_margin), 30_000.0)      # (1_080_000 - 900_000) - 150_000
+
+    def test_rerunning_updates_in_place_not_duplicates(self):
+        from apps.batches.calculations import build_closing_report
+        from apps.batches.models import BatchClosingReport
+
+        build_closing_report(self.batch)
+        Sale.objects.create(farm=self.farm, batch=self.batch, product_type=ProductType.CULL, quantity=10, unit_price=Decimal('500'), sale_date=date(2026, 2, 2))
+        report = build_closing_report(self.batch)
+
+        self.assertEqual(BatchClosingReport.objects.filter(batch=self.batch).count(), 1)
+        self.assertEqual(float(report.revenue), 1_085_000.0)
