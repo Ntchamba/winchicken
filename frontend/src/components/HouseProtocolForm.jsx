@@ -421,9 +421,9 @@ export default function HouseProtocolForm({
       <div className="card house-card">
         <div className="section-heading">
           <div>
-            <span className="house-chip">BÂTIMENT</span>
+            <span className="house-chip">BANDE</span>
             <h1 style={{ margin: "7px 0 0", fontFamily: "'Space Grotesk',sans-serif", fontSize: 22, letterSpacing: "-.03em" }}>
-              {buildingName || "Bâtiment sans nom"}
+              {batchName || "Nouvelle bande"}
             </h1>
           </div>
           <button className="add-button" style={{ marginTop: 0 }} onClick={loadStarterTemplate} disabled={saving}>
@@ -432,6 +432,15 @@ export default function HouseProtocolForm({
           </button>
         </div>
         <div className="detail-grid">
+          <label className="field">
+            <span>Nom de la bande</span>
+            <input
+              value={batchName}
+              onChange={(e) => setBatchName(e.target.value)}
+              placeholder="ex. Bande printemps 2026"
+              required={mode === "onboarding"}
+            />
+          </label>
           <label className="field">
             <span>Nom du bâtiment</span>
             <input value={buildingName} onChange={(e) => setBuildingName(e.target.value)} placeholder="ex. Bâtiment A" />
@@ -450,15 +459,6 @@ export default function HouseProtocolForm({
                 ))}
               </select>
             </div>
-          </label>
-          <label className="field">
-            <span>Nom de la bande</span>
-            <input
-              value={batchName}
-              onChange={(e) => setBatchName(e.target.value)}
-              placeholder="ex. Bande printemps 2026"
-              required={mode === "onboarding"}
-            />
           </label>
           <label className="field">
             <span>Fréquence de pesée (optionnel)</span>
