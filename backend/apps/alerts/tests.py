@@ -218,3 +218,48 @@ class FireScheduledAlertsTests(TestCase):
         self.assertIn('la pesée', created[0].message)
         rule.refresh_from_db()
         self.assertTrue(rule.active)
+
+    def test_inactive_rule_never_fires(self):
+        """A rule whose trigger_time matches exactly is still skipped when active=False."""
+        self._make_rule(active=False)
+        self.assertEqual(self._fire(), [])
+
+    def test_one_time_rule_does_not_refire_after_its_first_firing(self):
+        """After a ONE_TIME rule fires (and is deactivated), a later run well outside the
+        10-minute idempotency window still does not re-fire it."""
+        from datetime import timedelta
+
+        from apps.alerts.models import Alert
+
+        rule = self._make_rule()
+        self.assertEqual(len(self._fire()), 1)
+        rule.refresh_from_db()
+        self.assertFalse(rule.active)
+
+        Alert.objects.all().delete()  # drop the idempotency signal entirely
+        later = self.now + timedelta(minutes=1)  # still inside the trigger-time window
+        self.assertEqual(self._fire(at=later), [])  # active=False alone keeps it out
+
+    def test_console_provider_sends_with_no_network_call(self):
+        """SMS_PROVIDER=console: get_sms_provider() is the local console provider, and running
+        the queued send_sms_task end-to-end marks the SmsMessage SENT without any real gateway
+        call (no mock, no patched network)."""
+        from django.test import override_settings
+
+        from apps.alerts.models import SmsMessage, SmsStatus
+        from apps.alerts.providers import get_sms_provider
+        from apps.alerts.providers.console import ConsoleSmsProvider
+        from apps.alerts.tasks import send_sms_task
+
+        with override_settings(SMS_PROVIDER='console'):
+            self.assertIsInstance(get_sms_provider(), ConsoleSmsProvider)
+            self._make_rule()
+            self.assertEqual(len(self._fire()), 1)
+            sms = SmsMessage.objects.get()
+            self.assertEqual(sms.provider_status, SmsStatus.PENDING)  # queued, not yet sent
+            send_sms_task(sms.id)  # run the real task body against the real console provider
+
+        sms.refresh_from_db()
+        self.assertEqual(sms.provider_status, SmsStatus.SENT)
+        self.assertEqual(sms.provider, 'console-local')  # ConsoleSmsProvider's marker, no gateway hit
+        self.assertEqual(sms.recipient, '+237600000001')
