@@ -157,6 +157,10 @@ class StockMovement(models.Model):
     movement_date = models.DateField()
     supplier_batch_number = models.CharField(max_length=100, blank=True)
     supplier = models.CharField(max_length=255, blank=True)
+    # Free-text note for a manual entry (2026-08-30) — e.g. why stock was added outside the
+    # PurchaseOrder receiving flow ("don gouvernemental", "correction d'inventaire"). Blank for
+    # PurchaseOrder-received and protocol-generated rows.
+    note = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -98,11 +98,12 @@ class StockMovementSerializer(serializers.ModelSerializer):
         model = StockMovement
         fields = [
             'id', 'item', 'batch', 'movement_type', 'quantity', 'movement_date',
-            'supplier_batch_number', 'supplier',
+            'supplier_batch_number', 'supplier', 'note',
         ]
         read_only_fields = ['id']
         extra_kwargs = {
             'batch': {'help_text': 'Batch this movement is attributed to, if any (e.g. feed consumption); optional.'},
+            'note': {'required': False, 'help_text': 'Free-text note for a manual IN entry made outside the PurchaseOrder flow.'},
         }
 
 
