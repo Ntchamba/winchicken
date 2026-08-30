@@ -1,0 +1,73 @@
+name: CI
+
+# Runs both suites on every push/PR (docs/deviations.md Part 15, Part B). Backend and frontend
+# are independent jobs — a frontend lint failure shouldn't block seeing the backend's result,
+# and they run in parallel rather than one long sequential job.
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      # Real Postgres, not sqlite — this project's tests exercise DB-level constraints
+      # (one_active_batch_per_house, Farm.singleton_lock) that sqlite doesn't enforce the same
+      # way, and BackupRestoreTests shells out to the real pg_dump/pg_restore.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: winchicken
+          POSTGRES_USER: winchicken
+          POSTGRES_PASSWORD: winchicken
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U winchicken -d winchicken"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SECRET_KEY: ci-test-key
+      DEBUG: "True"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      DB_NAME: winchicken
+      DB_USER: winchicken
+      DB_PASSWORD: winchicken
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      CORS_ALLOWED_ORIGINS: http://localhost:5173
+      REDIS_URL: redis://localhost:6379/0
+      SMS_PROVIDER: console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install postgresql-client (pg_dump/pg_restore for BackupRestoreTests)
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Install Python dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Run migrations
+        working-directory: backend
+        run: python manage.py migrate --noinput
+      - name: pytest
+        working-directory: backend
+        run: pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
