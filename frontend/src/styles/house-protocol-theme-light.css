@@ -44,3 +44,17 @@
   .tab-add-actions{margin-left:0;justify-content:flex-end}
   .help-overlay{padding:20px 12px}
 }
+
+/* Batch header actions (HouseDetailPage) — a three-way severity scale. Deliberately its own
+   class group, NOT the shared .add-button / .delete-button (those have ~30 other uses each):
+   restyling here must not leak. All three share one box model so they sit on one baseline.
+     --edit   neutral   : transparent + mint outline/text  (Modifier le protocole)
+     --close  caution   : amber tint + amber outline/text   (Clôturer la bande)
+     --delete destructive: solid --danger fill + white text  (Supprimer la bande) */
+.batch-action{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 16px;border-radius:9px;border:1px solid transparent;font:inherit;font-weight:700;font-size:13px;cursor:pointer;transition:.2s}
+.batch-action--edit{background:transparent;border-color:var(--mint);color:var(--mint)}
+.batch-action--edit:hover{background:rgba(11,143,104,.1)}
+.batch-action--close{background:rgba(185,121,12,.12);border-color:rgba(185,121,12,.4);color:var(--warning)}
+.batch-action--close:hover{background:var(--warning);color:#fff}
+.batch-action--delete{background:var(--danger);border-color:var(--danger);color:#fff}
+.batch-action--delete:hover{background:#b5322e;border-color:#b5322e}
