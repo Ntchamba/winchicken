@@ -4,7 +4,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.alerts.models import Alert, AlertRuleType
-from apps.batches.models import BatchStatus, PoultryBatch, ProductionType
+from apps.batches.models import BatchStatus, DailyLog, PoultryBatch, ProductionType
 from apps.core.models import Farm, User, UserRole, create_role_profile
 from apps.houses.models import PoultryHouse
 from apps.protocols.models import ProtocolCategory, ProtocolTemplate
@@ -209,6 +209,23 @@ class DailyConsumptionTests(APITestCase):
         call_command('run_stock_consumption', '--date', self.today.isoformat(), stdout=out)
         self.assertIn('1 stock movement(s) created', out.getvalue())
 
+    def test_dose_per_bird_scales_with_current_count(self):
+        # "Dose par bande" mode: quantity == dose_per_bird * batch.current_count (500 birds).
+        self.line.quantity_per_day = None
+        self.line.dose_per_bird = 0.5
+        self.line.save(update_fields=['quantity_per_day', 'dose_per_bird'])
+        created = run_daily_consumption(today=self.today)
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0].quantity, 250)
+
+    def test_dose_per_bird_skips_empty_batch(self):
+        # All birds dead → current_count 0 → computed quantity 0 → no movement.
+        DailyLog.objects.create(batch=self.batch, log_date=self.today, mortality=self.batch.initial_count)
+        self.line.quantity_per_day = None
+        self.line.dose_per_bird = 0.5
+        self.line.save(update_fields=['quantity_per_day', 'dose_per_bird'])
+        self.assertEqual(run_daily_consumption(today=self.today), [])
+
 
 class CoverageEndpointTests(APITestCase):
     def setUp(self):
@@ -236,3 +253,49 @@ class CoverageEndpointTests(APITestCase):
             f'/api/stock-items/{self.item.item_code}/coverage/', {'quantity_per_day': 5, 'days': 10},
         )
         self.assertTrue(resp.data['sufficient'])
+
+    def test_dose_per_bird_coverage_scales_with_live_birds(self):
+        house = PoultryHouse.objects.create(house_code='H-COV-1', farm=self.farm, name='S', max_capacity=1000)
+        PoultryBatch.objects.create(
+            batch_code='B-COV-1', house=house, production_type=ProductionType.BROILER,
+            initial_count=200, start_date=date(2026, 1, 1), status=BatchStatus.ACTIVE,
+        )
+        # 100 on hand, 0.5/bird * 200 birds = 100/day → 1 day of cover, need 10 → insufficient.
+        resp = self.client.get(
+            f'/api/stock-items/{self.item.item_code}/coverage/', {'dose_per_bird': 0.5, 'days': 10},
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['dailyRate'], 100)
+        self.assertEqual(resp.data['daysRemaining'], 1.0)
+        self.assertFalse(resp.data['sufficient'])
+
+
+class ManualStockMovementTests(APITestCase):
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Manual')
+        self.admin = _make_user(self.farm)
+        self.client.force_authenticate(user=self.admin)
+        self.cat = StockCategory.objects.get(farm=self.farm, kind='EQUIPMENT')
+        self.item = StockItem.objects.create(
+            item_code='EQU-1-001', farm=self.farm, category=self.cat, name='Abreuvoir', unit='unité',
+        )
+
+    def test_manual_in_movement_with_note_adds_stock(self):
+        resp = self.client.post('/api/stock-movements/', {
+            'item': self.item.item_code, 'movement_type': 'IN', 'quantity': 12,
+            'movement_date': '2026-04-01', 'note': 'Don coopérative',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        mv = StockMovement.objects.get(id=resp.data['id'])
+        self.assertEqual(mv.note, 'Don coopérative')
+        self.assertIsNone(mv.batch_id)
+        self.assertIsNone(mv.protocol_line_id)
+        self.assertEqual(current_quantity(self.item), 12)
+
+    def test_worker_cannot_create_movement(self):
+        worker = _make_user(self.farm, role=UserRole.WORKER, email='worker@stock-test.local')
+        self.client.force_authenticate(user=worker)
+        resp = self.client.post('/api/stock-movements/', {
+            'item': self.item.item_code, 'movement_type': 'IN', 'quantity': 1, 'movement_date': '2026-04-01',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)

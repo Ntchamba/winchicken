@@ -96,14 +96,21 @@ class ProtocolTemplate(models.Model):
     what = models.CharField(max_length=255)
     details = models.CharField(max_length=500, blank=True)
     # Optional stock consumption (2026-08-28): a row can declare "this task consumes
-    # `quantity_per_day` units/day of `stock_item`" (e.g. a Feeding row → an "Aliment démarrage"
-    # StockItem at 40 kg/day). Left null for rows that aren't stock consumption (cleaning, health
-    # checks). Drives the daily automated StockMovement (apps.stock.services.run_daily_consumption)
-    # and the form's inline insufficient-stock warning (apps.stock.calculations.coverage_for).
+    # `stock_item` daily", in one of two mutually-exclusive dosage modes (2026-08-30):
+    #   • `quantity_per_day` — a fixed amount/day regardless of flock size (e.g. a Feeding row →
+    #     40 kg/day of "Aliment démarrage"). UI label "Quantité fixe / jour".
+    #   • `dose_per_bird` — an amount per live bird; the daily movement is
+    #     `dose_per_bird * batch.current_count` (e.g. a vaccination/water-treatment row →
+    #     0.5 mL/bird). UI label "Dose par bande".
+    # At most one of the two is set (enforced in ProtocolTemplateSerializer.validate); both null
+    # for rows that aren't stock consumption (cleaning, health checks). Drives the daily
+    # automated StockMovement (apps.stock.services.run_daily_consumption) and the form's inline
+    # insufficient-stock warning (apps.stock.calculations.coverage_for).
     stock_item = models.ForeignKey(
         'stock.StockItem', on_delete=models.SET_NULL, null=True, blank=True, related_name='protocol_lines',
     )
     quantity_per_day = models.FloatField(null=True, blank=True)
+    dose_per_bird = models.FloatField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

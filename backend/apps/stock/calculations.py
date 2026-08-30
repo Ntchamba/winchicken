@@ -41,21 +41,34 @@ def stock_evolution(farm):
     return series
 
 
-def coverage_for(item, quantity_per_day, days):
-    """Planning figure for the protocol form's inline "stock insuffisant" warning (2026-08-28).
+def coverage_for(item, quantity_per_day, days, dose_per_bird=None):
+    """Planning figure for the protocol form's inline "stock insuffisant" warning (2026-08-28,
+    dose mode added 2026-08-30).
 
-    `dailyRate` = `quantity_per_day` for the row being edited **plus** the sum of
-    `quantity_per_day` over every *other* `ProtocolTemplate` row across the farm already linked
-    to this same item (a forward-looking "at this rate" figure — it does not check whether each
-    of those rows' day ranges overlaps, deliberately: the warning is a heads-up, not a
-    scheduler). `daysNeeded` is the row's own day-range span. Non-blocking — the caller shows a
-    warning when `sufficient` is False, it never rejects a save."""
+    `dailyRate` = the row being edited **plus** the sum of `quantity_per_day` over every *other*
+    `ProtocolTemplate` row across the farm already linked to this same item (a forward-looking
+    "at this rate" figure — it does not check whether each of those rows' day ranges overlaps,
+    deliberately: the warning is a heads-up, not a scheduler). The row being edited contributes
+    `quantity_per_day` directly in "Quantité fixe / jour" mode, or `dose_per_bird` times the
+    farm's current live-bird count (summed over ACTIVE batches) in "Dose par bande" mode.
+    `daysNeeded` is the row's own day-range span. Non-blocking — the caller shows a warning when
+    `sufficient` is False, it never rejects a save."""
+    from apps.batches.models import BatchStatus, PoultryBatch
     from apps.protocols.models import ProtocolTemplate
 
     other = ProtocolTemplate.objects.filter(
         house__farm=item.farm, stock_item=item, quantity_per_day__isnull=False,
     ).aggregate(total=Sum('quantity_per_day'))['total'] or 0
-    daily_rate = float(quantity_per_day or 0) + float(other)
+    if dose_per_bird is not None:
+        # current_count is a computed @property (not a column) — sum it in Python.
+        birds = sum(
+            b.current_count
+            for b in PoultryBatch.objects.filter(house__farm=item.farm, status=BatchStatus.ACTIVE)
+        )
+        own_rate = float(dose_per_bird) * float(birds)
+    else:
+        own_rate = float(quantity_per_day or 0)
+    daily_rate = own_rate + float(other)
     on_hand = current_quantity(item)
     days_remaining = (on_hand / daily_rate) if daily_rate > 0 else None
     sufficient = days_remaining is None or days_remaining >= days

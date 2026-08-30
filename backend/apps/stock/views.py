@@ -177,9 +177,11 @@ class FarmStockEvolutionView(APIView):
 
 
 class StockItemCoverageView(APIView):
-    """GET /api/stock-items/{itemCode}/coverage/?quantity_per_day=<n>&days=<span> — feeds the
-    inline "stock insuffisant" warning in the protocol form. Non-blocking planning figure; see
-    `apps.stock.calculations.coverage_for`."""
+    """GET /api/stock-items/{itemCode}/coverage/?days=<span>&(quantity_per_day=<n>|dose_per_bird=<n>)
+    — feeds the inline "stock insuffisant" warning in the protocol form. Pass `quantity_per_day`
+    for "Quantité fixe / jour" mode or `dose_per_bird` for "Dose par bande" mode (the latter is
+    multiplied by the farm's current live-bird count server-side). Non-blocking planning figure;
+    see `apps.stock.calculations.coverage_for`."""
 
     permission_classes = [IsAuthenticated]
 
@@ -187,12 +189,17 @@ class StockItemCoverageView(APIView):
         from apps.stock.calculations import coverage_for
 
         item = get_object_or_404(StockItem, item_code=item_code, farm=request.user.farm)
+        raw_dose = request.query_params.get('dose_per_bird')
         try:
             quantity_per_day = float(request.query_params.get('quantity_per_day', 0) or 0)
+            dose_per_bird = float(raw_dose) if raw_dose not in (None, '') else None
             days = int(request.query_params.get('days', 0) or 0)
         except (TypeError, ValueError):
-            return Response({'detail': 'quantity_per_day et days doivent être numériques.'}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(coverage_for(item, quantity_per_day, days))
+            return Response(
+                {'detail': 'quantity_per_day, dose_per_bird et days doivent être numériques.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(coverage_for(item, quantity_per_day, days, dose_per_bird=dose_per_bird))
 
 
 class StockItemsLowCountView(APIView):

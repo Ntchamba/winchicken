@@ -60,7 +60,7 @@ class ProtocolTemplateSerializer(serializers.ModelSerializer):
         model = ProtocolTemplate
         fields = [
             'id', 'category', 'from_value', 'from_unit', 'to_value', 'to_unit', 'until_end',
-            'what', 'details', 'time_slots', 'stock_item', 'quantity_per_day',
+            'what', 'details', 'time_slots', 'stock_item', 'quantity_per_day', 'dose_per_bird',
         ]
         read_only_fields = ['id']
         extra_kwargs = {
@@ -71,10 +71,32 @@ class ProtocolTemplateSerializer(serializers.ModelSerializer):
             'details': {'help_text': 'Free-text detail (dosage, composition, notes).'},
             'stock_item': {
                 'required': False, 'allow_null': True,
-                'help_text': 'Optional StockItem this row consumes daily (with quantity_per_day).',
+                'help_text': 'Optional StockItem this row consumes daily (with quantity_per_day OR dose_per_bird).',
             },
             'quantity_per_day': {
                 'required': False, 'allow_null': True,
-                'help_text': 'Units/day of stock_item this row consumes (e.g. 40 kg/day of starter feed).',
+                'help_text': 'Dosage mode "Quantité fixe / jour": a fixed amount/day of stock_item '
+                             '(e.g. 40 kg/day of starter feed). Mutually exclusive with dose_per_bird.',
+            },
+            'dose_per_bird': {
+                'required': False, 'allow_null': True,
+                'help_text': 'Dosage mode "Dose par bande": amount per live bird; the daily movement is '
+                             'dose_per_bird * batch.current_count. Mutually exclusive with quantity_per_day.',
             },
         }
+
+    def validate(self, attrs):
+        # Merge over the instance so a partial update can't slip past the mutual-exclusion check.
+        quantity_per_day = attrs.get('quantity_per_day', getattr(self.instance, 'quantity_per_day', None))
+        dose_per_bird = attrs.get('dose_per_bird', getattr(self.instance, 'dose_per_bird', None))
+        stock_item = attrs.get('stock_item', getattr(self.instance, 'stock_item', None))
+
+        if quantity_per_day is not None and dose_per_bird is not None:
+            raise serializers.ValidationError(
+                "Choisissez un seul mode de dosage : « Quantité fixe / jour » ou « Dose par bande », pas les deux."
+            )
+        if (quantity_per_day is not None or dose_per_bird is not None) and stock_item is None:
+            raise serializers.ValidationError(
+                "Renseignez l'article de stock consommé avant d'indiquer une quantité ou une dose."
+            )
+        return attrs

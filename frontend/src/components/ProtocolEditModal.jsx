@@ -35,7 +35,9 @@ function buildSchedules(categories, lines) {
         id: slot.id, startTime: slot.start_time, endTime: slot.end_time,
       })),
       stockItemCode: line.stock_item || null,
+      consumptionMode: line.dose_per_bird != null ? "dose" : "fixed",
       quantityPerDay: line.quantity_per_day ?? "",
+      dosePerBird: line.dose_per_bird ?? "",
       coverageWarning: "",
     });
   }

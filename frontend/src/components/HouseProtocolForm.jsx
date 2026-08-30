@@ -51,10 +51,26 @@ const makeRow = (overrides = {}) => ({
   details: "",
   timeSlots: [],
   stockItemCode: null,
+  // "fixed" → quantityPerDay units/day; "dose" → dosePerBird per live bird (× batch count).
+  // Mutually exclusive — only the active mode's field is sent (see consumptionFields).
+  consumptionMode: "fixed",
   quantityPerDay: "",
+  dosePerBird: "",
   coverageWarning: "",
   ...overrides,
 });
+
+// The stock-consumption fields of one protocol-line payload, from a row's dosage mode.
+// Mirrors ProtocolTemplateSerializer.validate: at most one of the two amounts is non-null.
+const consumptionFields = (row) => {
+  const amount = row.consumptionMode === "dose" ? row.dosePerBird : row.quantityPerDay;
+  const value = !row.stockItemCode || amount === "" || amount == null ? null : Number(amount);
+  return {
+    stock_item: row.stockItemCode || null,
+    quantity_per_day: row.consumptionMode === "dose" ? null : value,
+    dose_per_bird: row.consumptionMode === "dose" ? value : null,
+  };
+};
 
 function formatSlotTime(value) {
   // Backend TimeField values come back "HH:MM:SS" (DRF's default TimeField output); <input
@@ -218,15 +234,17 @@ export default function HouseProtocolForm({
   // linked item / quantity-per-day; clears when either is unset.
   const checkCoverage = async (rowId, next) => {
     const row = { ...rows.find((r) => r.id === rowId), ...next };
-    if (!row.stockItemCode || !row.quantityPerDay) {
+    const isDose = row.consumptionMode === "dose";
+    const amount = isDose ? row.dosePerBird : row.quantityPerDay;
+    if (!row.stockItemCode || amount === "" || amount == null) {
       updateRow(rowId, "coverageWarning", "");
       return;
     }
     try {
-      const { data } = await stockApi.coverage(row.stockItemCode, {
-        quantity_per_day: Number(row.quantityPerDay),
-        days: rowSpanDays(row),
-      });
+      const params = { days: rowSpanDays(row) };
+      if (isDose) params.dose_per_bird = Number(amount);
+      else params.quantity_per_day = Number(amount);
+      const { data } = await stockApi.coverage(row.stockItemCode, params);
       if (data.sufficient) {
         updateRow(rowId, "coverageWarning", "");
       } else {
@@ -348,8 +366,7 @@ export default function HouseProtocolForm({
             what: row.what,
             details: row.details,
             time_slots: (row.timeSlots || []).map((s) => ({ start_time: s.startTime, end_time: s.endTime })),
-            stock_item: row.stockItemCode || null,
-            quantity_per_day: row.quantityPerDay === "" || row.quantityPerDay == null ? null : Number(row.quantityPerDay),
+            ...consumptionFields(row),
           }))
         ),
       };
@@ -369,8 +386,7 @@ export default function HouseProtocolForm({
           what: row.what,
           details: row.details,
           time_slots: (row.timeSlots || []).map((s) => ({ start_time: s.startTime, end_time: s.endTime })),
-          stock_item: row.stockItemCode || null,
-          quantity_per_day: row.quantityPerDay === "" || row.quantityPerDay == null ? null : Number(row.quantityPerDay),
+          ...consumptionFields(row),
         }))
       ),
     };
@@ -682,18 +698,46 @@ export default function HouseProtocolForm({
                       <option key={s.item_code} value={s.item_code}>{s.name}{s.unit ? ` (${s.unit})` : ""}</option>
                     ))}
                   </select>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    placeholder="Quantité/jour"
-                    aria-label="Quantité par jour"
-                    value={row.quantityPerDay}
-                    onChange={(e) => updateRow(row.id, "quantityPerDay", e.target.value)}
-                    onBlur={(e) => checkCoverage(row.id, { quantityPerDay: e.target.value })}
-                    style={{ width: 130 }}
+                  <select
+                    aria-label="Mode de dosage"
+                    value={row.consumptionMode}
+                    onChange={(e) => {
+                      updateRow(row.id, "consumptionMode", e.target.value);
+                      checkCoverage(row.id, { consumptionMode: e.target.value });
+                    }}
+                    style={{ minWidth: 150 }}
                     disabled={!row.stockItemCode}
-                  />
+                  >
+                    <option value="fixed">Quantité fixe / jour</option>
+                    <option value="dose">Dose par bande</option>
+                  </select>
+                  {row.consumptionMode === "dose" ? (
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="Dose / oiseau"
+                      aria-label="Dose par oiseau"
+                      value={row.dosePerBird}
+                      onChange={(e) => updateRow(row.id, "dosePerBird", e.target.value)}
+                      onBlur={(e) => checkCoverage(row.id, { dosePerBird: e.target.value })}
+                      style={{ width: 130 }}
+                      disabled={!row.stockItemCode}
+                    />
+                  ) : (
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="Quantité/jour"
+                      aria-label="Quantité par jour"
+                      value={row.quantityPerDay}
+                      onChange={(e) => updateRow(row.id, "quantityPerDay", e.target.value)}
+                      onBlur={(e) => checkCoverage(row.id, { quantityPerDay: e.target.value })}
+                      style={{ width: 130 }}
+                      disabled={!row.stockItemCode}
+                    />
+                  )}
                   {row.coverageWarning && (
                     <span className="field-error" style={{ flexBasis: "100%", margin: 0, fontSize: 12 }}>
                       {row.coverageWarning}
