@@ -1,5 +1,6 @@
 from io import StringIO
 from pathlib import Path
+from unittest import mock
 
 from django.conf import settings
 from django.core.management import call_command
@@ -358,3 +359,122 @@ class EmployeePayrollListViewTests(APITestCase):
         self.client.force_authenticate(self.worker)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class PreLoginFarmResetTests(APITestCase):
+    """POST /api/farm/reset/request/ + /confirm/ — the unauthenticated factory-reset flow
+    reachable from /login (docs/deviations.md Part 21). Verifies the credential gate leaks
+    nothing (same generic error for wrong password, unknown email, and non-Administrateur), and
+    that the two-step token exchange still ends in the same full CASCADE wipe as the
+    session-based FarmResetView.
+    """
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Test Prélogin')
+        self.admin = User.objects.create_user(
+            email='admin@prelogin.local', password='Sup3rSecret!', name='Admin Prélogin',
+            role=UserRole.ADMIN, farm=self.farm,
+        )
+        create_role_profile(self.admin)
+        self.worker = User.objects.create_user(
+            email='worker@prelogin.local', password='Sup3rSecret!', name='Worker Prélogin',
+            role=UserRole.WORKER, farm=self.farm,
+        )
+        create_role_profile(self.worker)
+        self.house = PoultryHouse.objects.create(
+            house_code='H-PRELOGIN-1', farm=self.farm, name='Bâtiment prélogin', max_capacity=1000,
+        )
+        self.request_url = reverse('farm-reset-request')
+        self.confirm_url = reverse('farm-reset-confirm')
+
+    def _valid_token(self):
+        response = self.client.post(
+            self.request_url, {'email': 'admin@prelogin.local', 'password': 'Sup3rSecret!'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response.data['token']
+
+    def test_request_returns_token_and_farm_name_for_admin(self):
+        response = self.client.post(
+            self.request_url, {'email': 'admin@prelogin.local', 'password': 'Sup3rSecret!'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['token'])
+        self.assertEqual(response.data['farm_name'], 'Ferme Test Prélogin')
+
+    def test_request_wrong_password_generic_error_no_token(self):
+        response = self.client.post(
+            self.request_url, {'email': 'admin@prelogin.local', 'password': 'nope'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotIn('token', response.data)
+        self.assertEqual(response.data['non_field_errors'], ['Identifiants invalides.'])
+
+    def test_request_non_admin_rejected_without_revealing_role(self):
+        response = self.client.post(
+            self.request_url, {'email': 'worker@prelogin.local', 'password': 'Sup3rSecret!'}, format='json',
+        )
+        # Same 400 + same message as a wrong password — a 403 here would confirm the account exists.
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['non_field_errors'], ['Identifiants invalides.'])
+
+    def test_request_unknown_email_same_generic_error(self):
+        response = self.client.post(
+            self.request_url, {'email': 'ghost@prelogin.local', 'password': 'Sup3rSecret!'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['non_field_errors'], ['Identifiants invalides.'])
+
+    def test_confirm_with_valid_token_and_exact_name_wipes_farm(self):
+        token = self._valid_token()
+        response = self.client.post(
+            self.confirm_url, {'token': token, 'farm_name': 'Ferme Test Prélogin'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(Farm.objects.count(), 0)
+        self.assertEqual(User.objects.count(), 0)
+        self.assertEqual(PoultryHouse.objects.count(), 0)
+        self.assertFalse(self.client.get(reverse('farm-exists')).data['exists'])
+
+    def test_confirm_wrong_farm_name_rejected_nothing_deleted(self):
+        token = self._valid_token()
+        response = self.client.post(
+            self.confirm_url, {'token': token, 'farm_name': 'Mauvais Nom'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Farm.objects.count(), 1)
+        self.assertEqual(User.objects.count(), 2)
+
+    def test_confirm_tampered_token_rejected_nothing_deleted(self):
+        token = self._valid_token()
+        response = self.client.post(
+            self.confirm_url, {'token': token + 'x', 'farm_name': 'Ferme Test Prélogin'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Farm.objects.count(), 1)
+
+    def test_confirm_foreign_salt_token_rejected(self):
+        from django.core import signing
+        forged = signing.dumps({'uid': self.admin.id}, salt='some.other.salt')
+        response = self.client.post(
+            self.confirm_url, {'token': forged, 'farm_name': 'Ferme Test Prélogin'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Farm.objects.count(), 1)
+
+    def test_confirm_expired_token_rejected(self):
+        with mock.patch('apps.core.serializers.PRELOGIN_RESET_MAX_AGE', -1):
+            token = self._valid_token()
+            response = self.client.post(
+                self.confirm_url, {'token': token, 'farm_name': 'Ferme Test Prélogin'}, format='json',
+            )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Farm.objects.count(), 1)
+
+    def test_request_endpoint_needs_no_authentication(self):
+        # No force_authenticate anywhere in this class — the flow's whole point is working
+        # without a session; this asserts the endpoint itself doesn't 401/403 an anonymous call.
+        response = self.client.post(
+            self.request_url, {'email': 'admin@prelogin.local', 'password': 'Sup3rSecret!'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
