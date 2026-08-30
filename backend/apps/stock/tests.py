@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -299,3 +300,42 @@ class ManualStockMovementTests(APITestCase):
             'item': self.item.item_code, 'movement_type': 'IN', 'quantity': 1, 'movement_date': '2026-04-01',
         }, format='json')
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_missing_quantity_creates_no_movement(self):
+        """"Ajouter du stock" with no quantity must not create a StockMovement."""
+        resp = self.client.post('/api/stock-movements/', {
+            'item': self.item.item_code, 'movement_type': 'IN', 'movement_date': '2026-04-01',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(StockMovement.objects.filter(item=self.item).count(), 0)
+        self.assertEqual(current_quantity(self.item), 0)
+
+
+class CurrentQuantityUnitTests(TestCase):
+    """apps.stock.calculations.current_quantity — pure IN-minus-OUT, no endpoint."""
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Qty')
+        self.item = StockItem.objects.create(
+            item_code='FEE-Q-001', farm=self.farm,
+            category=StockCategory.objects.get(farm=self.farm, kind='FEED'),
+            name='Aliment', unit='kg',
+        )
+
+    def _mv(self, kind, qty, d='2026-01-01'):
+        return StockMovement.objects.create(item=self.item, movement_type=kind, quantity=qty, movement_date=d)
+
+    def test_zero_when_no_movements(self):
+        self.assertEqual(current_quantity(self.item), 0)
+
+    def test_in_minus_out_across_several_movements(self):
+        self._mv(MovementType.IN, 100)
+        self._mv(MovementType.IN, 50, '2026-01-05')
+        self._mv(MovementType.OUT, 30, '2026-01-06')
+        self._mv(MovementType.OUT, 20, '2026-01-07')
+        self.assertEqual(current_quantity(self.item), 100)  # 150 in - 50 out
+
+    def test_can_go_negative_if_out_exceeds_in(self):
+        self._mv(MovementType.IN, 10)
+        self._mv(MovementType.OUT, 25, '2026-01-02')
+        self.assertEqual(current_quantity(self.item), -15)
