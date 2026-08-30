@@ -10,6 +10,19 @@ MAX_RETRIES = 5
 BASE_BACKOFF_SECONDS = 30
 
 
+@shared_task
+def check_scheduled_alerts():
+    """Celery Beat entry point — runs every minute (see `config.celery.app.conf.beat_schedule`).
+    Fires the Alert + SMS for any active SCHEDULED AlertRule whose `trigger_time` matches the
+    current farm-local time and whose schedule says it is due today. Idempotent — safe to run
+    every minute and to re-run after a delay (brief Beat outage). Returns the number of Alerts
+    created, for the task result log."""
+    from apps.alerts.services import fire_scheduled_alerts
+
+    created = fire_scheduled_alerts()
+    return len(created)
+
+
 @shared_task(bind=True, max_retries=MAX_RETRIES)
 def send_sms_task(self, sms_message_id: int):
     """Sends one SmsMessage. Idempotent via idempotency_key — safe to replay on worker crash.

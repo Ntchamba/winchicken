@@ -106,6 +106,64 @@ docker-compose.yml   db (Postgres 16) + redis + web (Django) + worker (Celery) +
 
 ## Recent work
 
+- **Time-based trigger for scheduled task reminders (2026-08-30):** `SCHEDULED` `AlertRule`
+  rows (`PROTOCOL_TASK`, `WEIGHING_REMINDER`) stored a `trigger_time` but nothing ever fired
+  them. New every-minute Celery Beat entry `check-scheduled-alerts` →
+  `apps.alerts.services.fire_scheduled_alerts`: for each active `SCHEDULED` rule whose
+  `trigger_time` matches the current **farm-local** time and whose schedule says it is due
+  today, it creates one `Alert` (which drives the notification bell + the existing Twilio
+  `send_sms_task`, with the personalised `apps.alerts.templates` reminder body and recipient).
+  Autonomous decisions: (1) new `FARM_TIME_ZONE` setting (env, default `Africa/Douala` / WAT
+  — `TIME_ZONE` stays UTC; `trigger_time` is wall-clock the user typed in local time, so a
+  bare UTC comparison would fire an hour late); (2) a **3-minute catch-up window** so a brief
+  Beat outage doesn't skip a reminder, with a 10-minute per-rule idempotency check preventing
+  duplicates (no `Alert` schema change); (3) `ONE_TIME` rules set `active = False` once fired;
+  (4) due-today logic reuses `_protocol_line_occurrence` / `weighing_reminder_task` — no
+  parallel schedule code; (5) reminders are personal job assignments, so they are **not**
+  gated by `NotificationPreference`. Also `python manage.py check_scheduled_alerts [--at HH:MM]`
+  for manual/testing runs. See `docs/deviations.md` Part 22.
+
+- **Login screen: wording fix + pre-login farm reset (2026-08-30):** two changes and a set of
+  autonomous decisions.
+  - **Text.** Every user-facing "Créer la ferme" / "Créez la ferme" is now **"Créer une ferme"**
+    (indefinite article) — the `/create-farm` page `<h1>`, its submit button, and its
+    `document.title`. *Decision:* also updated the same quoted label where it appears as a
+    canonical UI string in `README.md` / `docs/deviations.md`; left it untouched inside
+    past-tense changelog prose that is narrating history (e.g. an `api/client.js` comment about
+    old landing-page routing) — rewriting those would falsify the record without fixing any UI.
+  - **Stale link → reset entry point.** `/login`'s "Créez la ferme" link is **removed** (farm
+    creation is permanently closed once a farm exists — `/create-farm` already guards and
+    redirects). In its place, a deliberately quiet muted-underline **"Réinitialiser la ferme"**
+    link, shown only when `GET /api/farm/exists/` is true. *Decision:* `/login` itself still has
+    no hard redirect guard for the no-farm case (the task said none was needed if routing
+    already only reaches it with a farm); gating the link on `exists` is enough, and a fresh
+    install can't authenticate anyone here anyway.
+  - **Pre-login reset flow (works with no session).** Clicking the link opens
+    `FactoryResetModal` in a new `mode="pre-login"`: a step-0 "administrator credentials" screen
+    (`POST /api/farm/reset/request/`, `AllowAny`) verifies the email + password belong to a real
+    `UserRole.ADMIN` on the single farm and returns a **5-minute `django.core.signing` token**
+    (HMAC over `SECRET_KEY`, no DB row, no login session) plus the farm name. Every failure —
+    unknown email, wrong password, valid credentials for a non-Administrateur — returns the
+    identical `"Identifiants invalides."` (400, never 403), with a dummy `set_password` on the
+    unknown-email branch to equalise response timing, so an anonymous visitor can't enumerate
+    accounts or roles. Step 2 **reuses the existing** explanation + type-the-exact-farm-name
+    confirm screens unchanged (only the password field is dropped — already proven in step 0);
+    the final action is `POST /api/farm/reset/confirm/` (`AllowAny` — the token is the
+    authorisation), which re-opens the token, re-checks the account is still an Administrateur,
+    checks the typed name, then runs the **same `apps.core.services.factory_reset_farm`** the
+    in-dashboard flow does. The in-dashboard reset (Paramètres → Zone dangereuse, session +
+    `IsAdmin` + password) is untouched. *Decisions:* the task's "role `ADMINISTRATEUR`" maps to
+    this codebase's `UserRole.ADMIN` (DB value `'ADMIN'`, French label "Administrateur"); token
+    TTL 5 min; farm name is learned from the step-1 response, not leaked by `farm/exists/`.
+  - **Verified.** 10 new backend tests (`apps/core/tests.py::PreLoginFarmResetTests`) against
+    the isolated test DB — token round-trip → full CASCADE wipe, the three indistinguishable
+    credential failures, tampered / foreign-salt / expired token, wrong farm name (nothing
+    deleted), and that the endpoint needs no auth; full `apps.core` suite green (32 tests).
+    `vite build` + `oxlint` clean. The reset itself was **not** run against the live dev stack
+    (same rule as Part 12 — that DB holds real between-session farm data and the action is
+    irreversible); the `/login` link, the credentials step, and the generic-error path were
+    exercised headless. Rationale: `docs/deviations.md` Part 21.
+
 - **Stock restructured like the batch view: dashboard + modal config, custom categories,
   supplier directory, protocol-driven daily consumption (2026-08-28):** `/dashboard/stock`
   is now a dashboard — stock-evolution line charts (running `StockMovement` balance by

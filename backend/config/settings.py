@@ -89,6 +89,15 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
+# Wall-clock timezone the farm physically operates in. `TIME_ZONE` above stays 'UTC' (all
+# timestamps are stored/served in UTC); this is used ONLY to interpret user-entered wall-clock
+# values — currently `AlertRule.trigger_time` — against "now" when firing scheduled task
+# reminders (apps.alerts.services.fire_scheduled_alerts). Default Africa/Douala (WAT, UTC+1):
+# this deployment's default currency is XAF (Central/West Africa). Override per deployment with
+# the FARM_TIME_ZONE env var if the farm is elsewhere — a wrong value here silently sends
+# reminders an hour or more off.
+FARM_TIME_ZONE = config('FARM_TIME_ZONE', default='Africa/Douala')
+
 STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

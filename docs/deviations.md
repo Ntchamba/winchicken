@@ -2679,3 +2679,167 @@ below were made without asking and are also summarised in `README.md`.
      `pytest` suite (117 passing); the browser extension was not connected this session,
      so the modal's visual blur/scale was verified by code review against the existing
      `ProtocolEditModal` it copies.
+
+## Part 21 — Login screen: "Créer une ferme" wording + pre-login farm reset flow (2026-08-30)
+
+Task: (A) rename every user-facing "Créer la ferme" / "Créez la ferme" link/button label
+to "Créer une ferme"; (B) remove `/login`'s stale "Créez la ferme" link and replace it
+with a quiet, credential-gated "Réinitialiser la ferme" entry point; (C) build a
+standalone reset flow that works without a session, reusing the existing
+`FactoryResetModal` confirm screens. Autonomous mode — decisions below made without
+asking, also summarised in `README.md`.
+
+198. **"Créer une ferme" wording — scope of the audit.** Changed in live UI: the
+     `/create-farm` page `<h1>`, its submit button, and its `useDocumentTitle`. Also changed
+     where the same string is recorded as a *canonical UI label* — `README.md` quick-start,
+     the French-pass string list in Part 4 above, and README's civility-field entry that
+     names the form. **Not** changed: past-tense changelog/comment prose that narrates old
+     behaviour (`frontend/src/api/client.js`'s 401-redirect comment, Part 12's landing-CTA
+     sentence here) — editing quoted labels inside a historical record falsifies it without
+     fixing any rendered text. The `/login` → `/create-farm` link isn't in either list: it
+     was deleted outright (item 199).
+
+199. **`/login`'s "Créez la ferme" link removed, not relabelled.** Farm creation is
+     permanently closed once a farm exists (`FarmCreateView` → 409, `/create-farm`'s own
+     `farmApi.exists()` guard redirects away), and `/login` is only meaningfully reachable
+     *after* a farm exists — so the link was always wrong here. Replaced with a
+     `<button class="auth-reset-link">` (muted grey, 12.5px, plain underline, hover →
+     `--danger`) wrapped in `.auth-reset-hint` — deliberately not the mint/bold treatment of
+     `.auth-switch a`, since this is edge-case recovery, not a primary path. Rendered only
+     when `GET /api/farm/exists/` returns true (LoginPage now does that check on mount, the
+     same one LandingPage/CreateFarmPage already do). No hard redirect guard was added to
+     `/login` for the no-farm case — the task said none was needed if routing already only
+     reaches it with a farm, and a fresh install can't authenticate anyone there anyway.
+
+200. **Pre-login reset = `FactoryResetModal mode="pre-login"`, not a new component.** The
+     task's step 2 ("same confirmation flow already built — reuse it") is honoured by
+     parametrising the existing modal rather than duplicating its backdrop / focus-trap /
+     explanation list / type-the-farm-name confirm. `mode="pre-login"` prepends one
+     `"credentials"` step and swaps two things: the confirm step drops its password field
+     (proven in step 0) and the final call is `farmApi.resetConfirm(token, name)` instead of
+     `farmApi.reset(password)`. `mode="dashboard"` (default) is byte-for-byte the old
+     behaviour. `user?.farm_name` is now null-safe because there is no session user in
+     pre-login mode — the farm name comes from the step-1 response instead.
+
+201. **Two new endpoints, both `AllowAny`; the existing session endpoint untouched.**
+     `POST /api/farm/reset/request/` (`PreLoginResetRequestSerializer`) verifies email +
+     password belong to a real `UserRole.ADMIN` on the single farm and returns
+     `{token, farm_name}`. `POST /api/farm/reset/confirm/` (`PreLoginResetConfirmSerializer`)
+     re-opens the token, re-checks the account is still an Administrateur, checks the
+     typed-back `Farm.name`, then calls the **same `apps.core.services.factory_reset_farm`**.
+     `POST /api/farm/reset/` (session + `IsAdmin` + `FarmResetSerializer`) is unchanged and
+     still what `/dashboard/settings` uses.
+
+202. **Step-up token: `django.core.signing`, 5-minute TTL, no DB, no session.**
+     `signing.dumps({'uid': user.id}, salt='apps.core.prelogin-farm-reset')` — HMAC-SHA256
+     over `SECRET_KEY`. Chosen over (a) issuing a real JWT (that *is* a login session — the
+     opposite of the requirement, and would need blacklisting), (b) a DB `PasswordResetToken`
+     row (more moving parts; the row would itself be CASCADE-wiped by the reset it authorises)
+     and (c) re-sending the password to `/confirm/` (makes the confirm call as sensitive as
+     the request call, for no gain). `signing.loads(..., max_age=300)` raises
+     `SignatureExpired` (a `BadSignature` subclass) once stale; a token minted with any other
+     salt fails the same way. `PRELOGIN_RESET_MAX_AGE` is a module constant so a test can
+     `mock.patch` it to force expiry.
+
+203. **No account enumeration for an anonymous caller.** Unknown email, wrong password, and
+     valid credentials for a non-Administrateur all raise the identical
+     `self.fail('invalid')` → `{"non_field_errors": ["Identifiants invalides."]}` (HTTP 400,
+     never 403 — a 403 would confirm the account exists). The unknown-email branch runs a
+     throwaway `User().set_password(password)` so response timing doesn't leak existence
+     either (mirrors Django's own `ModelBackend.authenticate`). The frontend surfaces it via
+     the shared `getServerErrorMessage` helper, which already reads `non_field_errors` and
+     also covers the backend-unreachable case.
+
+204. **"role `ADMINISTRATEUR`" → `UserRole.ADMIN`.** The task's wording; this codebase's enum
+     value is `ADMIN` (DB string `'ADMIN'`, French label "Administrateur", the single
+     per-farm admin created by `FarmCreateView`). `SECONDARY_ADMIN` is a different role and is
+     *not* accepted by either new endpoint.
+
+205. **Verification.** 10 new backend tests
+     (`apps/core/tests.py::PreLoginFarmResetTests`, isolated test DB): token round-trip →
+     full CASCADE wipe + `farm/exists/` → false; the three indistinguishable credential
+     failures; tampered / foreign-salt / expired token each rejected with nothing deleted;
+     wrong farm name rejected with nothing deleted; request endpoint reachable with no auth.
+     Full `apps.core` suite green (32). `vite build` + `oxlint` clean. Consistent with Part
+     12, the wipe was **not** triggered against the running dev stack (its DB holds the
+     user's real between-session farm data and the action is irreversible) — the `/login`
+     link, the credentials step, and the generic-error path were checked headless; the
+     request/confirm endpoints were probed with bad input against the dev stack (400s, farm
+     intact).
+
+## Part 22 — Time-based trigger for SCHEDULED task reminders (2026-08-30)
+
+Task: build the running process that actually fires `AlertRule` rows of
+`trigger_mode = SCHEDULED` at their configured `trigger_time`. Until now these rows
+(`PROTOCOL_TASK` from `expand_protocol_to_alert_rules`, `WEIGHING_REMINDER` from
+`sync_weighing_reminder`) were created correctly but never evaluated — the project had
+only one Beat entry (`daily-stock-consumption`, Part 20). Autonomous mode — decisions
+below made without asking, also summarised in `README.md`.
+
+206. **Every-minute Celery Beat entry `check-scheduled-alerts`** → `apps.alerts.tasks.
+     check_scheduled_alerts` → `apps.alerts.services.fire_scheduled_alerts`. Added to the
+     existing static `app.conf.beat_schedule` in `config/celery.py` (`crontab()` = every
+     minute) — no `django-celery-beat` dependency, same style as Part 20. A
+     `python manage.py check_scheduled_alerts [--at HH:MM]` command runs the same service
+     synchronously for testing / manual catch-up (`--at` simulates a farm-local minute on
+     today's date).
+
+207. **New setting `FARM_TIME_ZONE` (env, default `Africa/Douala`).** `TIME_ZONE` stays
+     `'UTC'` (all stored/served timestamps unchanged). `AlertRule.trigger_time` is a naive
+     wall-clock value the user typed thinking in *local* farm time, so `fire_scheduled_alerts`
+     converts `timezone.now()` to `FARM_TIME_ZONE` before comparing. Verified explicitly:
+     with `TIME_ZONE='UTC'`, comparing `trigger_time=08:00` against UTC now would fire the
+     reminder at 09:00 WAT — an hour late. Default is `Africa/Douala` (WAT, UTC+1) because
+     this deployment's default currency is XAF (Central/West Africa); **override
+     `FARM_TIME_ZONE` per deployment** if the farm is elsewhere. A test
+     (`test_comparison_is_farm_local_not_utc`) pins that the comparison is farm-local, not
+     UTC.
+
+208. **3-minute catch-up window + per-rule idempotency.** The task matches rules whose
+     `trigger_time` falls in `[now - 3min, now]` (midnight wrap handled) so a brief Beat
+     outage (worker restart, redis hiccup) doesn't silently skip a reminder. Duplicates are
+     prevented by `_already_fired`: an `Alert` for this `rule + batch` created in the last
+     **10 minutes** (wider than the 3-min window, far narrower than any rule's daily
+     cadence, no midnight-boundary edge) means the occurrence is already handled. `Alert` has
+     no date/time columns and adding them was out of scope, hence the time-delta check rather
+     than an exact `rule + batch + date + trigger_time` unique match. `SmsMessage` keeps its
+     own `idempotency_key` guard on top (`{rule_type}:{batch}:{recipient}:{date}:{trigger_time}`).
+
+209. **`ONE_TIME` rules are deactivated (`active = False`) once fired**, inside the same
+     transaction as the `Alert`. `expand_protocol_to_alert_rules` only ever deletes
+     *future-dated* unfired `PROTOCOL_TASK` rows on a protocol re-edit, so a fired
+     (past-dated, inactive) row is left in place — it just never re-enters the query
+     (`active=True` filter). `DAILY`/`WEEKLY`/`MONTHLY` rules stay active and fire once per
+     due day (the 10-minute idempotency check enforces once-per-day).
+
+210. **Due-today check reuses the existing helpers, no parallel schedule logic.**
+     `PROTOCOL_TASK`: `apps.houses.services._protocol_line_occurrence(line, day_of_cycle)`
+     must be non-`None` (today inside the originating line's day range — so a since-edited
+     protocol that moved the line out of range stops firing it) **and**, for `ONE_TIME`,
+     `scheduled_date == today`. `WEIGHING_REMINDER`: `apps.batches.services.
+     weighing_reminder_task(batch, day_of_cycle)` non-`None` (that helper already encodes the
+     `DAILY`/`WEEKLY`/`MONTHLY` cadence). All rule types additionally require
+     `batch.status == ACTIVE` and, if `active_days` is set (nothing populates it today, but
+     the field exists), today's 3-letter weekday token to be listed.
+
+211. **Message + recipient reuse `apps.alerts.templates`.** `resolve_task_reminder_recipient`
+     (the line's `assigned_to` else the batch's Fermier) for `PROTOCOL_TASK`;
+     `rule.assigned_to or batch.farmer` for `WEIGHING_REMINDER`. Body from
+     `render_task_reminder` — timed to the `ProtocolTimeSlot` whose `start_time` matches
+     `trigger_time` when there is one, else the first slot, else "aujourd'hui". One `Alert`
+     per fired rule, `severity='info'`, so the notification bell and the Twilio
+     `send_sms_task` path behave exactly as for EVENT alerts. **Not** gated by
+     `NotificationPreference` (which throttles farm-wide EVENT alerts) — a scheduled task
+     reminder is a personal job assignment to the responsible user, per `templates.py`'s
+     existing framing. `expand_protocol_to_alert_rules` still writes a single hardcoded
+     `trigger_time='08:00'` per line rather than one rule per time slot; wiring per-slot
+     trigger times into the expansion is a separate follow-up and out of scope here.
+
+212. **Verification.** 8 new tests (`apps/alerts/tests.py::FireScheduledAlertsTests`):
+     matching rule → Alert + SmsMessage to the resolved recipient with the personalised body;
+     idempotent re-run within the window; `ONE_TIME` deactivation; closed batch → nothing;
+     outside the line's day range → nothing; 2-minute-late catch-up fires, 5-minute-late does
+     not; farm-local (not UTC) comparison; `WEIGHING_REMINDER` fires and stays active. Full
+     backend suite green. Live smoke test against the running stack: a rule at the current
+     farm-local minute fired one Alert + one PENDING SmsMessage, re-run produced nothing, the
+     `ONE_TIME` rule went inactive.

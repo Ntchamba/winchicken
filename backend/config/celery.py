@@ -9,14 +9,19 @@ app = Celery('winchicken')
 app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
 
-# The project's only Celery Beat schedule (2026-08-28, stock restructure Part E). Static
-# beat_schedule rather than django-celery-beat — no new dependency, consistent with the
-# existing `CELERY_*` settings style. Run with `celery -A config beat`. The pre-existing
-# unfired SCHEDULED AlertRule types (PROTOCOL_TASK / WEIGHING_REMINDER) stay out of scope —
-# see docs/deviations.md.
+# Static beat_schedule rather than django-celery-beat — no new dependency, consistent with the
+# existing `CELERY_*` settings style. Run with `celery -A config beat`.
 app.conf.beat_schedule = {
+    # Protocol-driven daily stock consumption (2026-08-28, stock restructure Part E).
     'daily-stock-consumption': {
         'task': 'apps.stock.tasks.deduct_daily_stock_consumption',
         'schedule': crontab(hour=0, minute=0),
+    },
+    # Time-based trigger for SCHEDULED task reminders (2026-08-30) — every minute, since
+    # AlertRule.trigger_time is hour:minute-specific. apps.alerts.services.fire_scheduled_alerts
+    # is idempotent, so a minute cadence + a small catch-up window is safe.
+    'check-scheduled-alerts': {
+        'task': 'apps.alerts.tasks.check_scheduled_alerts',
+        'schedule': crontab(),  # every minute
     },
 }
