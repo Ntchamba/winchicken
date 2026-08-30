@@ -9,9 +9,13 @@ const EASE_EXPO = [0.16, 1, 0.3, 1];
 const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
 let localRowId = 5000;
+const todayISO = () => new Date().toISOString().slice(0, 10);
 
 // Flat StockItemSerializer list -> `{ [categoryId]: [row] }` in the shape StockParametersForm
 // wants. Rows for a category with no items still get an entry so the tab renders empty.
+// `quantity` is pre-filled with the item's current on-hand so the Quantité column round-trips
+// safely: the PUT below fully replaces StockItem rows (cascading away their StockMovement
+// history), and handleSave then re-records each row's quantity as a single IN movement.
 function buildData(items, categories) {
   const map = Object.fromEntries(categories.map((c) => [c.id, []]));
   for (const item of items) {
@@ -25,6 +29,8 @@ function buildData(items, categories) {
       unit: item.unit,
       price: item.unit_price,
       supplier: item.supplier ?? null,
+      quantity: item.current_quantity ?? "",
+      date: todayISO(),
     });
   }
   return map;
@@ -106,7 +112,24 @@ export default function StockParametersModal({ open, farmId, onClose, onSaved })
     setSaving(true);
     setSaveError("");
     try {
-      await stockApi.putItems(farmId, payload.items);
+      // 1. Persist the item definitions (full replace).
+      const { data } = await stockApi.putItems(farmId, payload.items);
+      // 2. Record the Quantité / Date columns as stock IN movements. The PUT above recreated
+      //    every StockItem (and cascaded away prior movements), so re-post each row's quantity
+      //    against the fresh item_code, matched back by name.
+      const codeByName = {};
+      for (const it of data.items || []) codeByName[it.name] = it.item_code;
+      const movements = (payload.items || [])
+        .filter((it) => it.quantity != null && Number(it.quantity) > 0 && codeByName[it.name])
+        .map((it) => stockApi.addMovement({
+          item: codeByName[it.name],
+          movement_type: "IN",
+          quantity: Number(it.quantity),
+          movement_date: it.movement_date || todayISO(),
+          note: "Saisie via « Mettre à jour le stock »",
+        }));
+      if (movements.length) await Promise.all(movements);
+
       dirtyRef.current = false;
       onSaved?.();
       onClose();
@@ -162,6 +185,7 @@ export default function StockParametersModal({ open, farmId, onClose, onSaved })
                 saving={saving}
                 onSave={handleSave}
                 onSuppliersChanged={loadSuppliers}
+                showStockEntry
               />
             ) : (
               <p className="empty-state" style={{ margin: 40 }}>Chargement…</p>

@@ -33,6 +33,13 @@ const FEED_STAGE_OPTIONS = [
 
 const UNITS = ["kg", "L", "dose", "unité", "sac"];
 
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+// Column widths for the item table — Article | Détail | Seuil | Prix | Fournisseur | Quantité |
+// Date | (delete). Set inline on .table-head and every .schedule-row because the shared grid in
+// house-protocol-theme-light.css only declares 5 tracks.
+const ITEM_GRID = "1.4fr 1fr 1.1fr .7fr 1.1fr .8fr 140px 34px";
+
 let nextRowId = 1000;
 const makeRow = (overrides = {}) => ({
   id: nextRowId++,
@@ -44,6 +51,8 @@ const makeRow = (overrides = {}) => ({
   unit: UNITS[0],
   price: 0,
   supplier: null,
+  quantity: "",
+  date: todayISO(),
   ...overrides,
 });
 
@@ -70,6 +79,8 @@ const makeRow = (overrides = {}) => ({
  *   alert_threshold, unit_price, supplier).
  * @param {() => void} [onBack] - onboarding only.
  * @param {() => void} [onSuppliersChanged] - called after an inline "+ Nouveau fournisseur".
+ * @param {boolean} [showStockEntry] - show the "Quantité" + "Date" columns (the "Mettre à jour
+ *   le stock" modal only); each row's quantity is recorded as a stock IN movement on save.
  */
 export default function StockParametersForm({
   initialData = {},
@@ -82,6 +93,7 @@ export default function StockParametersForm({
   onSave,
   onBack,
   onSuppliersChanged,
+  showStockEntry = false,
 }) {
   const [warehouseName, setWarehouseName] = useState(warehouse.name || "Entrepôt principal");
   const [currency, setCurrency] = useState(warehouse.currency || "XAF");
@@ -211,6 +223,10 @@ export default function StockParametersForm({
         alert_threshold: Number(row.threshold) || 0,
         unit_price: Number(row.price) || 0,
         supplier: row.supplier ?? null,
+        // Quantité / Date columns — ignored by PUT /stock-items/, read by
+        // StockParametersModal.handleSave to record a stock IN movement.
+        quantity: row.quantity === "" || row.quantity == null ? null : Number(row.quantity),
+        movement_date: row.date || todayISO(),
       }))
     ),
   });
@@ -372,18 +388,20 @@ export default function StockParametersForm({
           </div>
         </div>
 
-        <div className="table-head">
+        <div className="table-head" style={showStockEntry ? { gridTemplateColumns: ITEM_GRID } : undefined}>
           <span>Article</span>
           <span>Détail</span>
           <span>Seuil d'alerte</span>
           <span>Prix unitaire</span>
           <span>Fournisseur</span>
+          {showStockEntry && <span>Quantité</span>}
+          {showStockEntry && <span>Date</span>}
           <span />
         </div>
 
         <div className="rows">
           {rows.map((row) => (
-            <div key={row.id} className="schedule-row">
+            <div key={row.id} className="schedule-row" style={showStockEntry ? { gridTemplateColumns: ITEM_GRID } : undefined}>
               <input
                 value={row.item}
                 onChange={(e) => updateRow(row.id, "item", e.target.value)}
@@ -451,6 +469,26 @@ export default function StockParametersForm({
                   {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   {farmId && <option value="__new__">+ Nouveau fournisseur</option>}
                 </select>
+              )}
+
+              {showStockEntry && (
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="Quantité"
+                  aria-label="Quantité en stock"
+                  value={row.quantity}
+                  onChange={(e) => updateRow(row.id, "quantity", e.target.value)}
+                />
+              )}
+              {showStockEntry && (
+                <input
+                  type="date"
+                  aria-label="Date"
+                  value={row.date}
+                  onChange={(e) => updateRow(row.id, "date", e.target.value)}
+                />
               )}
 
               <button className="delete-button" aria-label="Supprimer l'article" onClick={() => deleteRow(row.id)}>
