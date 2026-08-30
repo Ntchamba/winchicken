@@ -104,6 +104,43 @@ docs/       Architecture, data model, API reference, calculations, setup, and de
 docker-compose.yml   db (Postgres 16) + redis + web (Django) + worker (Celery) + frontend (Vite)
 ```
 
+## Running the tests
+
+**Backend** — pytest + pytest-django, one `tests.py` per app under
+`backend/apps/*/`. Unit tests (calculations, serializers, the scheduled-alert
+time match) and integration tests (full request/response through the DRF test
+client against a real Postgres) live side by side.
+
+```bash
+# in Docker (matches CI)
+docker compose exec web pytest
+docker compose exec web pytest apps/alerts -q            # one app
+docker compose exec web pytest apps/alerts/tests.py::FireScheduledAlertsTests
+
+# local venv
+cd backend && pytest
+```
+
+`SMS_PROVIDER=console` (the default) makes the SMS path log instead of calling
+a gateway, so the suite never makes a real network call. One-off run of the
+scheduled-alert trigger outside Beat: `python manage.py check_scheduled_alerts
+[--at HH:MM]`.
+
+**Frontend** — Vitest + React Testing Library, `*.test.jsx` under
+`frontend/src/**/__tests__/`. Config (jsdom, `src/test/setup.js`) is in
+`vite.config.js`.
+
+```bash
+cd frontend
+npm test                  # vitest run (CI mode, one pass)
+npm test -- --watch       # watch mode
+npm test QuickEntryPanel   # filter by filename
+```
+
+**CI** — `.github/workflows/ci.yml` runs both on every push and PR: a backend
+job (Postgres 16 service → `pytest`) and a frontend job (`npm ci` →
+`npm run lint` → `npm test` → `npm run build`), in parallel.
+
 ## Recent work
 
 - **Time-based trigger for scheduled task reminders (2026-08-30):** `SCHEDULED` `AlertRule`
