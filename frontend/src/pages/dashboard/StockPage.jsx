@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
 import StockEvolutionChart from "../../components/StockEvolutionChart";
+import StockLevelsSection from "../../components/StockLevelsSection";
 import SuppliersSection from "../../components/SuppliersSection";
 import StockParametersModal from "../../components/StockParametersModal";
 import { stockApi } from "../../api/endpoints";
@@ -19,18 +20,22 @@ export default function StockPage() {
   const farmId = user.farm;
 
   const [evolution, setEvolution] = useState([]);
+  const [items, setItems] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
 
   const refresh = useCallback(() => {
-    return Promise.all([stockApi.evolution(farmId), stockApi.suppliers(farmId)]).then(
-      ([evoRes, supRes]) => {
-        setEvolution(evoRes.data);
-        setSuppliers(supRes.data.results || supRes.data);
-        setLoading(false);
-      }
-    );
+    return Promise.all([
+      stockApi.evolution(farmId),
+      stockApi.items(farmId),
+      stockApi.suppliers(farmId),
+    ]).then(([evoRes, itemsRes, supRes]) => {
+      setEvolution(evoRes.data);
+      setItems(itemsRes.data.items || []);
+      setSuppliers(supRes.data.results || supRes.data);
+      setLoading(false);
+    });
   }, [farmId]);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -42,7 +47,10 @@ export default function StockPage() {
           <p className="eyebrow">WINCHICKEN</p>
           <p className="brand-subtitle">Stock</p>
         </div>
-        <button className="save-button" style={{ marginLeft: "auto", width: "auto", padding: "0 18px" }} onClick={() => setModalOpen(true)}>
+        {/* Plain .save-button (no padding override) = the app's "big primary action" scale,
+            same as the onboarding "Suivant" and the enlarged weighing/mortality "Enregistrer"
+            buttons. width:auto kept — it sits in the brand row, not a full-width bar. */}
+        <button className="save-button" style={{ marginLeft: "auto", width: "auto" }} onClick={() => setModalOpen(true)}>
           <Pencil size={15} strokeWidth={2} />
           Mettre à jour le stock
         </button>
@@ -53,6 +61,7 @@ export default function StockPage() {
       ) : (
         <>
           <StockEvolutionChart series={evolution} />
+          <StockLevelsSection items={items} onChanged={refresh} />
           <SuppliersSection suppliers={suppliers} farmId={farmId} onChanged={refresh} />
         </>
       )}
