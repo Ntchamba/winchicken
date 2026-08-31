@@ -142,8 +142,15 @@ def purchases_evolution(farm, period='month'):
 
 
 def monthly_summary(farm, range_param='6m'):
-    """Per-month revenue (Sale.total_amount) vs expenses (Expense.amount) series for the finance
-    trend chart — one entry per calendar month in the window, zero-filled if no rows exist."""
+    """Per-month revenue (Sale.total_amount) vs expenses series for the finance trend chart —
+    one entry per calendar month in the window, zero-filled if no rows exist.
+
+    "expenses" = `Expense.amount` (which now includes the Expense a cost-tracked "Ajouter du
+    stock" writes) **plus** the `amount` of RECEIVED `PurchaseOrder` rows in that month (by
+    `order_date`) — the two are disjoint (a RECEIVED PurchaseOrder never also writes an
+    Expense), and this is the same combination the Achats section's `purchases_evolution`
+    already uses (2026-08-31 — before this, a received PurchaseOrder showed in Achats but not in
+    Globale's trend or category donut)."""
     months = _month_range(range_param)
     result = []
     for month_start in months:
@@ -154,7 +161,16 @@ def monthly_summary(farm, range_param='6m'):
         expenses = sum(
             e.amount for e in Expense.objects.filter(farm=farm, expense_date__gte=month_start, expense_date__lt=month_end)
         )
-        result.append({'month': month_start.strftime('%Y-%m'), 'revenue': float(revenue), 'expenses': float(expenses)})
+        received_orders = sum(
+            o.amount for o in PurchaseOrder.objects.filter(
+                farm=farm, status=OrderStatus.RECEIVED, order_date__gte=month_start, order_date__lt=month_end,
+            )
+        )
+        result.append({
+            'month': month_start.strftime('%Y-%m'),
+            'revenue': float(revenue),
+            'expenses': float(expenses + received_orders),
+        })
     return result
 
 
@@ -239,11 +255,19 @@ def expense_category_breakdown(farm, range_param='6m'):
     the response rather than returned with amountPct: 0."""
     months = _month_range(range_param)
     period_start = months[0]
-    expenses = Expense.objects.filter(farm=farm, expense_date__gte=period_start)
-    total = sum(e.amount for e in expenses) or 1
     totals = OrderedDict((category.value, 0) for category in ExpenseCategory)
-    for expense in expenses:
+
+    for expense in Expense.objects.filter(farm=farm, expense_date__gte=period_start):
         totals[expense.category] += expense.amount
+    # RECEIVED PurchaseOrders folded onto the same axis (2026-08-31), each mapped from its
+    # item's stock-category kind — the same mapping/combination the Achats section uses.
+    for order in PurchaseOrder.objects.filter(
+        farm=farm, status=OrderStatus.RECEIVED, order_date__gte=period_start,
+    ).select_related('item', 'item__category'):
+        mapped = _ITEM_CATEGORY_TO_EXPENSE_CATEGORY.get(order.item.category.kind, ExpenseCategory.MISC)
+        totals[mapped] += order.amount
+
+    total = sum(totals.values()) or 1
     categories = [
         {'category': category, 'amountPct': round(float(amount) / float(total) * 100, 1)}
         for category, amount in totals.items() if amount

@@ -404,6 +404,26 @@ class FinanceEvolutionTests(APITestCase):
         self.assertEqual(resp.data['totalSpent'], 2000.0)
         self.assertEqual(resp.data['breakdown'], [{'category': 'FEED', 'amount': 2000.0}])
 
+    def test_received_purchase_order_also_reaches_globale_trend_and_donut(self):
+        """Regression: a RECEIVED PurchaseOrder showed in Achats but not in Globale's
+        revenue/expense trend or the expense-category donut (2026-08-31 fix)."""
+        from apps.finance.calculations import expense_category_breakdown, monthly_summary
+
+        item = StockItem.objects.create(
+            item_code='VET-2-001', farm=self.farm,
+            category=StockCategory.objects.get(farm=self.farm, kind='VETERINARY'), name='Vaccin', unit='dose',
+        )
+        PurchaseOrder.objects.create(
+            farm=self.farm, item=item, supplier='X', quantity=10, amount=3000,
+            status='RECEIVED', order_date=date.today(),
+        )
+
+        this_month = monthly_summary(self.farm)[-1]
+        self.assertEqual(this_month['expenses'], 3000.0)  # was 0 before the fix
+
+        donut = {c['category']: c['amountPct'] for c in expense_category_breakdown(self.farm)['categories']}
+        self.assertEqual(donut, {'VETERINARY': 100.0})    # was {} before the fix
+
 
 class BatchClosingReportCalculationTests(APITestCase):
     """apps.batches.calculations.build_closing_report — every figure derived from Expense/Sale/
