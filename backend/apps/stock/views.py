@@ -239,14 +239,17 @@ class FarmStockCompositionsView(generics.ListCreateAPIView):
 
 
 class StockCompositionDetailView(generics.RetrieveDestroyAPIView):
-    """GET/DELETE /api/stock-compositions/{id}/. DELETE reserved to Admin/Farm Manager/Farmer;
-    removes the recipe only — StockMovements from past executions are untouched."""
+    """GET/PATCH/DELETE /api/stock-compositions/{id}/. PATCH (Admin/Farm Manager/Farmer) is a
+    light update of `base_output_quantity` only — the "rendement de base" that gates the
+    add-stock auto-deduction; ingredients/name/output are not editable here (delete + recreate).
+    DELETE reserved to Admin/Farm Manager/Farmer; removes the recipe only — StockMovements from
+    past executions are untouched."""
 
     serializer_class = StockCompositionSerializer
     lookup_field = 'pk'
 
     def get_permissions(self):
-        if self.request.method == 'DELETE':
+        if self.request.method in ('DELETE', 'PATCH'):
             return [IsAdminOrFarmManagerOrFarmer()]
         return [IsAuthenticated()]
 
@@ -255,6 +258,23 @@ class StockCompositionDetailView(generics.RetrieveDestroyAPIView):
             StockComposition.objects.filter(farm=self.request.user.farm)
             .select_related('output_item').prefetch_related('ingredients__item')
         )
+
+    def patch(self, request, *args, **kwargs):
+        composition = self.get_object()
+        if 'base_output_quantity' in request.data:
+            raw = request.data.get('base_output_quantity')
+            if raw in (None, ''):
+                composition.base_output_quantity = None
+            else:
+                try:
+                    value = float(raw)
+                except (TypeError, ValueError):
+                    return Response({'detail': 'Rendement de base invalide.'}, status=status.HTTP_400_BAD_REQUEST)
+                if value <= 0:
+                    return Response({'detail': 'Le rendement de base doit être positif.'}, status=status.HTTP_400_BAD_REQUEST)
+                composition.base_output_quantity = value
+            composition.save(update_fields=['base_output_quantity'])
+        return Response(self.get_serializer(composition).data)
 
 
 class StockCompositionExecuteView(APIView):

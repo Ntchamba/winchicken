@@ -412,6 +412,21 @@ class StockCompositionApiTests(APITestCase):
         self.assertEqual(self.client.delete(f'/api/stock-compositions/{cid}/').status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(StockComposition.objects.count(), 0)
 
+    def test_patch_sets_base_output_quantity(self):
+        cid = self.client.post(f'/api/farms/{self.farm.id}/stock-compositions/', self._payload(), format='json').data['id']
+        resp = self.client.patch(f'/api/stock-compositions/{cid}/', {'base_output_quantity': 1800}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['base_output_quantity'], 1800)
+        self.assertEqual(StockComposition.objects.get(id=cid).base_output_quantity, 1800)
+        # clearing it back to null
+        self.client.patch(f'/api/stock-compositions/{cid}/', {'base_output_quantity': None}, format='json')
+        self.assertIsNone(StockComposition.objects.get(id=cid).base_output_quantity)
+        # non-positive rejected
+        self.assertEqual(
+            self.client.patch(f'/api/stock-compositions/{cid}/', {'base_output_quantity': 0}, format='json').status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
     def test_create_rejects_no_ingredients_and_non_privileged_role(self):
         bad = {'name': 'X', 'output_item': self.provende.item_code, 'ingredients': []}
         self.assertEqual(

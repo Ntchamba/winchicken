@@ -4,6 +4,10 @@ export const farmApi = {
   exists: () => client.get("/farm/exists/"),
   create: (payload) => client.post("/farm/create/", payload),
   reset: (password) => client.post("/farm/reset/", { password }),
+  // Unauthenticated two-step reset reachable from /login (no session): verify admin
+  // credentials → get a 5-min token, then confirm with the token + exact farm name.
+  resetRequest: (email, password) => client.post("/farm/reset/request/", { email, password }),
+  resetConfirm: (token, farmName) => client.post("/farm/reset/confirm/", { token, farm_name: farmName }),
 };
 
 export const authApi = {
@@ -77,6 +81,7 @@ export const stockApi = {
   updateItem: (itemCode, payload) => client.patch(`/stock-items/${itemCode}/`, payload),
   compositions: (farmId) => client.get(`/farms/${farmId}/stock-compositions/`),
   addComposition: (farmId, payload) => client.post(`/farms/${farmId}/stock-compositions/`, payload),
+  updateComposition: (id, payload) => client.patch(`/stock-compositions/${id}/`, payload),
   removeComposition: (id) => client.delete(`/stock-compositions/${id}/`),
   executeComposition: (id, payload) => client.post(`/stock-compositions/${id}/execute/`, payload),
   categories: (farmId) => client.get(`/farms/${farmId}/stock-categories/`),

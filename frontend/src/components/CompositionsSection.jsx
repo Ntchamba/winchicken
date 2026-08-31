@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Play, Plus, Trash2, X } from "lucide-react";
+import { Check, Loader2, Play, Plus, Trash2, X } from "lucide-react";
 import { stockApi } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 import ResourceCombobox from "./ResourceCombobox";
@@ -75,6 +75,27 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
     await stockApi.removeComposition(id);
     load();
     onChanged?.();
+  };
+
+  // --- Rendement de base (inline edit on an existing recipe) --------------------
+  const [yieldEditFor, setYieldEditFor] = useState(null);
+  const [yieldDraft, setYieldDraft] = useState("");
+  const [yieldBusy, setYieldBusy] = useState(false);
+
+  const startYieldEdit = (c) => { setYieldEditFor(c.id); setYieldDraft(c.base_output_quantity ?? ""); };
+  const saveYield = async (c) => {
+    if (yieldDraft !== "" && Number(yieldDraft) <= 0) return;
+    setYieldBusy(true);
+    try {
+      await stockApi.updateComposition(c.id, {
+        base_output_quantity: yieldDraft === "" ? null : Number(yieldDraft),
+      });
+      setYieldEditFor(null);
+      load();
+      onChanged?.();
+    } finally {
+      setYieldBusy(false);
+    }
   };
 
   // --- Exécuter ---------------------------------------------------------------
@@ -220,9 +241,40 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
                   <td>{ingredientSummary(c)}</td>
                   <td>
                     {c.output_item_name}{c.output_item_unit ? ` (${c.output_item_unit})` : ""}
-                    {c.base_output_quantity > 0 && (
-                      <span className="schedule-note"> · rendement {c.base_output_quantity}{c.output_item_unit ? ` ${c.output_item_unit}` : ""}/lot</span>
-                    )}
+                    <div className="schedule-note" style={{ marginTop: 2 }}>
+                      {yieldEditFor === c.id ? (
+                        <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                          rendement
+                          <input
+                            type="number" min="0" step="any" autoFocus
+                            value={yieldDraft}
+                            onChange={(e) => setYieldDraft(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") saveYield(c); if (e.key === "Escape") setYieldEditFor(null); }}
+                            placeholder="par lot"
+                            style={{ width: 90 }}
+                          />
+                          {c.output_item_unit ? ` ${c.output_item_unit}/lot` : "/lot"}
+                          <button type="button" className="icon-button" onClick={() => saveYield(c)} aria-label="Enregistrer" disabled={yieldBusy}>
+                            {yieldBusy ? <Loader2 size={12} className="spin" /> : <Check size={12} strokeWidth={2.2} />}
+                          </button>
+                          <button type="button" className="icon-button" onClick={() => setYieldEditFor(null)} aria-label="Annuler">
+                            <X size={12} strokeWidth={2.2} />
+                          </button>
+                        </span>
+                      ) : canManage ? (
+                        <button
+                          type="button"
+                          onClick={() => startYieldEdit(c)}
+                          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "inherit", textDecoration: "underline" }}
+                        >
+                          {c.base_output_quantity > 0
+                            ? `rendement ${c.base_output_quantity}${c.output_item_unit ? ` ${c.output_item_unit}` : ""}/lot`
+                            : "définir le rendement de base"}
+                        </button>
+                      ) : c.base_output_quantity > 0 ? (
+                        `rendement ${c.base_output_quantity}${c.output_item_unit ? ` ${c.output_item_unit}` : ""}/lot`
+                      ) : null}
+                    </div>
                   </td>
                   {canManage && (
                     <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
