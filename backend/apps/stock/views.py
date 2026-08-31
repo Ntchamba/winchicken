@@ -10,10 +10,12 @@ from apps.core.models import Farm
 from apps.core.permissions import IsAdminOrFarmManagerOrFarmer
 from apps.core.services import record_audit_log
 from apps.stock.calculations import current_quantity
-from apps.stock.models import StockCategory, StockItem, StockMovement, Supplier, Vaccination
+from apps.stock.models import (
+    StockCategory, StockComposition, StockItem, StockMovement, Supplier, Vaccination,
+)
 from apps.stock.serializers import (
-    StockCategorySerializer, StockItemSerializer, StockMovementSerializer, SupplierSerializer,
-    VaccinationSerializer, generate_item_code,
+    StockCategorySerializer, StockCompositionSerializer, StockItemSerializer, StockMovementSerializer,
+    SupplierSerializer, VaccinationSerializer, generate_item_code,
 )
 
 _StockItemsPayload = inline_serializer('StockItemsPayload', {'items': StockItemSerializer(many=True)})
@@ -199,6 +201,58 @@ class FarmSuppliersView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         serializer.save(farm=self.get_farm())
+
+
+class FarmStockCompositionsView(generics.ListCreateAPIView):
+    """GET/POST /api/farms/{farmId}/stock-compositions/ — the farm's composition "recipes".
+    GET open to any farm user; POST reserved to Admin/Farm Manager/Farmer. POST creates the
+    composition + its ingredient rows in one transaction and writes NO StockMovement (that
+    happens only on Exécuter, see StockCompositionExecuteView)."""
+
+    serializer_class = StockCompositionSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAdminOrFarmManagerOrFarmer()]
+        return [IsAuthenticated()]
+
+    def get_farm(self):
+        return get_object_or_404(Farm, pk=self.kwargs['farm_id'])
+
+    def get_queryset(self):
+        return (
+            StockComposition.objects.filter(farm=self.get_farm())
+            .select_related('output_item')
+            .prefetch_related('ingredients__item')
+        )
+
+    def perform_create(self, serializer):
+        farm = self.get_farm()
+        data = serializer.validated_data
+        farm_item_codes = set(StockItem.objects.filter(farm=farm).values_list('item_code', flat=True))
+        codes = {data['output_item'].item_code} | {ing['item'].item_code for ing in data['ingredients']}
+        if not codes <= farm_item_codes:
+            raise serializers.ValidationError({'detail': 'Un article référencé n’appartient pas à cette ferme.'})
+        serializer.save(farm=farm)
+
+
+class StockCompositionDetailView(generics.RetrieveDestroyAPIView):
+    """GET/DELETE /api/stock-compositions/{id}/. DELETE reserved to Admin/Farm Manager/Farmer;
+    removes the recipe only — StockMovements from past executions are untouched."""
+
+    serializer_class = StockCompositionSerializer
+    lookup_field = 'pk'
+
+    def get_permissions(self):
+        if self.request.method == 'DELETE':
+            return [IsAdminOrFarmManagerOrFarmer()]
+        return [IsAuthenticated()]
+
+    def get_queryset(self):
+        return (
+            StockComposition.objects.filter(farm=self.request.user.farm)
+            .select_related('output_item').prefetch_related('ingredients__item')
+        )
 
 
 class SupplierDetailView(generics.RetrieveUpdateDestroyAPIView):

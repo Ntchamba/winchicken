@@ -8,7 +8,9 @@ from apps.batches.models import BatchStatus, PoultryBatch, ProductionType
 from apps.core.models import Farm, User, UserRole, create_role_profile
 from apps.houses.models import PoultryHouse
 from apps.stock.calculations import current_quantity, stock_evolution
-from apps.stock.models import MovementType, StockCategory, StockItem, StockMovement, Supplier
+from apps.stock.models import (
+    MovementType, StockCategory, StockComposition, StockItem, StockMovement, Supplier,
+)
 
 
 def _make_user(farm, role=UserRole.ADMIN, email='admin@stock-test.local'):
@@ -342,3 +344,57 @@ class InlineStockItemCreateTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp.data['unit'], 'sac de 50kg')
         self.assertEqual(StockItem.objects.get(item_code=created['item_code']).unit, 'sac de 50kg')
+
+
+class StockCompositionApiTests(APITestCase):
+    """Compositions: recipe create/list/delete (2026-08-31). Defining a recipe writes no
+    StockMovement — only executing it does (StockCompositionExecuteTests)."""
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Compo')
+        self.admin = _make_user(self.farm)
+        self.worker = _make_user(self.farm, role=UserRole.WORKER, email='w@compo.local')
+        self.client.force_authenticate(self.admin)
+        cat = StockCategory.objects.get(farm=self.farm, kind='FEED')
+        self.mais = StockItem.objects.create(item_code='FEE-1-001', farm=self.farm, category=cat, name='Maïs', unit='kg')
+        self.macabo = StockItem.objects.create(item_code='FEE-1-002', farm=self.farm, category=cat, name='Macabo', unit='kg')
+        self.provende = StockItem.objects.create(item_code='FEE-1-003', farm=self.farm, category=cat, name='Provende', unit='kg')
+
+    def _payload(self):
+        return {
+            'name': 'Provende maison', 'output_item': self.provende.item_code,
+            'ingredients': [
+                {'item': self.mais.item_code, 'quantity': 1000},
+                {'item': self.macabo.item_code, 'quantity': 1000},
+            ],
+        }
+
+    def test_create_composition_writes_recipe_but_no_movement(self):
+        resp = self.client.post(f'/api/farms/{self.farm.id}/stock-compositions/', self._payload(), format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        self.assertEqual(resp.data['name'], 'Provende maison')
+        self.assertEqual(len(resp.data['ingredients']), 2)
+        self.assertEqual(resp.data['ingredients'][0]['item_name'], 'Maïs')
+        self.assertEqual(resp.data['ingredients'][0]['unit'], 'kg')
+        self.assertEqual(resp.data['output_item_name'], 'Provende')
+        self.assertEqual(StockMovement.objects.count(), 0)  # recipe ≠ execution
+
+    def test_list_and_delete(self):
+        cid = self.client.post(f'/api/farms/{self.farm.id}/stock-compositions/', self._payload(), format='json').data['id']
+        listing = self.client.get(f'/api/farms/{self.farm.id}/stock-compositions/')
+        rows = listing.data['results'] if 'results' in listing.data else listing.data
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(self.client.delete(f'/api/stock-compositions/{cid}/').status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(StockComposition.objects.count(), 0)
+
+    def test_create_rejects_no_ingredients_and_non_privileged_role(self):
+        bad = {'name': 'X', 'output_item': self.provende.item_code, 'ingredients': []}
+        self.assertEqual(
+            self.client.post(f'/api/farms/{self.farm.id}/stock-compositions/', bad, format='json').status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.client.force_authenticate(self.worker)
+        self.assertEqual(
+            self.client.post(f'/api/farms/{self.farm.id}/stock-compositions/', self._payload(), format='json').status_code,
+            status.HTTP_403_FORBIDDEN,
+        )

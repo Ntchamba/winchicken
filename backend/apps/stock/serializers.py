@@ -2,7 +2,8 @@ from rest_framework import serializers
 
 from apps.stock.calculations import current_quantity
 from apps.stock.models import (
-    STOCK_CATEGORY_ICON_CHOICES, StockCategory, StockItem, StockMovement, Supplier, Vaccination,
+    STOCK_CATEGORY_ICON_CHOICES, StockCategory, StockComposition, StockCompositionIngredient,
+    StockItem, StockMovement, Supplier, Vaccination,
 )
 
 
@@ -145,3 +146,53 @@ class VaccinationSerializer(serializers.ModelSerializer):
                 {'doses_used': "Le nombre de doses utilisées doit être supérieur ou égal à l'effectif actuel de la bande."}
             )
         return attrs
+
+
+class StockCompositionIngredientSerializer(serializers.ModelSerializer):
+    """One ingredient row — write: `item` (item_code) + `quantity`; read adds the item's name,
+    unit and current on-hand quantity so the "Exécuter" form can pre-fill and warn."""
+
+    item_name = serializers.CharField(source='item.name', read_only=True)
+    unit = serializers.CharField(source='item.unit', read_only=True)
+    current_quantity = serializers.SerializerMethodField()
+
+    class Meta:
+        model = StockCompositionIngredient
+        fields = ['id', 'item', 'item_name', 'unit', 'quantity', 'current_quantity']
+        read_only_fields = ['id']
+
+    def get_current_quantity(self, ingredient) -> float:
+        return current_quantity(ingredient.item)
+
+
+class StockCompositionSerializer(serializers.ModelSerializer):
+    """GET/POST payload for /api/farms/{farmId}/stock-compositions/ — a recipe. POST creates the
+    composition + its `ingredients` in one transaction; NO StockMovement is written here
+    (defining a recipe ≠ executing it). `output_item` / each ingredient `item` is an existing
+    StockItem code — the frontend creates any not-yet-existing item inline first via
+    POST /api/farms/{id}/stock-items/, then sends its code."""
+
+    ingredients = StockCompositionIngredientSerializer(many=True)
+    output_item_name = serializers.CharField(source='output_item.name', read_only=True)
+    output_item_unit = serializers.CharField(source='output_item.unit', read_only=True)
+
+    class Meta:
+        model = StockComposition
+        fields = ['id', 'name', 'output_item', 'output_item_name', 'output_item_unit', 'ingredients']
+        read_only_fields = ['id']
+
+    def validate(self, attrs):
+        if not attrs.get('ingredients'):
+            raise serializers.ValidationError({'ingredients': 'Au moins un ingrédient est requis.'})
+        return attrs
+
+    def create(self, validated_data):
+        from django.db import transaction
+
+        ingredients = validated_data.pop('ingredients')
+        with transaction.atomic():
+            composition = StockComposition.objects.create(**validated_data)
+            StockCompositionIngredient.objects.bulk_create(
+                StockCompositionIngredient(composition=composition, **ing) for ing in ingredients
+            )
+        return composition

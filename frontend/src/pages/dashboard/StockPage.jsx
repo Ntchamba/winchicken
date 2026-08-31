@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Pencil } from "lucide-react";
 import StockEvolutionChart from "../../components/StockEvolutionChart";
 import StockLevelsSection from "../../components/StockLevelsSection";
+import CompositionsSection from "../../components/CompositionsSection";
 import SuppliersSection from "../../components/SuppliersSection";
 import StockParametersModal from "../../components/StockParametersModal";
 import { stockApi } from "../../api/endpoints";
@@ -62,6 +63,7 @@ export default function StockPage() {
         <>
           <StockEvolutionChart series={evolution} />
           <StockLevelsSection items={items} onChanged={refresh} />
+          <CompositionsSection farmId={farmId} items={items} onChanged={refresh} />
           <SuppliersSection suppliers={suppliers} farmId={farmId} onChanged={refresh} />
         </>
       )}
