@@ -301,7 +301,11 @@ class StockItemsLowCountView(APIView):
 
 class StockMovementListCreateView(generics.ListCreateAPIView):
     """GET/POST /api/stock-movements/ — history and creation of stock IN/OUT movements.
-    Creation reserved to Admin / Farm Manager / Farmer."""
+    Creation reserved to Admin / Farm Manager / Farmer.
+
+    When the POST body carries `total_price` (the "Prix total payé" on a manual IN), the
+    movement and a matching `Expense` are written in one transaction (see
+    `apps.stock.purchasing`) — the Expense is what surfaces the purchase in Finance."""
 
     serializer_class = StockMovementSerializer
 
@@ -312,6 +316,16 @@ class StockMovementListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         return StockMovement.objects.filter(item__farm=self.request.user.farm)
+
+    def perform_create(self, serializer):
+        from apps.stock.models import MovementType
+        from apps.stock.purchasing import record_manual_purchase_expense
+
+        total_price = serializer.validated_data.get('total_price')
+        with transaction.atomic():
+            movement = serializer.save()
+            if total_price and movement.movement_type == MovementType.IN:
+                record_manual_purchase_expense(movement, total_price)
 
 
 class VaccinationListCreateView(generics.ListCreateAPIView):

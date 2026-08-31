@@ -223,6 +223,48 @@ class ManualStockMovementTests(APITestCase):
         self.assertEqual(StockMovement.objects.filter(item=self.item).count(), 0)
         self.assertEqual(current_quantity(self.item), 0)
 
+    def test_total_price_creates_a_matching_expense(self):
+        from apps.finance.models import Expense
+        from apps.stock.models import Supplier
+
+        feed_cat = StockCategory.objects.get(farm=self.farm, kind='FEED')
+        supplier = Supplier.objects.create(farm=self.farm, name='Provende SARL')
+        item = StockItem.objects.create(
+            item_code='FEE-PX-1', farm=self.farm, category=feed_cat, name='Aliment', unit='sac',
+            unit_price=8000, supplier=supplier,
+        )
+        resp = self.client.post('/api/stock-movements/', {
+            'item': item.item_code, 'movement_type': 'IN', 'quantity': 5,
+            'movement_date': '2026-04-02', 'total_price': '41000',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(current_quantity(item), 5)
+
+        exp = Expense.objects.get(farm=self.farm, amount=41000)
+        self.assertEqual(exp.category, 'FEED')                 # FEED item → FEED expense
+        self.assertEqual(str(exp.expense_date), '2026-04-02')  # the entry's date
+        self.assertIsNone(exp.batch_id)                        # general farm stock
+        self.assertEqual(exp.supplier, 'Provende SARL')        # item's linked supplier name
+
+    def test_no_total_price_creates_no_expense(self):
+        from apps.finance.models import Expense
+
+        before = Expense.objects.filter(farm=self.farm).count()
+        self.client.post('/api/stock-movements/', {
+            'item': self.item.item_code, 'movement_type': 'IN', 'quantity': 3, 'movement_date': '2026-04-03',
+        }, format='json')
+        self.assertEqual(Expense.objects.filter(farm=self.farm).count(), before)  # reference price alone ≠ a transaction
+
+    def test_equipment_item_maps_to_depreciation_expense(self):
+        from apps.finance.models import Expense
+
+        resp = self.client.post('/api/stock-movements/', {
+            'item': self.item.item_code, 'movement_type': 'IN', 'quantity': 2,
+            'movement_date': '2026-04-04', 'total_price': '15000',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Expense.objects.get(farm=self.farm, amount=15000).category, 'DEPRECIATION')
+
 
 class CurrentQuantityUnitTests(TestCase):
     """apps.stock.calculations.current_quantity — pure IN-minus-OUT, no endpoint."""

@@ -92,19 +92,33 @@ def generate_item_code(farm_id, category):
 class StockMovementSerializer(serializers.ModelSerializer):
     """GET/POST payload for /api/stock-movements/ — one IN (restocking) or OUT (consumption) row.
     Saving one triggers `apps.alerts.services.check_low_stock` for `item` via the
-    `on_stock_movement_saved` signal."""
+    `on_stock_movement_saved` signal.
+
+    `total_price` (2026-08-31) is write-only: the "Prix total payé" for a manual IN. When set,
+    `StockMovementListCreateView.perform_create` also creates a matching `Expense` in the same
+    transaction (see `apps.stock.purchasing.record_manual_purchase_expense`) — that is what
+    makes the purchase visible in Finance. Ignored for OUT."""
+
+    total_price = serializers.DecimalField(
+        max_digits=14, decimal_places=2, min_value=0, required=False, allow_null=True, write_only=True,
+        help_text='"Prix total payé" for a manual IN — creates a matching Expense.',
+    )
 
     class Meta:
         model = StockMovement
         fields = [
             'id', 'item', 'batch', 'movement_type', 'quantity', 'movement_date',
-            'supplier_batch_number', 'supplier', 'note',
+            'supplier_batch_number', 'supplier', 'note', 'total_price',
         ]
         read_only_fields = ['id']
         extra_kwargs = {
             'batch': {'help_text': 'Batch this movement is attributed to, if any (e.g. feed consumption); optional.'},
             'note': {'required': False, 'help_text': 'Free-text note for a manual IN entry made outside the PurchaseOrder flow.'},
         }
+
+    def create(self, validated_data):
+        validated_data.pop('total_price', None)  # consumed by the view, not a model field
+        return super().create(validated_data)
 
 
 class VaccinationSerializer(serializers.ModelSerializer):
