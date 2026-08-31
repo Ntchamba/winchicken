@@ -29,6 +29,7 @@ function buildData(items, categories) {
       unit: item.unit,
       price: item.unit_price,
       supplier: item.supplier ?? null,
+      itemType: item.item_type || "",
       quantity: item.current_quantity ?? "",
       date: todayISO(),
     });
@@ -117,17 +118,26 @@ export default function StockParametersModal({ open, farmId, onClose, onSaved })
       // 2. Record the Quantité / Date columns as stock IN movements. The PUT above recreated
       //    every StockItem (and cascaded away prior movements), so re-post each row's quantity
       //    against the fresh item_code, matched back by name.
-      const codeByName = {};
-      for (const it of data.items || []) codeByName[it.name] = it.item_code;
+      const byName = {};
+      for (const it of data.items || []) byName[it.name] = it;
       const movements = (payload.items || [])
-        .filter((it) => it.quantity != null && Number(it.quantity) > 0 && codeByName[it.name])
-        .map((it) => stockApi.addMovement({
-          item: codeByName[it.name],
-          movement_type: "IN",
-          quantity: Number(it.quantity),
-          movement_date: it.movement_date || todayISO(),
-          note: "Saisie via « Mettre à jour le stock »",
-        }));
+        .filter((it) => it.quantity != null && Number(it.quantity) > 0 && byName[it.name])
+        .map((it) => {
+          // Adding a brand-new article to stock is a purchase: file it in Finances at
+          // quantity × unit price (the backend turns total_price into the Expense, under the
+          // category the article's type implies). Re-saving an existing item's stock level
+          // sends nothing → no double-count.
+          const unitPrice = Number(byName[it.name].unit_price) || 0;
+          const totalPrice = it.is_new_item && unitPrice > 0 ? Number(it.quantity) * unitPrice : null;
+          return stockApi.addMovement({
+            item: byName[it.name].item_code,
+            movement_type: "IN",
+            quantity: Number(it.quantity),
+            movement_date: it.movement_date || todayISO(),
+            note: "Saisie via « Mettre à jour le stock »",
+            ...(totalPrice && totalPrice > 0 ? { total_price: totalPrice } : {}),
+          });
+        });
       if (movements.length) await Promise.all(movements);
 
       dirtyRef.current = false;

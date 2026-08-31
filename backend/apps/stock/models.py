@@ -109,6 +109,13 @@ class StockItem(models.Model):
     category = models.ForeignKey('stock.StockCategory', on_delete=models.CASCADE, related_name='items')
     name = models.CharField(max_length=255)
     unit = models.CharField(max_length=16)
+    # Free-text-with-suggestions "type" of the article (2026-08-31). Stock items are
+    # heterogeneous — feed and drugs, but also plain objects (a chair, a sponge…) — so the four
+    # fixed categories aren't enough to say what a thing is. Purely a per-item label the user
+    # picks from datalist presets or types themselves; it refines which ExpenseCategory an
+    # auto-recorded stock purchase lands in (apps.stock.purchasing.record_manual_purchase_expense),
+    # falling back to the category kind when blank/unrecognised.
+    item_type = models.CharField(max_length=64, blank=True, default='')
     feed_stage = models.CharField(max_length=16, choices=FeedStage.choices, default=FeedStage.NOT_APPLICABLE)
     cold_chain_required = models.BooleanField(default=False)
     alert_threshold = models.FloatField(default=0)

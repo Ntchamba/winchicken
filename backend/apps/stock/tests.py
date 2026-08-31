@@ -267,6 +267,31 @@ class ManualStockMovementTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Expense.objects.get(farm=self.farm, amount=15000).category, 'DEPRECIATION')
 
+    def test_item_type_keyword_overrides_category_kind_for_expense(self):
+        """A free-text `item_type` files the auto-purchase under the finance category it implies,
+        even when the stock category kind would map elsewhere (here: a CUSTOM category)."""
+        from apps.finance.models import Expense
+
+        custom = StockCategory.objects.create(farm=self.farm, label='Divers', icon='Package', kind='CUSTOM')
+        chair = StockItem.objects.create(
+            item_code='CUS-1-001', farm=self.farm, category=custom, name='Chaise',
+            unit='unité', item_type='Équipement / Matériel',
+        )
+        sponge = StockItem.objects.create(
+            item_code='CUS-1-002', farm=self.farm, category=custom, name='Éponge',
+            unit='unité', item_type='Objet divers',
+        )
+        self.client.post('/api/stock-movements/', {
+            'item': chair.item_code, 'movement_type': 'IN', 'quantity': 4,
+            'movement_date': '2026-04-05', 'total_price': '20000',
+        }, format='json')
+        self.client.post('/api/stock-movements/', {
+            'item': sponge.item_code, 'movement_type': 'IN', 'quantity': 10,
+            'movement_date': '2026-04-05', 'total_price': '3000',
+        }, format='json')
+        self.assertEqual(Expense.objects.get(farm=self.farm, amount=20000).category, 'DEPRECIATION')
+        self.assertEqual(Expense.objects.get(farm=self.farm, amount=3000).category, 'MISC')
+
 
 class CurrentQuantityUnitTests(TestCase):
     """apps.stock.calculations.current_quantity — pure IN-minus-OUT, no endpoint."""

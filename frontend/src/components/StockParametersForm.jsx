@@ -35,6 +35,17 @@ const FEED_STAGE_OPTIONS = [
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
+// Suggested article types for the free-text "Détail" combobox on non-feed/non-vet categories.
+// The user may type anything; these just prime the datalist. They also steer which finance
+// category a stock purchase is filed under (see apps/stock/purchasing.py _expense_category_for).
+const STOCK_ITEM_TYPE_OPTIONS = [
+  "Aliment / Provende",
+  "Médicament / Vaccin",
+  "Équipement / Matériel",
+  "Litière / Consommable",
+  "Objet divers",
+];
+
 // Column widths for the item table — Article | Détail | Seuil | Prix | Fournisseur | Quantité |
 // Date | (delete). Set inline on .table-head and every .schedule-row because the shared grid in
 // house-protocol-theme-light.css only declares 5 tracks.
@@ -51,6 +62,7 @@ const makeRow = (overrides = {}) => ({
   unit: "kg",
   price: 0,
   supplier: null,
+  itemType: "",
   quantity: "",
   date: todayISO(),
   ...overrides,
@@ -223,10 +235,16 @@ export default function StockParametersForm({
         alert_threshold: Number(row.threshold) || 0,
         unit_price: Number(row.price) || 0,
         supplier: row.supplier ?? null,
+        // Free-text article type (feed/vet rows keep it blank — their kind already says what
+        // they are). Persisted by PUT and used to file an auto-recorded purchase under the
+        // right finance category.
+        item_type: cat.kind === "FEED" || cat.kind === "VETERINARY" ? "" : (row.itemType || ""),
         // Quantité / Date columns — ignored by PUT /stock-items/, read by
-        // StockParametersModal.handleSave to record a stock IN movement.
+        // StockParametersModal.handleSave to record a stock IN movement (and, for a brand-new
+        // article with a unit price, the matching purchase in Finances).
         quantity: row.quantity === "" || row.quantity == null ? null : Number(row.quantity),
         movement_date: row.date || todayISO(),
+        is_new_item: !row.itemCode,
       }))
     ),
   });
@@ -399,6 +417,10 @@ export default function StockParametersForm({
           <span />
         </div>
 
+        <datalist id="stock-item-type-options">
+          {STOCK_ITEM_TYPE_OPTIONS.map((t) => <option key={t} value={t} />)}
+        </datalist>
+
         <div className="rows">
           {rows.map((row) => (
             <div key={row.id} className="schedule-row" style={showStockEntry ? { gridTemplateColumns: ITEM_GRID } : undefined}>
@@ -421,7 +443,13 @@ export default function StockParametersForm({
                   <option value="yes">Chaîne du froid : Oui</option>
                 </select>
               ) : (
-                <span className="schedule-note" style={{ alignSelf: "center" }}>—</span>
+                <input
+                  list="stock-item-type-options"
+                  value={row.itemType || ""}
+                  onChange={(e) => updateRow(row.id, "itemType", e.target.value)}
+                  placeholder="Type (ex. Équipement, Objet…)"
+                  aria-label="Type d'article"
+                />
               )}
 
               <div className="bound-input">

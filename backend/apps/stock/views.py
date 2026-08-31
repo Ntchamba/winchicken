@@ -91,6 +91,7 @@ class FarmStockItemsView(APIView):
         item = StockItem.objects.create(
             item_code=generate_item_code(farm.id, category),
             farm=farm, category=category, name=name, unit=(request.data.get('unit') or 'kg'),
+            item_type=(request.data.get('item_type') or ''),
         )
         record_audit_log(request.user, 'stock.item_created', item.name)
         return Response(StockItemSerializer(item).data, status=status.HTTP_201_CREATED)
@@ -128,6 +129,7 @@ class FarmStockItemsView(APIView):
                     category=category,
                     name=entry['name'],
                     unit=entry.get('unit', ''),
+                    item_type=entry.get('item_type', '') or '',
                     feed_stage=entry.get('feed_stage', 'NOT_APPLICABLE'),
                     cold_chain_required=entry.get('cold_chain_required', False),
                     alert_threshold=entry.get('alert_threshold', 0),

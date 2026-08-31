@@ -63,7 +63,7 @@ class StockItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockItem
         fields = [
-            'item_code', 'category', 'category_label', 'category_kind', 'name', 'unit',
+            'item_code', 'category', 'category_label', 'category_kind', 'name', 'unit', 'item_type',
             'feed_stage', 'cold_chain_required', 'alert_threshold', 'unit_price',
             'current_quantity', 'supplier', 'supplier_name',
         ]
