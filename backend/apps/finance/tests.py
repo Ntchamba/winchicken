@@ -474,3 +474,53 @@ class BatchClosingReportCalculationTests(APITestCase):
 
         self.assertEqual(BatchClosingReport.objects.filter(batch=self.batch).count(), 1)
         self.assertEqual(float(report.revenue), 1_085_000.0)
+
+
+class GlobaleFarmWideIndicatorsTests(APITestCase):
+    """finance_summary's stock-value / losses / sales / eggs cards (2026-08-31, Step 4)."""
+
+    def setUp(self):
+        from apps.batches.models import DailyLog, PoultryBatch, ProductionType
+        from apps.houses.models import PoultryHouse
+        from apps.maintenance.models import EquipmentFault, UnusualCase
+        from apps.stock.models import MovementType, StockCategory, StockItem, StockMovement
+
+        self.farm = Farm.objects.create(name='Ferme Globale')
+        self.admin = User.objects.create_user(email='a@glob.test', name='A', role=UserRole.ADMIN, farm=self.farm)
+        create_role_profile(self.admin)
+        house = PoultryHouse.objects.create(house_code='H-G-1', farm=self.farm, name='S', max_capacity=1000)
+        self.batch = PoultryBatch.objects.create(
+            batch_code='BATCH-G-1', house=house, production_type=ProductionType.BROILER,
+            initial_count=500, start_date=date.today(),
+        )
+        # stock on hand: 100 units @ 80 → value 8000
+        item = StockItem.objects.create(
+            item_code='FEE-G-1', farm=self.farm, category=StockCategory.objects.get(farm=self.farm, kind='FEED'),
+            name='Aliment', unit='kg', unit_price=80,
+        )
+        StockMovement.objects.create(item=item, movement_type=MovementType.IN, quantity=100, movement_date=date.today())
+        DailyLog.objects.create(batch=self.batch, log_date=date.today(), mortality=7, eggs_collected=120)
+        UnusualCase.objects.create(case_code='CASE-G-1', batch=self.batch, case_description='boiterie')
+        EquipmentFault.objects.create(fault_code='FAULT-G-1', house=house, fault_description='ventilo HS')
+        Sale.objects.create(farm=self.farm, batch=self.batch, product_type=ProductType.BIRD,
+                            quantity=10, unit_price=1200, sale_date=date.today())
+
+    def test_summary_carries_the_four_indicators_with_correct_numbers(self):
+        token = RefreshToken.for_user(self.admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token.access_token}')
+        data = self.client.get('/api/finance/summary/').data
+        self.assertEqual(data['stockValue'], 8000.0)      # 100 × 80
+        self.assertEqual(data['mortalityCount'], 7)
+        self.assertEqual(data['incidentsCount'], 2)       # 1 UnusualCase + 1 EquipmentFault
+        self.assertEqual(data['salesTotal'], 12000.0)     # 10 × 1200
+        self.assertEqual(data['eggsCount'], 120)
+
+    def test_restricted_role_never_sees_the_raw_indicators(self):
+        worker = User.objects.create_user(email='w@glob.test', name='W', role=UserRole.WORKER, farm=self.farm)
+        create_role_profile(worker)
+        token = RefreshToken.for_user(worker)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token.access_token}')
+        data = self.client.get('/api/finance/summary/').data
+        self.assertEqual(data['access'], 'restricted')
+        for k in ('stockValue', 'mortalityCount', 'incidentsCount', 'salesTotal', 'eggsCount'):
+            self.assertNotIn(k, data)

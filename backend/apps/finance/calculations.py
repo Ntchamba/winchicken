@@ -217,15 +217,62 @@ def roi_forecast_pct(farm, range_param='6m'):
     return round(float(projected_margin / total_investment) * 100, 2)
 
 
+def farm_wide_indicators(farm, range_param='6m'):
+    """Farm-wide operational + stock figures for Globale's stat cards (2026-08-31) — a genuine
+    "état de la ferme" alongside the pure revenue/expense chart.
+
+      stockValue      — total value of stock on hand: Σ current_quantity(item) × unit_price
+                        over every StockItem (uses the existing IN-minus-OUT calculation).
+      mortalityCount  — Σ DailyLog.mortality on this farm's batches over the window (an
+                        operational loss indicator, explicitly *not* a monetary figure).
+      incidentsCount  — reported UnusualCase + EquipmentFault on this farm over the window.
+      salesTotal      — Σ Sale.total_amount over the window (compact echo of the Ventes section,
+                        not a second chart).
+      eggsCount       — Σ DailyLog.eggs_collected over the window (nullable field → treated 0).
+    """
+    from django.db.models import Sum
+
+    from apps.batches.models import DailyLog
+    from apps.maintenance.models import EquipmentFault, UnusualCase
+    from apps.stock.calculations import current_quantity
+    from apps.stock.models import StockItem
+
+    period_start = _month_range(range_param)[0]
+
+    stock_value = sum(
+        current_quantity(item) * float(item.unit_price)
+        for item in StockItem.objects.filter(farm=farm).select_related('category')
+    )
+    logs = DailyLog.objects.filter(batch__house__farm=farm, log_date__gte=period_start)
+    mortality = logs.aggregate(n=Sum('mortality'))['n'] or 0
+    eggs = logs.aggregate(n=Sum('eggs_collected'))['n'] or 0
+    incidents = (
+        UnusualCase.objects.filter(batch__house__farm=farm, case_date__gte=period_start).count()
+        + EquipmentFault.objects.filter(house__farm=farm, reported_date__gte=period_start).count()
+    )
+    sales_total = Sale.objects.filter(farm=farm, sale_date__gte=period_start).aggregate(
+        n=Sum('total_amount'))['n'] or 0
+
+    return {
+        'stockValue': round(float(stock_value), 2),
+        'mortalityCount': int(mortality),
+        'incidentsCount': int(incidents),
+        'salesTotal': float(sales_total),
+        'eggsCount': int(eggs),
+    }
+
+
 def finance_summary(farm, range_param='6m'):
     """Response payload for GET /api/finance/summary/?range=6m|1y (implementation-detail spec
-    11.2): monthly revenue/expenses series plus cash-on-hand, pending payables and ROI forecast."""
+    11.2): monthly revenue/expenses series plus cash-on-hand, pending payables, ROI forecast,
+    and (2026-08-31) the farm-wide stock/loss/sales/egg indicators for Globale's stat cards."""
     return {
         'range': range_param,
         'months': monthly_summary(farm, range_param),
         'cashOnHand': cash_on_hand(farm),
         'pendingPayables': pending_payables(farm),
         'roiForecastPct': roi_forecast_pct(farm, range_param),
+        **farm_wide_indicators(farm, range_param),
     }
 
 
