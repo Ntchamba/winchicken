@@ -146,3 +146,51 @@ class ProtocolTimeSlot(models.Model):
 
     def __str__(self):
         return f'{self.protocol_line_id} · {self.start_time}-{self.end_time}'
+
+
+class TaskCompletion(models.Model):
+    """One validated occurrence of a `ProtocolTemplate` task — created when a user clicks
+    "Marquer comme fait" on that occurrence in the "tâches à effectuer maintenant" panel or the
+    notification center (2026-08-31). This is the *only* thing that deducts protocol-driven
+    stock now (the 2026-08-28 automatic daily Celery task was removed): if the row has a linked
+    `stock_item` + a quantity, completing it once creates one `OUT` `StockMovement`, linked
+    below.
+
+    Identity of an occurrence = `(protocol_template, batch, date, time_slot)`. `time_slot` is
+    null for a day-range task with no specific slot; `nulls_distinct=False` on the unique
+    constraint so at most one such completion exists per day. Marking the same occurrence done
+    twice is a no-op (`get_or_create`), so a second `StockMovement` is never created.
+    """
+
+    protocol_template = models.ForeignKey(
+        ProtocolTemplate, on_delete=models.CASCADE, related_name='completions',
+    )
+    batch = models.ForeignKey(
+        'batches.PoultryBatch', on_delete=models.CASCADE, related_name='task_completions',
+    )
+    date = models.DateField()
+    time_slot = models.ForeignKey(
+        ProtocolTimeSlot, on_delete=models.CASCADE, null=True, blank=True, related_name='completions',
+    )
+    completed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='task_completions',
+    )
+    completed_at = models.DateTimeField(auto_now_add=True)
+    stock_movement = models.ForeignKey(
+        'stock.StockMovement', on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
+        help_text='The OUT movement this completion created, if the row had a linked resource + quantity.',
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['protocol_template', 'batch', 'date', 'time_slot'],
+                name='uniq_task_completion_per_occurrence',
+                nulls_distinct=False,
+            ),
+        ]
+        ordering = ['-completed_at']
+
+    def __str__(self):
+        return f'{self.protocol_template_id} · {self.batch_id} · {self.date}'
