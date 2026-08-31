@@ -242,6 +242,7 @@ export default function ProtocolEditModal({ houseCode, onClose, onSaved }) {
                 houseCode={houseCode}
                 saving={saving}
                 stockItems={stockItems}
+                farmId={user.farm}
                 onSave={handleSave}
               />
             ) : (

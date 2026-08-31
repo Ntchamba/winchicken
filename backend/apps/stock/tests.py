@@ -252,3 +252,51 @@ class CurrentQuantityUnitTests(TestCase):
         self._mv(MovementType.IN, 10)
         self._mv(MovementType.OUT, 25, '2026-01-02')
         self.assertEqual(current_quantity(self.item), -15)
+
+
+class InlineStockItemCreateTests(APITestCase):
+    """POST /api/farms/{id}/stock-items/ (one item) + PATCH /api/stock-items/{code}/ — the
+    inline "+ Créer '{name}' comme nouvel article de stock" flow from a protocol row (2026-08-31)."""
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Inline')
+        self.admin = _make_user(self.farm)
+        self.worker = _make_user(self.farm, role=UserRole.WORKER, email='w@inline.local')
+        self.client.force_authenticate(self.admin)
+
+    def test_create_one_item_with_category_hint_maps_to_kind(self):
+        resp = self.client.post(
+            f'/api/farms/{self.farm.id}/stock-items/',
+            {'name': 'Provende maison', 'category_hint': 'Alimentation'}, format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        self.assertEqual(resp.data['name'], 'Provende maison')
+        self.assertEqual(resp.data['category_kind'], 'FEED')
+        self.assertEqual(resp.data['unit'], 'kg')          # default
+        self.assertEqual(resp.data['current_quantity'], 0)  # no movements yet — expected
+        self.assertTrue(resp.data['item_code'].startswith('FEE-'))
+
+    def test_create_falls_back_to_first_category_for_unknown_hint(self):
+        resp = self.client.post(
+            f'/api/farms/{self.farm.id}/stock-items/',
+            {'name': 'Bidon', 'category_hint': 'Catégorie inconnue', 'unit': 'L'}, format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data['unit'], 'L')
+        self.assertIn(resp.data['category_kind'], {'FEED', 'VETERINARY', 'EQUIPMENT', 'BEDDING', 'CUSTOM'})
+
+    def test_create_rejects_blank_name_and_non_privileged_role(self):
+        r1 = self.client.post(f'/api/farms/{self.farm.id}/stock-items/', {'name': '  '}, format='json')
+        self.assertEqual(r1.status_code, status.HTTP_400_BAD_REQUEST)
+        self.client.force_authenticate(self.worker)
+        r2 = self.client.post(f'/api/farms/{self.farm.id}/stock-items/', {'name': 'X'}, format='json')
+        self.assertEqual(r2.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_patch_updates_unit_only(self):
+        created = self.client.post(
+            f'/api/farms/{self.farm.id}/stock-items/', {'name': 'Maïs', 'category_hint': 'Alimentation'}, format='json',
+        ).data
+        resp = self.client.patch(f'/api/stock-items/{created["item_code"]}/', {'unit': 'sac de 50kg'}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['unit'], 'sac de 50kg')
+        self.assertEqual(StockItem.objects.get(item_code=created['item_code']).unit, 'sac de 50kg')

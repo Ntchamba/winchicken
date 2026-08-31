@@ -1,7 +1,7 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, inline_serializer
-from rest_framework import generics, status
+from rest_framework import generics, serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -17,6 +17,17 @@ from apps.stock.serializers import (
 )
 
 _StockItemsPayload = inline_serializer('StockItemsPayload', {'items': StockItemSerializer(many=True)})
+
+# Protocol category label → StockCategory.kind, for inline item creation from a protocol row
+# ("+ Créer ... comme nouvel article de stock"): a Feeding-category row makes a FEED item, etc.
+# Anything unmapped falls back to the farm's first StockCategory.
+_PROTOCOL_LABEL_TO_KIND = {
+    'alimentation': 'FEED',
+    'vaccination': 'VETERINARY',
+    'santé et soins': 'VETERINARY',
+    'nettoyage': 'BEDDING',
+    'température': 'EQUIPMENT',
+}
 
 
 class FarmStockItemsView(APIView):
@@ -38,6 +49,49 @@ class FarmStockItemsView(APIView):
         farm = get_object_or_404(Farm, pk=farm_id)
         items = StockItem.objects.filter(farm=farm).select_related('category', 'supplier')
         return Response({'items': StockItemSerializer(items, many=True).data})
+
+    @extend_schema(
+        request=inline_serializer('StockItemCreate', {
+            'name': serializers.CharField(),
+            'unit': serializers.CharField(required=False),
+            'category': serializers.IntegerField(required=False, help_text='StockCategory id; wins over category_hint.'),
+            'category_hint': serializers.CharField(required=False, help_text="Protocol category label, e.g. 'Alimentation'."),
+        }),
+        responses={201: StockItemSerializer},
+    )
+    def post(self, request, farm_id):
+        """Create ONE StockItem — used by the inline "+ Créer '{name}' comme nouvel article de
+        stock" option in a protocol row's Consommation selector. `category` (a StockCategory id)
+        wins; else `category_hint` (the row's protocol category label) maps to a kind; else the
+        farm's first StockCategory. `unit` defaults to 'kg'. Same permission as PUT."""
+        if not IsAdminOrFarmManagerOrFarmer().has_permission(request, self):
+            return Response({'detail': 'Action non autorisée.'}, status=status.HTTP_403_FORBIDDEN)
+        farm = get_object_or_404(Farm, pk=farm_id)
+        name = (request.data.get('name') or '').strip()
+        if not name:
+            return Response({'detail': "Le nom de l'article est requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        category = None
+        cat_id = request.data.get('category')
+        if cat_id not in (None, ''):
+            category = StockCategory.objects.filter(farm=farm, pk=cat_id).first()
+            if category is None:
+                return Response({'detail': f'Catégorie invalide : {cat_id!r}.'}, status=status.HTTP_400_BAD_REQUEST)
+        if category is None:
+            kind = _PROTOCOL_LABEL_TO_KIND.get((request.data.get('category_hint') or '').strip().lower())
+            if kind:
+                category = StockCategory.objects.filter(farm=farm, kind=kind).order_by('sort_order', 'id').first()
+        if category is None:
+            category = StockCategory.objects.filter(farm=farm).order_by('sort_order', 'id').first()
+        if category is None:
+            return Response({'detail': 'Aucune catégorie de stock disponible.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        item = StockItem.objects.create(
+            item_code=generate_item_code(farm.id, category),
+            farm=farm, category=category, name=name, unit=(request.data.get('unit') or 'kg'),
+        )
+        record_audit_log(request.user, 'stock.item_created', item.name)
+        return Response(StockItemSerializer(item).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(request=_StockItemsPayload, responses=_StockItemsPayload)
     def put(self, request, farm_id):
@@ -160,6 +214,35 @@ class SupplierDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return Supplier.objects.filter(farm=self.request.user.farm).prefetch_related('items')
+
+
+class StockItemDetailView(APIView):
+    """PATCH /api/stock-items/{itemCode}/ — light single-item update (`unit`, `name` only).
+    Used right after inline-creating an item from a protocol row's Consommation selector, so the
+    user can set its unit there instead of visiting the Stock screen. Write reserved to
+    Admin/Farm Manager/Farmer; `item_code`, `category`, quantities are not editable here."""
+
+    permission_classes = [IsAdminOrFarmManagerOrFarmer]
+
+    @extend_schema(
+        request=inline_serializer('StockItemPatch', {
+            'unit': serializers.CharField(required=False),
+            'name': serializers.CharField(required=False),
+        }),
+        responses={200: StockItemSerializer},
+    )
+    def patch(self, request, item_code):
+        item = get_object_or_404(StockItem, item_code=item_code, farm=request.user.farm)
+        dirty = []
+        if 'unit' in request.data:
+            item.unit = (request.data.get('unit') or '').strip()
+            dirty.append('unit')
+        if request.data.get('name'):
+            item.name = request.data['name'].strip()
+            dirty.append('name')
+        if dirty:
+            item.save(update_fields=dirty)
+        return Response(StockItemSerializer(item).data)
 
 
 class FarmStockEvolutionView(APIView):

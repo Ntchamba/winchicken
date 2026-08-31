@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Soup, Thermometer, Stethoscope, Syringe, SprayCan, ShieldCheck, Droplets, Wind, Egg, Bug,
   ClipboardList, Package, Plus, Trash2, Loader2, Sparkles, HelpCircle, X, Check,
 } from "lucide-react";
 import { housesApi, stockApi } from "../api/endpoints";
 import { getServerErrorMessage } from "../api/errors";
+import ResourceCombobox from "./ResourceCombobox";
+import UnitField from "./UnitField";
 import "../styles/house-protocol-theme-light.css";
 
 // Curated icon picker for custom categories — kept in sync by hand with the backend's
@@ -185,7 +187,14 @@ export default function HouseProtocolForm({
   helpDocUrl = "/docs/protocol-configuration.md",
   submitLabel,
   stockItems = [],
+  farmId = null,
 }) {
+  // Local mirror of `stockItems` so an item created inline from the Consommation selector
+  // (ResourceCombobox "+ Créer …") shows up immediately without a prop round-trip.
+  const [stockItemList, setStockItemList] = useState(stockItems);
+  const [createdInlineCodes, setCreatedInlineCodes] = useState(() => new Set());
+  useEffect(() => { setStockItemList(stockItems); }, [stockItems]);
+
   const [buildingName, setBuildingName] = useState(initialHeader.buildingName || "");
   const [chicksPlaced, setChicksPlaced] = useState(initialHeader.chicksPlaced || "");
   const [growthCycle, setGrowthCycle] = useState(initialHeader.growthCycle || 56);
@@ -195,6 +204,22 @@ export default function HouseProtocolForm({
   const [categories, setCategories] = useState(initialCategories || DEFAULT_CATEGORIES);
   const [activeCategoryId, setActiveCategoryId] = useState((initialCategories || DEFAULT_CATEGORIES)[0]?.id);
   const [schedules, setSchedules] = useState(initialSchedules);
+
+  // Inline creation of a StockItem straight from a protocol row's "Ressource" combobox: name =
+  // typed text, category defaulted from this row's protocol category (via category_hint →
+  // StockCategory.kind server-side), unit "kg" (adjustable right after, via UnitField).
+  const createStockItem = async (name) => {
+    const cat = categories.find((c) => c.id === activeCategoryId);
+    const { data } = await stockApi.addItem(farmId, { name, unit: "kg", category_hint: cat?.label });
+    setStockItemList((prev) => [...prev, data]);
+    setCreatedInlineCodes((prev) => new Set(prev).add(data.item_code));
+    return data;
+  };
+
+  const setStockItemUnit = (code, unit) => {
+    setStockItemList((prev) => prev.map((s) => (s.item_code === code ? { ...s, unit } : s)));
+    if (farmId) stockApi.updateItem(code, { unit }).catch(() => {});
+  };
   const [saveMessage, setSaveMessage] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -248,7 +273,7 @@ export default function HouseProtocolForm({
       if (data.sufficient) {
         updateRow(rowId, "coverageWarning", "");
       } else {
-        const item = stockItems.find((s) => s.item_code === row.stockItemCode);
+        const item = stockItemList.find((s) => s.item_code === row.stockItemCode);
         updateRow(
           rowId,
           "coverageWarning",
@@ -675,7 +700,7 @@ export default function HouseProtocolForm({
                 )}
               </div>
 
-              {stockItems.length > 0 && (
+              {(stockItemList.length > 0 || farmId) && (
                 <div
                   className="schedule-row-consumption"
                   style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 4 }}
@@ -683,21 +708,21 @@ export default function HouseProtocolForm({
                   <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", letterSpacing: ".1em", textTransform: "uppercase" }}>
                     Consommation
                   </span>
-                  <select
-                    aria-label="Article de stock consommé"
-                    value={row.stockItemCode || ""}
-                    onChange={(e) => {
-                      const v = e.target.value || null;
-                      updateRow(row.id, "stockItemCode", v);
-                      checkCoverage(row.id, { stockItemCode: v });
+                  <ResourceCombobox
+                    items={stockItemList}
+                    value={row.stockItemCode}
+                    onSelect={(code) => {
+                      updateRow(row.id, "stockItemCode", code);
+                      checkCoverage(row.id, { stockItemCode: code });
                     }}
-                    style={{ minWidth: 200 }}
-                  >
-                    <option value="">Aucun article de stock consommé</option>
-                    {stockItems.map((s) => (
-                      <option key={s.item_code} value={s.item_code}>{s.name}{s.unit ? ` (${s.unit})` : ""}</option>
-                    ))}
-                  </select>
+                    onCreate={farmId ? createStockItem : undefined}
+                  />
+                  {row.stockItemCode && createdInlineCodes.has(row.stockItemCode) && (
+                    <UnitField
+                      value={stockItemList.find((s) => s.item_code === row.stockItemCode)?.unit || ""}
+                      onChange={(u) => setStockItemUnit(row.stockItemCode, u)}
+                    />
+                  )}
                   <select
                     aria-label="Mode de dosage"
                     value={row.consumptionMode}

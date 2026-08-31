@@ -11,6 +11,7 @@ urlpatterns = [
     path('farms/<int:farm_id>/stock-evolution/', views.FarmStockEvolutionView.as_view(), name='farm-stock-evolution'),
     path('stock-items/low-count/', views.StockItemsLowCountView.as_view(), name='stock-items-low-count'),
     path('stock-items/<str:item_code>/coverage/', views.StockItemCoverageView.as_view(), name='stock-item-coverage'),
+    path('stock-items/<str:item_code>/', views.StockItemDetailView.as_view(), name='stock-item-detail'),
     path('stock-movements/', views.StockMovementListCreateView.as_view(), name='stock-movements'),
     path('vaccinations/', views.VaccinationListCreateView.as_view(), name='vaccinations'),
 ]
