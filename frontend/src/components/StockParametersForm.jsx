@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { stockApi } from "../api/endpoints";
 import { getServerErrorMessage } from "../api/errors";
+import UnitField from "./UnitField";
 import "../styles/house-protocol-theme-light.css";
 
 // Curated icon picker for custom stock categories — kept in sync by hand with the backend's
@@ -31,7 +32,6 @@ const FEED_STAGE_OPTIONS = [
   { value: "NOT_APPLICABLE", label: "Non applicable" },
 ];
 
-const UNITS = ["kg", "L", "dose", "unité", "sac"];
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -48,7 +48,7 @@ const makeRow = (overrides = {}) => ({
   feedStage: "STARTER",
   coldChain: false,
   threshold: 0,
-  unit: UNITS[0],
+  unit: "kg",
   price: 0,
   supplier: null,
   quantity: "",
@@ -430,9 +430,7 @@ export default function StockParametersForm({
                   value={row.threshold}
                   onChange={(e) => updateRow(row.id, "threshold", e.target.value)}
                 />
-                <select value={row.unit} onChange={(e) => updateRow(row.id, "unit", e.target.value)}>
-                  {UNITS.map((u) => <option key={u}>{u}</option>)}
-                </select>
+                <UnitField value={row.unit} onChange={(u) => updateRow(row.id, "unit", u)} />
               </div>
 
               <input
