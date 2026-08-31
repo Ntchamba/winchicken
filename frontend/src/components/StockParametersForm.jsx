@@ -6,6 +6,7 @@ import {
 import { stockApi } from "../api/endpoints";
 import { getServerErrorMessage } from "../api/errors";
 import UnitField from "./UnitField";
+import { compositionByOutput } from "../utils/compositions";
 import "../styles/house-protocol-theme-light.css";
 
 // Curated icon picker for custom stock categories — kept in sync by hand with the backend's
@@ -64,6 +65,7 @@ const makeRow = (overrides = {}) => ({
   supplier: null,
   itemType: "",
   quantity: "",
+  originalQuantity: 0,
   date: todayISO(),
   ...overrides,
 });
@@ -106,7 +108,10 @@ export default function StockParametersForm({
   onBack,
   onSuppliersChanged,
   showStockEntry = false,
+  compositions = [],
 }) {
+  const composed = compositionByOutput(compositions);
+  const [deductComposed, setDeductComposed] = useState(true);
   const [warehouseName, setWarehouseName] = useState(warehouse.name || "Entrepôt principal");
   const [currency, setCurrency] = useState(warehouse.currency || "XAF");
   const [leadTime, setLeadTime] = useState(warehouse.leadTime ?? 3);
@@ -132,6 +137,7 @@ export default function StockParametersForm({
   const activeCategory = categories.find((c) => c.id === activeCategoryId) || null;
   const rows = data[activeCategoryId] || [];
   const totalItems = Object.values(data).reduce((sum, arr) => sum + arr.length, 0);
+  const hasComposedRow = Object.values(data).some((arr) => arr.some((r) => composed[r.itemCode]));
 
   const updateRow = (rowId, field, value) => {
     setData((prev) => ({
@@ -245,6 +251,10 @@ export default function StockParametersForm({
         quantity: row.quantity === "" || row.quantity == null ? null : Number(row.quantity),
         movement_date: row.date || todayISO(),
         is_new_item: !row.itemCode,
+        // For a composed item whose level is raised here: the on-hand at load time and whether
+        // the delta should be treated as a production run (deduct the recipe ingredients).
+        original_quantity: Number(row.originalQuantity) || 0,
+        deduct_production: !!(deductComposed && composed[row.itemCode]),
       }))
     ),
   });
@@ -530,6 +540,17 @@ export default function StockParametersForm({
           Ajouter un article
         </button>
       </div>
+
+      {showStockEntry && hasComposedRow && (
+        <label className="schedule-note" style={{ display: "flex", alignItems: "center", gap: 8, margin: "10px 0 0" }}>
+          <input
+            type="checkbox"
+            checked={deductComposed}
+            onChange={(e) => setDeductComposed(e.target.checked)}
+          />
+          Décompter les ingrédients des articles composés dont j'augmente le stock (comme une exécution)
+        </label>
+      )}
 
       {mode === "onboarding" ? (
         <div className="save-bar">

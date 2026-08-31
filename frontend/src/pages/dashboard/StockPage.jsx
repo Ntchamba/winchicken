@@ -23,6 +23,7 @@ export default function StockPage() {
   const [evolution, setEvolution] = useState([]);
   const [items, setItems] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [compositions, setCompositions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -31,10 +32,12 @@ export default function StockPage() {
       stockApi.evolution(farmId),
       stockApi.items(farmId),
       stockApi.suppliers(farmId),
-    ]).then(([evoRes, itemsRes, supRes]) => {
+      stockApi.compositions(farmId),
+    ]).then(([evoRes, itemsRes, supRes, compRes]) => {
       setEvolution(evoRes.data);
       setItems(itemsRes.data.items || []);
       setSuppliers(supRes.data.results || supRes.data);
+      setCompositions(compRes.data.results || compRes.data);
       setLoading(false);
     });
   }, [farmId]);
@@ -62,7 +65,7 @@ export default function StockPage() {
       ) : (
         <>
           <StockEvolutionChart series={evolution} />
-          <StockLevelsSection items={items} onChanged={refresh} />
+          <StockLevelsSection items={items} compositions={compositions} onChanged={refresh} />
           <CompositionsSection farmId={farmId} items={items} onChanged={refresh} />
           <SuppliersSection suppliers={suppliers} farmId={farmId} onChanged={refresh} />
         </>
@@ -71,6 +74,7 @@ export default function StockPage() {
       <StockParametersModal
         open={modalOpen}
         farmId={farmId}
+        compositions={compositions}
         onClose={() => setModalOpen(false)}
         onSaved={refresh}
       />

@@ -507,3 +507,70 @@ class StockCompositionExecuteTests(APITestCase):
         resp = self.client.post(self.url, {'ingredients': [], 'outputQuantity': 0}, format='json')
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(StockMovement.objects.filter(movement_type=MovementType.OUT).count(), 0)
+
+
+class CompositionAutoDeductOnOutputAddTests(APITestCase):
+    """Adding a composed item's stock with `production_quantity` set deducts the recipe
+    ingredients scaled to `base_output_quantity` — "as if executed" (2026-08-31)."""
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Auto')
+        self.admin = _make_user(self.farm)
+        self.client.force_authenticate(self.admin)
+        cat = StockCategory.objects.get(farm=self.farm, kind='FEED')
+        self.mais = StockItem.objects.create(item_code='FEE-1-001', farm=self.farm, category=cat, name='Maïs', unit='kg')
+        self.macabo = StockItem.objects.create(item_code='FEE-1-002', farm=self.farm, category=cat, name='Macabo', unit='kg')
+        self.provende = StockItem.objects.create(item_code='FEE-1-003', farm=self.farm, category=cat, name='Provende', unit='kg')
+        StockMovement.objects.create(item=self.mais, movement_type=MovementType.IN, quantity=1000, movement_date=date(2026, 8, 1))
+        StockMovement.objects.create(item=self.macabo, movement_type=MovementType.IN, quantity=1000, movement_date=date(2026, 8, 1))
+        # 1000 maïs + 1000 macabo -> 1800 provende
+        self.comp = self.client.post(f'/api/farms/{self.farm.id}/stock-compositions/', {
+            'name': 'Provende maison', 'output_item': self.provende.item_code,
+            'base_output_quantity': 1800,
+            'ingredients': [
+                {'item': self.mais.item_code, 'quantity': 1000},
+                {'item': self.macabo.item_code, 'quantity': 1000},
+            ],
+        }, format='json').data
+
+    def test_adding_output_with_production_quantity_deducts_scaled_ingredients(self):
+        resp = self.client.post('/api/stock-movements/', {
+            'item': self.provende.item_code, 'movement_type': 'IN', 'quantity': 99,
+            'movement_date': '2026-08-31', 'production_quantity': 99,
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        self.assertEqual(current_quantity(self.provende), 99)
+        # 1000 * 99 / 1800 = 55 deducted from each ingredient
+        self.assertAlmostEqual(current_quantity(self.mais), 945)
+        self.assertAlmostEqual(current_quantity(self.macabo), 945)
+        self.assertEqual(resp.data['composition_deduction']['composition'], 'Provende maison')
+        self.assertEqual(len(resp.data['composition_deduction']['movements']), 2)
+
+    def test_no_production_quantity_is_a_plain_restock(self):
+        resp = self.client.post('/api/stock-movements/', {
+            'item': self.provende.item_code, 'movement_type': 'IN', 'quantity': 99,
+            'movement_date': '2026-08-31',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(current_quantity(self.mais), 1000)      # untouched
+        self.assertNotIn('composition_deduction', resp.data)
+
+    def test_recipe_without_base_yield_does_not_deduct(self):
+        StockComposition.objects.filter(id=self.comp['id']).update(base_output_quantity=None)
+        resp = self.client.post('/api/stock-movements/', {
+            'item': self.provende.item_code, 'movement_type': 'IN', 'quantity': 99,
+            'movement_date': '2026-08-31', 'production_quantity': 99,
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(current_quantity(self.mais), 1000)
+        self.assertNotIn('composition_deduction', resp.data)
+
+    def test_shortfall_is_non_blocking_and_reported(self):
+        resp = self.client.post('/api/stock-movements/', {
+            'item': self.provende.item_code, 'movement_type': 'IN', 'quantity': 5000,
+            'movement_date': '2026-08-31', 'production_quantity': 5000,
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        # 1000 * 5000 / 1800 ≈ 2777.8 needed, only 1000 on hand — still deducted (negative)
+        self.assertLess(current_quantity(self.mais), 0)
+        self.assertEqual(len(resp.data['composition_deduction']['shortfalls']), 2)

@@ -26,6 +26,64 @@ def _shortfalls(composition, quantities):
     return out
 
 
+def auto_deduct_ingredients_for_output(item, produced_quantity, movement_date):
+    """Adding `produced_quantity` of `item` to stock was flagged as a production run — deduct
+    the recipe ingredients as if `execute_composition` had produced that amount.
+
+    Picks the first `StockComposition` whose `output_item` is `item` and whose
+    `base_output_quantity` is set (> 0), ordered by name. Each ingredient is deducted at
+    `ingredient.quantity * produced_quantity / base_output_quantity` — one `OUT` `StockMovement`
+    dated `movement_date`, in the caller's transaction. Non-blocking on shortfalls (mirrors
+    `execute_composition` under force + the protocol coverage check): the OUT is still written,
+    the shortfall only reported back. No-op (returns `{'status': 'noop'}`) when `item` is no
+    recipe's output or none has a usable base yield, or when `produced_quantity` <= 0.
+
+    Returns `{'status': 'done', 'composition': name, 'movements': [id...], 'shortfalls': [...]}`
+    or `{'status': 'noop'}`.
+    """
+    from apps.stock.calculations import current_quantity
+    from apps.stock.models import MovementType, StockComposition, StockMovement
+
+    try:
+        produced_quantity = float(produced_quantity)
+    except (TypeError, ValueError):
+        return {'status': 'noop'}
+    if produced_quantity <= 0:
+        return {'status': 'noop'}
+
+    composition = (
+        StockComposition.objects
+        .filter(output_item=item, base_output_quantity__gt=0)
+        .order_by('name', 'id')
+        .prefetch_related('ingredients__item')
+        .first()
+    )
+    if composition is None:
+        return {'status': 'noop'}
+
+    factor = produced_quantity / composition.base_output_quantity
+    note = f'Décompté auto · production de {produced_quantity:g} {item.unit} « {composition.name} »'
+    created, shortfalls = [], []
+    with transaction.atomic():
+        for ing in composition.ingredients.all():
+            need = ing.quantity * factor
+            have = current_quantity(ing.item)
+            if have < need:
+                shortfalls.append({
+                    'itemCode': ing.item_id, 'itemName': ing.item.name, 'unit': ing.item.unit,
+                    'needed': need, 'onHand': have,
+                })
+            created.append(StockMovement.objects.create(
+                item=ing.item, batch=None, movement_type=MovementType.OUT,
+                quantity=need, movement_date=movement_date, note=note,
+            ))
+
+    return {
+        'status': 'done', 'composition': composition.name,
+        'movements': [m.id for m in created], 'shortfalls': shortfalls,
+    }
+
+
 def execute_composition(composition, ingredient_rows, output_quantity, *, force=False):
     """Run `composition`.
 

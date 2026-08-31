@@ -31,6 +31,7 @@ function buildData(items, categories) {
       supplier: item.supplier ?? null,
       itemType: item.item_type || "",
       quantity: item.current_quantity ?? "",
+      originalQuantity: item.current_quantity ?? 0,
       date: todayISO(),
     });
   }
@@ -48,7 +49,7 @@ function buildData(items, categories) {
  * @param {() => void} onClose - X button, backdrop, Escape (confirms if the form has edits).
  * @param {() => void} onSaved - called right after a successful save, then the modal closes.
  */
-export default function StockParametersModal({ open, farmId, onClose, onSaved }) {
+export default function StockParametersModal({ open, farmId, compositions = [], onClose, onSaved }) {
   const reduceMotion = useReducedMotion();
   const panelRef = useRef(null);
   const dirtyRef = useRef(false);
@@ -129,6 +130,10 @@ export default function StockParametersModal({ open, farmId, onClose, onSaved })
           // sends nothing → no double-count.
           const unitPrice = Number(byName[it.name].unit_price) || 0;
           const totalPrice = it.is_new_item && unitPrice > 0 ? Number(it.quantity) * unitPrice : null;
+          // Composed item whose level was raised here → treat the increase as a production run:
+          // deduct the recipe ingredients scaled to the delta (backend, via production_quantity).
+          const delta = Number(it.quantity) - (Number(it.original_quantity) || 0);
+          const production = it.deduct_production && delta > 0 ? delta : null;
           return stockApi.addMovement({
             item: byName[it.name].item_code,
             movement_type: "IN",
@@ -136,6 +141,7 @@ export default function StockParametersModal({ open, farmId, onClose, onSaved })
             movement_date: it.movement_date || todayISO(),
             note: "Saisie via « Mettre à jour le stock »",
             ...(totalPrice && totalPrice > 0 ? { total_price: totalPrice } : {}),
+            ...(production ? { production_quantity: production } : {}),
           });
         });
       if (movements.length) await Promise.all(movements);
@@ -195,6 +201,7 @@ export default function StockParametersModal({ open, farmId, onClose, onSaved })
                 saving={saving}
                 onSave={handleSave}
                 onSuppliersChanged={loadSuppliers}
+                compositions={compositions}
                 showStockEntry
               />
             ) : (

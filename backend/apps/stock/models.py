@@ -220,6 +220,14 @@ class StockComposition(models.Model):
     output_item = models.ForeignKey(
         StockItem, on_delete=models.CASCADE, related_name='compositions_as_output',
     )
+    # "Rendement de base" (2026-08-31) — how many `output_item` units one recipe batch yields
+    # for the `ingredients` quantities as entered. When set (> 0), adding this output item's
+    # stock anywhere else ("Ajouter Ici!" / the "Mettre à jour le stock" modal) with the
+    # "décompter les ingrédients" option on auto-deducts each ingredient scaled to the amount
+    # added — ingredient.quantity * added / base_output_quantity — as if the recipe had been
+    # executed for that amount (apps.stock.compositions.auto_deduct_ingredients_for_output).
+    # Nullable so recipes created before this field keep working (the option is then disabled).
+    base_output_quantity = models.FloatField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

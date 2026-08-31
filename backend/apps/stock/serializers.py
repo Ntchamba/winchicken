@@ -104,12 +104,18 @@ class StockMovementSerializer(serializers.ModelSerializer):
         max_digits=14, decimal_places=2, min_value=0, required=False, allow_null=True, write_only=True,
         help_text='"Prix total payé" for a manual IN — creates a matching Expense.',
     )
+    production_quantity = serializers.FloatField(
+        min_value=0, required=False, allow_null=True, write_only=True,
+        help_text='When this IN adds a composition\'s output item and the "décompter les '
+                  'ingrédients" option is on: the output amount to treat as produced, so the '
+                  'recipe ingredients are deducted scaled to it (apps.stock.compositions).',
+    )
 
     class Meta:
         model = StockMovement
         fields = [
             'id', 'item', 'batch', 'movement_type', 'quantity', 'movement_date',
-            'supplier_batch_number', 'supplier', 'note', 'total_price',
+            'supplier_batch_number', 'supplier', 'note', 'total_price', 'production_quantity',
         ]
         read_only_fields = ['id']
         extra_kwargs = {
@@ -118,7 +124,8 @@ class StockMovementSerializer(serializers.ModelSerializer):
         }
 
     def create(self, validated_data):
-        validated_data.pop('total_price', None)  # consumed by the view, not a model field
+        validated_data.pop('total_price', None)         # consumed by the view, not model fields
+        validated_data.pop('production_quantity', None)
         return super().create(validated_data)
 
 
@@ -178,8 +185,17 @@ class StockCompositionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StockComposition
-        fields = ['id', 'name', 'output_item', 'output_item_name', 'output_item_unit', 'ingredients']
+        fields = [
+            'id', 'name', 'output_item', 'output_item_name', 'output_item_unit',
+            'base_output_quantity', 'ingredients',
+        ]
         read_only_fields = ['id']
+        extra_kwargs = {'base_output_quantity': {'required': False, 'allow_null': True}}
+
+    def validate_base_output_quantity(self, value):
+        if value is not None and value <= 0:
+            raise serializers.ValidationError('Le rendement de base doit être positif.')
+        return value
 
     def validate(self, attrs):
         if not attrs.get('ingredients'):

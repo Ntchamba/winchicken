@@ -415,14 +415,30 @@ class StockMovementListCreateView(generics.ListCreateAPIView):
         return StockMovement.objects.filter(item__farm=self.request.user.farm)
 
     def perform_create(self, serializer):
+        from apps.stock.compositions import auto_deduct_ingredients_for_output
         from apps.stock.models import MovementType
         from apps.stock.purchasing import record_manual_purchase_expense
 
         total_price = serializer.validated_data.get('total_price')
+        production_quantity = serializer.validated_data.get('production_quantity')
+        self._composition_deduction = None
         with transaction.atomic():
             movement = serializer.save()
-            if total_price and movement.movement_type == MovementType.IN:
-                record_manual_purchase_expense(movement, total_price)
+            if movement.movement_type == MovementType.IN:
+                if total_price:
+                    record_manual_purchase_expense(movement, total_price)
+                if production_quantity:
+                    result = auto_deduct_ingredients_for_output(
+                        movement.item, production_quantity, movement.movement_date,
+                    )
+                    if result.get('status') == 'done':
+                        self._composition_deduction = result
+
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        if getattr(self, '_composition_deduction', None):
+            response.data['composition_deduction'] = self._composition_deduction
+        return response
 
 
 class VaccinationListCreateView(generics.ListCreateAPIView):

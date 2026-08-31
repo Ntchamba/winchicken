@@ -29,6 +29,7 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
   const [name, setName] = useState("");
   const [ingredients, setIngredients] = useState([blankIngredient()]);
   const [outputItem, setOutputItem] = useState(null);
+  const [baseYield, setBaseYield] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -42,7 +43,8 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
   };
 
   const resetForm = () => {
-    setCreating(false); setName(""); setIngredients([blankIngredient()]); setOutputItem(null); setError("");
+    setCreating(false); setName(""); setIngredients([blankIngredient()]);
+    setOutputItem(null); setBaseYield(""); setError("");
   };
 
   const save = async () => {
@@ -52,9 +54,13 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
     if (!name.trim()) { setError("Le nom de la composition est requis."); return; }
     if (rows.length === 0) { setError("Ajoutez au moins un ingrédient avec une quantité."); return; }
     if (!outputItem) { setError("Sélectionnez ou créez l'article produit."); return; }
+    if (baseYield !== "" && Number(baseYield) <= 0) { setError("Le rendement de base doit être positif."); return; }
     setBusy(true); setError("");
     try {
-      await stockApi.addComposition(farmId, { name: name.trim(), output_item: outputItem, ingredients: rows });
+      await stockApi.addComposition(farmId, {
+        name: name.trim(), output_item: outputItem, ingredients: rows,
+        ...(baseYield !== "" ? { base_output_quantity: Number(baseYield) } : {}),
+      });
       resetForm();
       load();
       onChanged?.();
@@ -175,6 +181,20 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
             />
           </label>
 
+          <label className="field" style={{ maxWidth: 340, marginTop: 12 }}>
+            <span>Rendement de base (facultatif)</span>
+            <input
+              type="number" min="0" step="any"
+              placeholder="ex. 1800 (produit par lot)"
+              value={baseYield}
+              onChange={(e) => setBaseYield(e.target.value)}
+            />
+            <span className="schedule-note" style={{ marginTop: 4 }}>
+              Quantité produite par ce lot d'ingrédients. Renseignez-la pour que l'ajout de stock
+              de ce produit ailleurs décompte les ingrédients au prorata.
+            </span>
+          </label>
+
           {error && <p className="field-error" style={{ margin: "8px 0 0" }}>{error}</p>}
           <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
             <button className="save-button" style={{ width: "auto" }} onClick={save} disabled={busy}>
@@ -198,7 +218,12 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
                 <tr key={c.id}>
                   <td>{c.name}</td>
                   <td>{ingredientSummary(c)}</td>
-                  <td>{c.output_item_name}{c.output_item_unit ? ` (${c.output_item_unit})` : ""}</td>
+                  <td>
+                    {c.output_item_name}{c.output_item_unit ? ` (${c.output_item_unit})` : ""}
+                    {c.base_output_quantity > 0 && (
+                      <span className="schedule-note"> · rendement {c.base_output_quantity}{c.output_item_unit ? ` ${c.output_item_unit}` : ""}/lot</span>
+                    )}
+                  </td>
                   {canManage && (
                     <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
                       <button className="add-button" style={{ marginTop: 0, padding: "5px 9px", fontSize: 12 }}
