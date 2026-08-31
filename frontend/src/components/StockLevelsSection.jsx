@@ -99,8 +99,8 @@ export default function StockLevelsSection({ items = [], onChanged }) {
                       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: "4px 0" }}>
                         <input
                           type="number" min="0" step="any" autoFocus
-                          placeholder={`Quantité (${it.unit})`}
-                          aria-label="Quantité à ajouter"
+                          placeholder={it.unit ? `Quantité (${it.unit})` : "Quantité"}
+                          aria-label={it.unit ? `Quantité à ajouter (${it.unit})` : "Quantité à ajouter"}
                           value={draft.quantity}
                           onChange={(e) => setDraft({ ...draft, quantity: e.target.value })}
                           style={{ width: 150 }}
