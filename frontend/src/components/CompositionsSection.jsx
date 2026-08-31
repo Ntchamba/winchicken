@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Play, Plus, Trash2, X } from "lucide-react";
 import { stockApi } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 import ResourceCombobox from "./ResourceCombobox";
@@ -69,6 +69,46 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
     await stockApi.removeComposition(id);
     load();
     onChanged?.();
+  };
+
+  // --- Exécuter ---------------------------------------------------------------
+  const [runFor, setRunFor] = useState(null);          // composition being executed
+  const [runIngredients, setRunIngredients] = useState({});  // {itemCode: qty}
+  const [runOutput, setRunOutput] = useState("");
+  const [runShortfalls, setRunShortfalls] = useState([]);
+  const [runBusy, setRunBusy] = useState(false);
+  const [runError, setRunError] = useState("");
+
+  const openRun = (c) => {
+    setRunFor(c);
+    setRunIngredients(Object.fromEntries(c.ingredients.map((i) => [i.item, String(i.quantity)])));
+    setRunOutput("");
+    setRunShortfalls([]);
+    setRunError("");
+  };
+  const closeRun = () => { setRunFor(null); setRunShortfalls([]); setRunError(""); };
+
+  const execute = async (force) => {
+    if (!Number(runOutput) || Number(runOutput) <= 0) { setRunError("La quantité produite doit être positive."); return; }
+    setRunBusy(true); setRunError("");
+    try {
+      const { data } = await stockApi.executeComposition(runFor.id, {
+        ingredients: runFor.ingredients.map((i) => ({ item: i.item, quantity: Number(runIngredients[i.item]) })),
+        outputQuantity: Number(runOutput),
+        force,
+      });
+      if (data.status === "insufficient_stock") {
+        setRunShortfalls(data.shortfalls);   // non-blocking — user may confirm anyway
+        return;
+      }
+      closeRun();
+      load();
+      onChanged?.();
+    } catch {
+      setRunError("Impossible d'exécuter la composition.");
+    } finally {
+      setRunBusy(false);
+    }
   };
 
   const ingredientSummary = (c) =>
@@ -154,20 +194,76 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
               <tr><th>Nom</th><th>Ingrédients</th><th>Produit</th>{canManage && <th />}</tr>
             </thead>
             <tbody>
-              {compositions.map((c) => (
+              {compositions.flatMap((c) => [
                 <tr key={c.id}>
                   <td>{c.name}</td>
                   <td>{ingredientSummary(c)}</td>
                   <td>{c.output_item_name}{c.output_item_unit ? ` (${c.output_item_unit})` : ""}</td>
                   {canManage && (
                     <td style={{ whiteSpace: "nowrap", textAlign: "right" }}>
+                      <button className="add-button" style={{ marginTop: 0, padding: "5px 9px", fontSize: 12 }}
+                        onClick={() => (runFor?.id === c.id ? closeRun() : openRun(c))} type="button">
+                        <Play size={12} strokeWidth={2.4} /> Exécuter
+                      </button>
                       <button className="icon-button" aria-label={`Supprimer ${c.name}`} onClick={() => remove(c.id)}>
                         <Trash2 size={13} strokeWidth={2} />
                       </button>
                     </td>
                   )}
-                </tr>
-              ))}
+                </tr>,
+                runFor?.id === c.id && (
+                  <tr key={`${c.id}-run`}>
+                    <td colSpan={canManage ? 4 : 3}>
+                      <div style={{ padding: "6px 0" }}>
+                        <p className="schedule-note" style={{ marginBottom: 6 }}>Exécuter «&nbsp;{c.name}&nbsp;»</p>
+                        {c.ingredients.map((i) => (
+                          <div key={i.item} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                            <span style={{ minWidth: 160 }}>{i.item_name}</span>
+                            <input
+                              type="number" min="0" step="any"
+                              aria-label={`Quantité ${i.item_name}`}
+                              value={runIngredients[i.item] ?? ""}
+                              onChange={(e) => setRunIngredients((p) => ({ ...p, [i.item]: e.target.value }))}
+                              style={{ width: 130 }}
+                            />
+                            <span className="schedule-note">{i.unit} · en stock : {i.current_quantity}</span>
+                          </div>
+                        ))}
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                          <span style={{ minWidth: 160, fontWeight: 700 }}>{c.output_item_name} (produit)</span>
+                          <input
+                            type="number" min="0" step="any" autoFocus
+                            placeholder="Quantité produite"
+                            aria-label="Quantité produite"
+                            value={runOutput}
+                            onChange={(e) => setRunOutput(e.target.value)}
+                            style={{ width: 130 }}
+                          />
+                          <span className="schedule-note">{c.output_item_unit} — saisie manuelle, pas la somme des entrées</span>
+                        </div>
+
+                        {runShortfalls.length > 0 && (
+                          <div className="field-error" style={{ margin: "8px 0 0", fontSize: 12 }}>
+                            Stock insuffisant :{" "}
+                            {runShortfalls.map((s) => `${s.itemName} (besoin ${s.needed} ${s.unit}, dispo ${s.onHand})`).join(" ; ")}
+                            {" "}— vous pouvez confirmer quand même.
+                          </div>
+                        )}
+                        {runError && <p className="field-error" style={{ margin: "6px 0 0" }}>{runError}</p>}
+
+                        <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                          <button className="save-button" style={{ width: "auto" }} disabled={runBusy}
+                            onClick={() => execute(runShortfalls.length > 0)}>
+                            {runBusy ? <Loader2 size={16} className="spin" />
+                              : runShortfalls.length > 0 ? "Confirmer quand même" : "Confirmer l'exécution"}
+                          </button>
+                          <button className="add-button" style={{ marginTop: 0 }} type="button" onClick={closeRun}>Annuler</button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ),
+              ].filter(Boolean))}
             </tbody>
           </table>
         </div>

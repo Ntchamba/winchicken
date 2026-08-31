@@ -398,3 +398,87 @@ class StockCompositionApiTests(APITestCase):
             self.client.post(f'/api/farms/{self.farm.id}/stock-compositions/', self._payload(), format='json').status_code,
             status.HTTP_403_FORBIDDEN,
         )
+
+
+class StockCompositionExecuteTests(APITestCase):
+    """POST /api/stock-compositions/{id}/execute/ (2026-08-31, Step 3)."""
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Exec')
+        self.admin = _make_user(self.farm)
+        self.client.force_authenticate(self.admin)
+        cat = StockCategory.objects.get(farm=self.farm, kind='FEED')
+        self.mais = StockItem.objects.create(item_code='FEE-1-001', farm=self.farm, category=cat, name='Maïs', unit='kg')
+        self.macabo = StockItem.objects.create(item_code='FEE-1-002', farm=self.farm, category=cat, name='Macabo', unit='kg')
+        self.provende = StockItem.objects.create(item_code='FEE-1-003', farm=self.farm, category=cat, name='Provende', unit='kg')
+        StockMovement.objects.create(item=self.mais, movement_type=MovementType.IN, quantity=1500, movement_date=date(2026, 8, 1))
+        StockMovement.objects.create(item=self.macabo, movement_type=MovementType.IN, quantity=1500, movement_date=date(2026, 8, 1))
+        self.comp = self.client.post(f'/api/farms/{self.farm.id}/stock-compositions/', {
+            'name': 'Provende maison', 'output_item': self.provende.item_code,
+            'ingredients': [
+                {'item': self.mais.item_code, 'quantity': 1000},
+                {'item': self.macabo.item_code, 'quantity': 1000},
+            ],
+        }, format='json').data
+        self.url = f'/api/stock-compositions/{self.comp["id"]}/execute/'
+
+    def test_execute_moves_stock_in_one_transaction(self):
+        resp = self.client.post(self.url, {
+            'ingredients': [
+                {'item': self.mais.item_code, 'quantity': 1000},
+                {'item': self.macabo.item_code, 'quantity': 1000},
+            ],
+            'outputQuantity': 2000,  # not the sum — user-entered
+        }, format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['status'], 'done')
+        self.assertEqual(len(resp.data['movements']), 3)   # 2 OUT + 1 IN
+        self.assertEqual(current_quantity(self.mais), 500)     # 1500 - 1000
+        self.assertEqual(current_quantity(self.macabo), 500)   # 1500 - 1000
+        self.assertEqual(current_quantity(self.provende), 2000)  # + entered output
+
+        outs = StockMovement.objects.filter(movement_type=MovementType.OUT)
+        self.assertEqual(outs.count(), 2)
+        for m in list(outs) + [StockMovement.objects.get(movement_type=MovementType.IN, item=self.provende)]:
+            self.assertIsNone(m.batch_id)
+            self.assertEqual(m.movement_date, date.today())
+
+    def test_execute_uses_edited_ingredient_quantities(self):
+        resp = self.client.post(self.url, {
+            'ingredients': [
+                {'item': self.mais.item_code, 'quantity': 1200},   # adjusted from base 1000
+                {'item': self.macabo.item_code, 'quantity': 900},
+            ],
+            'outputQuantity': 2100,
+        }, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(current_quantity(self.mais), 300)     # 1500 - 1200
+        self.assertEqual(current_quantity(self.macabo), 600)   # 1500 - 900
+
+    def test_insufficient_stock_is_non_blocking_and_writes_nothing(self):
+        resp = self.client.post(self.url, {
+            'ingredients': [
+                {'item': self.mais.item_code, 'quantity': 5000},   # > 1500 on hand
+                {'item': self.macabo.item_code, 'quantity': 1000},
+            ],
+            'outputQuantity': 2000,
+        }, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['status'], 'insufficient_stock')
+        self.assertEqual(resp.data['shortfalls'][0]['itemName'], 'Maïs')
+        self.assertEqual(resp.data['shortfalls'][0]['needed'], 5000)
+        self.assertEqual(StockMovement.objects.filter(movement_type=MovementType.OUT).count(), 0)
+        self.assertEqual(current_quantity(self.mais), 1500)   # untouched
+
+    def test_force_executes_despite_insufficient_stock(self):
+        resp = self.client.post(self.url, {
+            'ingredients': [{'item': self.mais.item_code, 'quantity': 5000}, {'item': self.macabo.item_code, 'quantity': 1000}],
+            'outputQuantity': 2000, 'force': True,
+        }, format='json')
+        self.assertEqual(resp.data['status'], 'done')
+        self.assertEqual(current_quantity(self.mais), -3500)   # allowed negative
+
+    def test_bad_output_quantity_is_rejected(self):
+        resp = self.client.post(self.url, {'ingredients': [], 'outputQuantity': 0}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(StockMovement.objects.filter(movement_type=MovementType.OUT).count(), 0)

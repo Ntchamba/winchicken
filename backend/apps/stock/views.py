@@ -255,6 +255,47 @@ class StockCompositionDetailView(generics.RetrieveDestroyAPIView):
         )
 
 
+class StockCompositionExecuteView(APIView):
+    """POST /api/stock-compositions/{id}/execute/ — run a composition. Body:
+    `{ingredients: [{item, quantity}, ...], outputQuantity, force?}`. Per-ingredient quantities
+    are editable (default to the recipe base); `outputQuantity` is user-entered, never summed
+    from inputs. Non-blocking insufficient-stock check: a shortfall + no `force` returns
+    `{status: 'insufficient_stock', shortfalls}` and writes nothing. Otherwise one transaction:
+    one OUT per ingredient + one IN for the output, movement_date = today, batch = null.
+    Reserved to Admin/Farm Manager/Farmer."""
+
+    permission_classes = [IsAdminOrFarmManagerOrFarmer]
+
+    @extend_schema(
+        request=inline_serializer('StockCompositionExecute', {
+            'ingredients': inline_serializer('StockCompositionExecuteIngredient', {
+                'item': serializers.CharField(), 'quantity': serializers.FloatField(),
+            }, many=True),
+            'outputQuantity': serializers.FloatField(),
+            'force': serializers.BooleanField(required=False),
+        }),
+        responses={200: inline_serializer('StockCompositionExecuteResult', {
+            'status': serializers.ChoiceField(['done', 'insufficient_stock']),
+            'shortfalls': serializers.ListField(child=serializers.DictField()),
+            'movements': serializers.ListField(child=serializers.IntegerField(), required=False),
+        })},
+    )
+    def post(self, request, pk):
+        from apps.stock.compositions import execute_composition
+
+        composition = get_object_or_404(
+            StockComposition.objects.select_related('output_item').prefetch_related('ingredients__item'),
+            pk=pk, farm=request.user.farm,
+        )
+        result = execute_composition(
+            composition,
+            request.data.get('ingredients') or [],
+            request.data.get('outputQuantity'),
+            force=bool(request.data.get('force')),
+        )
+        return Response(result, status=result.pop('http_status', 200))
+
+
 class SupplierDetailView(generics.RetrieveUpdateDestroyAPIView):
     """GET/PUT/PATCH/DELETE /api/suppliers/{id}/. Write reserved to Admin/Farm Manager/Farmer."""
 

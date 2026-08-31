@@ -11,6 +11,7 @@ urlpatterns = [
     path('farms/<int:farm_id>/stock-evolution/', views.FarmStockEvolutionView.as_view(), name='farm-stock-evolution'),
     path('farms/<int:farm_id>/stock-compositions/', views.FarmStockCompositionsView.as_view(), name='farm-stock-compositions'),
     path('stock-compositions/<int:pk>/', views.StockCompositionDetailView.as_view(), name='stock-composition-detail'),
+    path('stock-compositions/<int:pk>/execute/', views.StockCompositionExecuteView.as_view(), name='stock-composition-execute'),
     path('stock-items/low-count/', views.StockItemsLowCountView.as_view(), name='stock-items-low-count'),
     path('stock-items/<str:item_code>/coverage/', views.StockItemCoverageView.as_view(), name='stock-item-coverage'),
     path('stock-items/<str:item_code>/', views.StockItemDetailView.as_view(), name='stock-item-detail'),
