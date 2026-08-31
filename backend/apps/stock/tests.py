@@ -1,17 +1,14 @@
-from datetime import date, timedelta
+from datetime import date
 
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.alerts.models import Alert, AlertRuleType
-from apps.batches.models import BatchStatus, DailyLog, PoultryBatch, ProductionType
+from apps.batches.models import BatchStatus, PoultryBatch, ProductionType
 from apps.core.models import Farm, User, UserRole, create_role_profile
 from apps.houses.models import PoultryHouse
-from apps.protocols.models import ProtocolCategory, ProtocolTemplate
 from apps.stock.calculations import current_quantity, stock_evolution
 from apps.stock.models import MovementType, StockCategory, StockItem, StockMovement, Supplier
-from apps.stock.services import run_daily_consumption
 
 
 def _make_user(farm, role=UserRole.ADMIN, email='admin@stock-test.local'):
@@ -142,90 +139,6 @@ class StockEvolutionTests(APITestCase):
         resp = self.client.get(f'/api/farms/{self.farm.id}/stock-evolution/')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp.data[0]['points'], [])
-
-
-class DailyConsumptionTests(APITestCase):
-    def setUp(self):
-        self.farm = Farm.objects.create(name='Ferme Consumption')
-        self.house = PoultryHouse.objects.create(house_code='H-C-1', farm=self.farm, name='Salle', max_capacity=1000)
-        self.category = ProtocolCategory.objects.create(house=self.house, label='Alimentation', icon='Soup')
-        self.cat = StockCategory.objects.get(farm=self.farm, kind='FEED')
-        self.item = StockItem.objects.create(
-            item_code='FEE-1-001', farm=self.farm, category=self.cat, name='Aliment démarrage', unit='kg',
-            alert_threshold=50,
-        )
-        self.today = date(2026, 3, 10)
-        # Batch started 9 days ago → day_of_cycle == 9 today; line covers day 1..15.
-        self.batch = PoultryBatch.objects.create(
-            batch_code='BATCH-C-1', house=self.house, production_type=ProductionType.BROILER,
-            initial_count=500, start_date=self.today - timedelta(days=9), status=BatchStatus.ACTIVE,
-        )
-        self.line = ProtocolTemplate.objects.create(
-            house=self.house, category=self.category, from_value=1, from_unit='DAY',
-            to_value=15, to_unit='DAY', what='Aliment démarrage', stock_item=self.item, quantity_per_day=40,
-        )
-
-    def test_creates_one_out_per_matching_row(self):
-        created = run_daily_consumption(today=self.today)
-        self.assertEqual(len(created), 1)
-        mv = created[0]
-        self.assertEqual(mv.movement_type, MovementType.OUT)
-        self.assertEqual(mv.quantity, 40)
-        self.assertEqual(mv.movement_date, self.today)
-        self.assertEqual(mv.batch_id, self.batch.batch_code)
-        self.assertEqual(mv.protocol_line_id, self.line.id)
-
-    def test_is_idempotent_same_day(self):
-        run_daily_consumption(today=self.today)
-        second = run_daily_consumption(today=self.today)
-        self.assertEqual(second, [])
-        self.assertEqual(
-            StockMovement.objects.filter(item=self.item, batch=self.batch, movement_date=self.today).count(), 1,
-        )
-
-    def test_nothing_created_when_day_outside_range(self):
-        outside = self.batch.start_date + timedelta(days=40)  # day_of_cycle 40, line ends at 15
-        created = run_daily_consumption(today=outside)
-        self.assertEqual(created, [])
-
-    def test_closed_batch_ignored(self):
-        self.batch.status = BatchStatus.CLOSED
-        self.batch.save(update_fields=['status'])
-        self.assertEqual(run_daily_consumption(today=self.today), [])
-
-    def test_triggers_low_stock_alert_when_threshold_crossed(self):
-        # 60 on hand, threshold 50, daily draw 40 → after today's OUT, 20 < 50 → LOW_STOCK.
-        StockMovement.objects.create(item=self.item, movement_type=MovementType.IN, quantity=60, movement_date=self.today - timedelta(days=1))
-        run_daily_consumption(today=self.today)
-        self.assertEqual(current_quantity(self.item), 20)
-        self.assertTrue(
-            Alert.objects.filter(rule__rule_type=AlertRuleType.LOW_STOCK, rule__farm=self.farm).exists()
-        )
-
-    def test_management_command_runs(self):
-        from django.core.management import call_command
-        from io import StringIO
-
-        out = StringIO()
-        call_command('run_stock_consumption', '--date', self.today.isoformat(), stdout=out)
-        self.assertIn('1 stock movement(s) created', out.getvalue())
-
-    def test_dose_per_bird_scales_with_current_count(self):
-        # "Dose par bande" mode: quantity == dose_per_bird * batch.current_count (500 birds).
-        self.line.quantity_per_day = None
-        self.line.dose_per_bird = 0.5
-        self.line.save(update_fields=['quantity_per_day', 'dose_per_bird'])
-        created = run_daily_consumption(today=self.today)
-        self.assertEqual(len(created), 1)
-        self.assertEqual(created[0].quantity, 250)
-
-    def test_dose_per_bird_skips_empty_batch(self):
-        # All birds dead → current_count 0 → computed quantity 0 → no movement.
-        DailyLog.objects.create(batch=self.batch, log_date=self.today, mortality=self.batch.initial_count)
-        self.line.quantity_per_day = None
-        self.line.dose_per_bird = 0.5
-        self.line.save(update_fields=['quantity_per_day', 'dose_per_bird'])
-        self.assertEqual(run_daily_consumption(today=self.today), [])
 
 
 class CoverageEndpointTests(APITestCase):

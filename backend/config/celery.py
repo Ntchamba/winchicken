@@ -12,11 +12,10 @@ app.autodiscover_tasks()
 # Static beat_schedule rather than django-celery-beat — no new dependency, consistent with the
 # existing `CELERY_*` settings style. Run with `celery -A config beat`.
 app.conf.beat_schedule = {
-    # Protocol-driven daily stock consumption (2026-08-28, stock restructure Part E).
-    'daily-stock-consumption': {
-        'task': 'apps.stock.tasks.deduct_daily_stock_consumption',
-        'schedule': crontab(hour=0, minute=0),
-    },
+    # NOTE: there is deliberately NO automatic stock-deduction entry here. Stock is only ever
+    # deducted by an explicit user action ("Marquer comme fait" on a protocol task occurrence,
+    # or executing a composition) — see docs/deviations.md. The 2026-08-28 daily-stock-consumption
+    # task was removed 2026-08-31.
     # Time-based trigger for SCHEDULED task reminders (2026-08-30) — every minute, since
     # AlertRule.trigger_time is hour:minute-specific. apps.alerts.services.fire_scheduled_alerts
     # is idempotent, so a minute cadence + a small catch-up window is safe.

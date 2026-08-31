@@ -95,17 +95,14 @@ class ProtocolTemplate(models.Model):
     until_end = models.BooleanField(default=False)
     what = models.CharField(max_length=255)
     details = models.CharField(max_length=500, blank=True)
-    # Optional stock consumption (2026-08-28): a row can declare "this task consumes
-    # `stock_item` daily", in one of two mutually-exclusive dosage modes (2026-08-30):
-    #   • `quantity_per_day` — a fixed amount/day regardless of flock size (e.g. a Feeding row →
-    #     40 kg/day of "Aliment démarrage"). UI label "Quantité fixe / jour".
-    #   • `dose_per_bird` — an amount per live bird; the daily movement is
-    #     `dose_per_bird * batch.current_count` (e.g. a vaccination/water-treatment row →
-    #     0.5 mL/bird). UI label "Dose par bande".
-    # At most one of the two is set (enforced in ProtocolTemplateSerializer.validate); both null
-    # for rows that aren't stock consumption (cleaning, health checks). Drives the daily
-    # automated StockMovement (apps.stock.services.run_daily_consumption) and the form's inline
-    # insufficient-stock warning (apps.stock.calculations.coverage_for).
+    # Optional stock consumption: a row can declare "doing this task consumes `stock_item`".
+    # `quantity_per_day` is the amount consumed per validated occurrence — despite the legacy
+    # name it is NOT time-based: as of 2026-08-31 stock is deducted only when the occurrence is
+    # marked done ("Marquer comme fait" → apps.stock.services_consumption), never because a day
+    # passed. `dose_per_bird` (× batch.current_count) is the per-bird alternative. At most one
+    # is set (ProtocolTemplateSerializer.validate); both null for non-consumption rows. Also
+    # feeds the config-time insufficient-stock warning (apps.stock.calculations.coverage_for).
+    # (The 2026-08-28 automatic daily Celery deduction was removed 2026-08-31.)
     stock_item = models.ForeignKey(
         'stock.StockItem', on_delete=models.SET_NULL, null=True, blank=True, related_name='protocol_lines',
     )
