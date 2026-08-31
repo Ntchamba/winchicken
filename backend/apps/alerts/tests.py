@@ -263,3 +263,72 @@ class FireScheduledAlertsTests(TestCase):
         self.assertEqual(sms.provider_status, SmsStatus.SENT)
         self.assertEqual(sms.provider, 'console-local')  # ConsoleSmsProvider's marker, no gateway hit
         self.assertEqual(sms.recipient, '+237600000001')
+
+
+class WebPushTests(TestCase):
+    """Desktop notifications (2026-08-31): subscription endpoint, signal fan-out, dead-endpoint
+    pruning."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        self.farm = Farm.objects.create(name='Ferme Push')
+        self.user = User.objects.create_user(email='push@farm.local', password='x', farm=self.farm, role=UserRole.ADMIN)
+        create_role_profile(self.user)
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def _sub(self, endpoint='https://push.example/abc'):
+        from apps.alerts.models import PushSubscription
+        return PushSubscription.objects.create(
+            farm=self.farm, user=self.user, endpoint=endpoint, p256dh='k', auth='a',
+        )
+
+    def test_subscribe_is_idempotent_upsert(self):
+        body = {'endpoint': 'https://push.example/xyz', 'keys': {'p256dh': 'K1', 'auth': 'A1'}}
+        r1 = self.client.post('/api/push-subscriptions/', body, format='json')
+        r2 = self.client.post('/api/push-subscriptions/', {**body, 'keys': {'p256dh': 'K2', 'auth': 'A2'}}, format='json')
+        from apps.alerts.models import PushSubscription
+        self.assertEqual(r1.status_code, 201)
+        self.assertEqual(r2.status_code, 201)
+        self.assertEqual(PushSubscription.objects.filter(endpoint='https://push.example/xyz').count(), 1)
+        self.assertEqual(PushSubscription.objects.get(endpoint='https://push.example/xyz').p256dh, 'K2')
+
+    def test_public_key_endpoint(self):
+        from django.test import override_settings
+        with override_settings(VAPID_PUBLIC_KEY='PUB', WEB_PUSH_ENABLED=True):
+            r = self.client.get('/api/push-public-key/')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data['publicKey'], 'PUB')
+
+    def test_expense_creation_queues_one_push(self):
+        from unittest.mock import patch
+        from django.test import override_settings
+
+        with override_settings(WEB_PUSH_ENABLED=True), \
+             patch('apps.alerts.tasks.send_web_push_task.delay') as delay:
+            from apps.finance.models import Expense, ExpenseCategory
+            with self.captureOnCommitCallbacks(execute=True):
+                Expense.objects.create(farm=self.farm, category=ExpenseCategory.FEED, amount=1000, expense_date='2026-08-31')
+        delay.assert_called_once()
+        args = delay.call_args[0]
+        self.assertEqual(args[0], self.farm.id)
+        self.assertEqual(args[1]['title'], 'Nouvelle dépense')
+
+    def test_send_prunes_dead_subscription(self):
+        from unittest.mock import MagicMock, patch
+        from django.test import override_settings
+
+        sub = self._sub()
+        from apps.alerts.models import PushSubscription
+
+        class _Exc(Exception):
+            response = MagicMock(status_code=410)
+
+        with override_settings(WEB_PUSH_ENABLED=True, VAPID_PRIVATE_KEY='p', VAPID_PUBLIC_KEY='P'), \
+             patch('apps.alerts.push.webpush', side_effect=_Exc), \
+             patch('apps.alerts.push.WebPushException', _Exc):
+            from apps.alerts.push import send_web_push_to_farm
+            sent = send_web_push_to_farm(self.farm.id, {'title': 't', 'body': 'b'})
+        self.assertEqual(sent, 0)
+        self.assertFalse(PushSubscription.objects.filter(id=sub.id).exists())

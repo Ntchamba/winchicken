@@ -23,6 +23,16 @@ def check_scheduled_alerts():
     return len(created)
 
 
+@shared_task
+def send_web_push_task(farm_id: int, payload: dict):
+    """Deliver one desktop notification `payload` to every browser subscribed for the farm.
+    Queued (never inline) by `apps.alerts.notify.notify_farm` on transaction commit. Returns
+    the number of successful deliveries."""
+    from apps.alerts.push import send_web_push_to_farm
+
+    return send_web_push_to_farm(farm_id, payload)
+
+
 @shared_task(bind=True, max_retries=MAX_RETRIES)
 def send_sms_task(self, sms_message_id: int):
     """Sends one SmsMessage. Idempotent via idempotency_key — safe to replay on worker crash.

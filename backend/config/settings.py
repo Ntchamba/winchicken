@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     'apps.finance',
     'apps.alerts',
     'apps.protocols',
+    'apps.search',
 ]
 
 MIDDLEWARE = [
@@ -150,6 +151,36 @@ SIMPLE_JWT = {
 
 CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:5173', cast=Csv())
 
+# Factory reset audit trail (2026-08-26) — plain-text, on the filesystem, deliberately *not* a DB
+# table: POST /api/farm/reset/ wipes every farm-scoped row in one transaction, so a DB-backed log
+# would be wiped right along with everything else it was supposed to be evidence of. `logs/` is
+# inside the `./backend:/app` bind mount (docker-compose.yml), so the file survives container
+# restarts/rebuilds without needing its own named volume.
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'plain': {'format': '%(asctime)s %(message)s'},
+    },
+    'handlers': {
+        'factory_reset_file': {
+            'class': 'logging.FileHandler',
+            'filename': LOGS_DIR / 'factory_reset.log',
+            'formatter': 'plain',
+        },
+    },
+    'loggers': {
+        'factory_reset': {
+            'handlers': ['factory_reset_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
 # Celery — async, idempotent SMS sending (see apps.alerts)
 CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = config('REDIS_URL', default='redis://localhost:6379/0')
@@ -162,3 +193,24 @@ CELERY_TASK_TRACK_STARTED = True
 SMS_PROVIDER = config('SMS_PROVIDER', default='console')
 SMS_PROVIDER_API_KEY = config('SMS_PROVIDER_API_KEY', default='')
 SMS_PROVIDER_SENDER_ID = config('SMS_PROVIDER_SENDER_ID', default='WINCHICKEN')
+
+# Twilio — only read when SMS_PROVIDER=twilio (apps.alerts.providers.twilio.TwilioSmsProvider).
+TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='')
+TWILIO_AUTH_TOKEN = config('TWILIO_AUTH_TOKEN', default='')
+TWILIO_PHONE_NUMBER = config('TWILIO_PHONE_NUMBER', default='')
+# Trial-account shim: a Twilio *trial* account rejects any custom message body ("Trial
+# accounts can only use predefined SMS templates"). When this is set to a predefined template
+# name (e.g. "sms_appointment_reminders"), TwilioSmsProvider sends that template instead of the
+# real body — so the scheduling/delivery path can be demoed end to end on a trial account. The
+# real body it *would* have sent is logged. Leave empty on a paid account.
+TWILIO_TRIAL_TEMPLATE = config('TWILIO_TRIAL_TEMPLATE', default='')
+
+# --- Web Push (desktop notifications, works with the browser closed) ------------
+# VAPID keypair (base64url, uncompressed P-256). Generate once with:
+#   docker compose exec web python manage.py generate_vapid_keys
+# then paste both values into backend/.env. Push is disabled while either is blank.
+VAPID_PUBLIC_KEY = config('VAPID_PUBLIC_KEY', default='')
+VAPID_PRIVATE_KEY = config('VAPID_PRIVATE_KEY', default='')
+# "mailto:" (or https) contact the push service can reach — required by the spec.
+VAPID_SUBJECT = config('VAPID_SUBJECT', default='mailto:admin@winchicken.local')
+WEB_PUSH_ENABLED = config('WEB_PUSH_ENABLED', default=True, cast=bool) and bool(VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY)

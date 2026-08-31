@@ -147,6 +147,12 @@ export const alertsApi = {
   setNotificationPreference: (payload) => client.post("/notification-preferences/", payload),
 };
 
+export const pushApi = {
+  publicKey: () => client.get("/push-public-key/"),
+  subscribe: (subscription) => client.post("/push-subscriptions/", subscription),
+  unsubscribe: (endpoint) => client.delete("/push-subscriptions/", { data: { endpoint } }),
+};
+
 export const searchApi = {
   query: (q) => client.get("/search/", { params: { q } }),
 };
