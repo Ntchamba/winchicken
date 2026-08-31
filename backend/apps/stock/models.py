@@ -193,3 +193,49 @@ class Vaccination(models.Model):
 
     def __str__(self):
         return f'{self.batch_id} · {self.item_id}'
+
+
+class StockComposition(models.Model):
+    """A "recipe" (2026-08-31): combine quantities of existing StockItems into one output
+    product — e.g. 1000 kg maïs + 1000 kg macabo → "Provende maison". Defining it writes NO
+    StockMovement; only *executing* it (apps.stock.compositions.execute_composition) moves
+    stock — one OUT per ingredient + one IN for `output_item`, in a single transaction.
+
+    `output_item` may be an existing item or one created inline from the same select-or-create
+    combobox the ingredients use. All FKs are `CASCADE`: deleting a StockItem that is an
+    ingredient or the output of a composition removes that composition too (a recipe referencing
+    a deleted item is meaningless), consistent with how `StockCategory` delete already cascades
+    to its items.
+    """
+
+    farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='stock_compositions')
+    name = models.CharField(max_length=255)
+    output_item = models.ForeignKey(
+        StockItem, on_delete=models.CASCADE, related_name='compositions_as_output',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f'{self.farm_id} · {self.name}'
+
+
+class StockCompositionIngredient(models.Model):
+    """One input line of a `StockComposition`. `quantity` is the *base/reference* amount for the
+    recipe — the execute form pre-fills it but the user can adjust it per run."""
+
+    composition = models.ForeignKey(
+        StockComposition, on_delete=models.CASCADE, related_name='ingredients',
+    )
+    item = models.ForeignKey(
+        StockItem, on_delete=models.CASCADE, related_name='composition_ingredients',
+    )
+    quantity = models.FloatField()
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f'{self.composition_id} · {self.item_id} · {self.quantity}'
