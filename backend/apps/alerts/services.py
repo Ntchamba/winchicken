@@ -193,11 +193,13 @@ def _queue_reminder_sms(alert, recipient, message):
     opt-in farm-wide EVENT alerts that preference table throttles."""
     if not recipient or not recipient.phone:
         return
+    # One SMS per rule per local day. Keyed on rule id (not trigger_time) because several
+    # protocol lines can share one créneau, and each line's rule must get its own SMS.
     key = _idempotency_key(
         alert.rule.rule_type,
         alert.batch.batch_code if alert.batch else 'farm',
         recipient.phone,
-        salt=f'{alert.triggered_at.date()}:{alert.rule.trigger_time}',
+        salt=f'{alert.rule_id}:{alert.triggered_at.date()}',
     )
     sms, created = alert.sms_messages.get_or_create(
         idempotency_key=key, defaults={'recipient': recipient.phone},
