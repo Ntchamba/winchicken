@@ -2843,3 +2843,68 @@ below made without asking, also summarised in `README.md`.
      backend suite green. Live smoke test against the running stack: a rule at the current
      farm-local minute fired one Alert + one PENDING SmsMessage, re-run produced nothing, the
      `ONE_TIME` rule went inactive.
+
+## Part 23 — Scheduled task reminders: made real end to end (2026-08-31)
+
+Part 22 built `fire_scheduled_alerts` + the `check-scheduled-alerts` beat *entry*, but three
+things stood between "trigger written" and "the farm actually gets an SMS at its créneau".
+Autonomous mode — decisions below made without asking, also in `README.md`.
+
+213. **No Celery Beat process was running.** `config/celery.py` defined `beat_schedule`, but
+     the stack had only `celery -A config worker` — nothing dispatched the periodic entries, so
+     `check_scheduled_alerts` never ran on its own. Added a dedicated **`beat` service** to
+     `docker-compose.yml` (`celery -A config beat`), not `worker -B`: `-B` is a single point of
+     failure and double-fires if the worker is ever scaled >1. `--schedule=/tmp/celerybeat-schedule`
+     (not the bind-mounted `/app`, which the non-root `appuser` can't write — the same uid
+     mismatch that moved `logs/` to a named volume in Part B). `healthcheck: disable` like
+     `backup` (the base-image healthcheck curls `:8000` which beat doesn't serve). **Confirmed
+     live:** beat dispatched `check-scheduled-alerts` 414×/8h, one per minute.
+
+214. **`expand_protocol_to_alert_rules` hard-coded `trigger_time='08:00'` and ignored the
+     line's `ProtocolTimeSlot` rows** — so Part 22's premise ("`trigger_time` from the
+     protocol's configured time slot") was not actually true. Now: a line **with** slots
+     produces one `DAILY` `AlertRule` per slot at `slot.start_time` (no `scheduled_date`),
+     which `fire_scheduled_alerts` fires every day the line's day-range covers; a line **with
+     no slots** keeps the single `ONE_TIME` rule at 08:00 on `start_date + from_value`,
+     unchanged. Regeneration now also clears the recurring (`scheduled_date IS NULL`) rows, not
+     just future-dated ONE_TIME ones. `houses/tests.py::ProtocolSaveAlertRuleRegenerationTests`
+     (the "past Alert/SmsMessage untouched" regression) still passes. This edits the expansion
+     *service*, not the protocol editor / `ProtocolTimeSlot` UI.
+
+215. **Idempotency-key collision when two protocol lines share a créneau.** Part 22 keyed the
+     `SmsMessage.idempotency_key` salt on `date:trigger_time`; two lines at the same slot
+     (06:30 feeding + 06:30 temperature) produced the same key → `IntegrityError` → the whole
+     fire run aborted. Salt is now `rule_id:date` — one SMS per rule per local day, which is
+     exactly the firing granularity. `_already_fired` (Alert-level, 10-minute lookback) is
+     unchanged.
+
+216. **Twilio provider built** (`apps/alerts/providers/twilio.py`, selected by
+     `SMS_PROVIDER=twilio`). `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_PHONE_NUMBER`
+     read from env only. Failures map to the console provider's `{'success': False, 'error'}`
+     shape so `send_sms_task`'s retry/backoff needs no Twilio-specific code. A **trial**
+     Twilio account rejects any custom message body ("Trial accounts can only use predefined
+     SMS templates"), so `TWILIO_TRIAL_TEMPLATE` — when set to a predefined template name —
+     makes the provider send that instead of the real body (the real French body is logged).
+     Empty on a paid account. `twilio==9.3.7` added to `requirements.txt`.
+
+217. **Timezone — confirmed, not assumed.** `TIME_ZONE='UTC'` unchanged; `FARM_TIME_ZONE`
+     (Part 22, default `Africa/Douala` / WAT / UTC+1) is what `trigger_time` is compared
+     against. Verified live: worker log `fire_scheduled_alerts: farm_tz=Africa/Douala
+     local_now=2026-08-31T08:54:00+01:00` firing a slot set to `08:54`, i.e. 07:54 UTC — a
+     bare UTC comparison would have fired it an hour late.
+
+218. **Tolerance window — unchanged from Part 22: 3 minutes**, `[now-3min, now]` on
+     `trigger_time` (midnight-wrap handled), with `_already_fired` (no Alert for this
+     rule+batch in the last 10 min) preventing the catch-up run from duplicating. Verified: a
+     slot at 08:54 fired once at 08:54; the 08:55/08:56 beat ticks (still inside the window)
+     and an explicit `check_scheduled_alerts --at 08:54` re-run each created **no** second
+     Alert.
+
+219. **Verification (full task spec).** `ProtocolTimeSlot` set to now+3min on the active
+     batch's in-range feeding line → beat auto-fired at exactly that minute, **no manual
+     trigger** → `Alert` + `SmsMessage` created → console log:
+     `SMS -> +237658022935: Bonjour Monsieur Alan, merci d'effectuer Alimentation avec
+     provende à salle_1 à 08h54.` (correct wording, correct time). Re-run same minute → no
+     duplicate. Separately, on `SMS_PROVIDER=twilio`, the same path delivered a real SMS
+     (Twilio status `delivered`) to the farm's number. `pytest apps/alerts apps/houses
+     apps/protocols apps/batches apps/stock` → 88 passing.

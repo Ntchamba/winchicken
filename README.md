@@ -143,6 +143,20 @@ job (Postgres 16 service → `pytest`) and a frontend job (`npm ci` →
 
 ## Recent work
 
+- **Scheduled task reminders — made real end to end (2026-08-31):** the trigger from the
+  bullet below existed but nothing ran it and no SMS reached the farm. Now: (1) a dedicated
+  **`beat` service** in `docker-compose.yml` runs `celery -A config beat`, so
+  `check-scheduled-alerts` actually fires every minute (it wasn't — only the worker was
+  running); (2) `expand_protocol_to_alert_rules` now creates one `DAILY` `AlertRule` per
+  `ProtocolTimeSlot` at that slot's start time (it was hard-coding 08:00 and ignoring the
+  configured créneaux); (3) fixed an idempotency-key collision when two protocol lines share
+  a créneau; (4) built the **Twilio** SMS provider (`SMS_PROVIDER=twilio`, creds from env),
+  with a `TWILIO_TRIAL_TEMPLATE` shim because a *trial* Twilio account rejects custom message
+  bodies. Verified live: a slot set to now+3min auto-fired at that exact minute with no manual
+  trigger, logged the correctly-worded French reminder, created no duplicate on re-run, and
+  (on `SMS_PROVIDER=twilio`) delivered a real SMS. Timezone confirmed `Africa/Douala` (WAT).
+  Tolerance window unchanged at 3 minutes. See `docs/deviations.md` Part 23.
+
 - **Time-based trigger for scheduled task reminders (2026-08-30):** `SCHEDULED` `AlertRule`
   rows (`PROTOCOL_TASK`, `WEIGHING_REMINDER`) stored a `trigger_time` but nothing ever fired
   them. New every-minute Celery Beat entry `check-scheduled-alerts` →
