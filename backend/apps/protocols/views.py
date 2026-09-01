@@ -1,4 +1,5 @@
-from datetime import timedelta
+from calendar import monthrange
+from datetime import date, timedelta
 
 from django.db import transaction
 from drf_spectacular.utils import OpenApiExample, extend_schema, inline_serializer
@@ -11,10 +12,11 @@ from apps.batches.models import BatchStatus, PoultryBatch
 from apps.batches.serializers import generate_batch_code
 from apps.houses.models import PoultryHouse
 from apps.houses.serializers import generate_house_code
-from apps.protocols.models import ProtocolCategory, ProtocolTemplate
+from apps.protocols.models import ProtocolCategory, ProtocolTemplate, ProtocolTimeSlot
 from apps.protocols.serializers import ProtocolCategorySerializer, ProtocolTemplateSerializer
-
-UNIT_TO_DAYS = {'DAY': 1, 'WEEK': 7, 'MONTH': 30}
+from apps.batches.services import sync_weighing_reminder
+from apps.houses.services import compute_month_schedule
+from apps.protocols.services import UNIT_TO_DAYS, expand_protocol_to_alert_rules
 
 
 @extend_schema(
@@ -95,6 +97,14 @@ class OnboardingView(APIView):
         if not protocol_lines_data:
             return Response({'detail': 'Au moins une ligne de protocole est requise.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # A batch is created only when initialCount is present; when it is, its name is required
+        # (checked before the transaction opens so nothing is half-created on rejection).
+        if batch_data.get('initialCount') and not str(batch_data.get('name') or '').strip():
+            return Response(
+                {'batch': {'name': ['Le nom de la bande est requis.']}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         category_serializer = ProtocolCategorySerializer(data=custom_categories_data, many=True)
         category_serializer.is_valid(raise_exception=True)
 
@@ -126,9 +136,19 @@ class OnboardingView(APIView):
 
             line_serializer = ProtocolTemplateSerializer(data=resolved_lines, many=True)
             line_serializer.is_valid(raise_exception=True)
-            ProtocolTemplate.objects.bulk_create(
-                [ProtocolTemplate(house=house, **line) for line in line_serializer.validated_data]
+            # `time_slots` isn't a real ProtocolTemplate field/constructor kwarg (it's the
+            # reverse FK to ProtocolTimeSlot) — popped per line before bulk_create, then created
+            # against the real pks bulk_create returns (Bug 1 fix, 2026-08-27, docs/deviations.md).
+            lines_data = list(line_serializer.validated_data)
+            time_slots_per_line = [line.pop('time_slots', []) for line in lines_data]
+            created_lines = ProtocolTemplate.objects.bulk_create(
+                [ProtocolTemplate(house=house, **line) for line in lines_data]
             )
+            ProtocolTimeSlot.objects.bulk_create([
+                ProtocolTimeSlot(protocol_line=line_obj, **slot)
+                for line_obj, slots in zip(created_lines, time_slots_per_line)
+                for slot in slots
+            ])
 
             batch = None
             if batch_data.get('initialCount'):
@@ -144,24 +164,60 @@ class OnboardingView(APIView):
                 )
                 batch = PoultryBatch.objects.create(
                     batch_code=generate_batch_code(farm.id),
-                    name=batch_data.get('name', ''),
+                    name=str(batch_data.get('name') or '').strip(),
                     house=house,
                     farmer=request.user if request.user.role == 'FARMER' else None,
                     production_type=batch_data.get('productionType', 'BROILER'),
                     breed=batch_data.get('breed', ''),
                     initial_count=batch_data['initialCount'],
-                    current_count=batch_data['initialCount'],
                     start_date=start_date,
                     planned_end_date=planned_end_date,
+                    weighing_frequency=batch_data.get('weighingFrequency') or None,
                     status=BatchStatus.ACTIVE,
                 )
+                expand_protocol_to_alert_rules(batch)
+                sync_weighing_reminder(batch)
 
         return Response(
             {
                 'house': {'houseCode': house.house_code, 'name': house.name},
                 'batch': {'batchCode': batch.batch_code, 'name': batch.name} if batch else None,
                 'categories': ProtocolCategorySerializer(ordered_categories, many=True).data,
-                'protocolLines': ProtocolTemplateSerializer(ProtocolTemplate.objects.filter(house=house), many=True).data,
+                'protocolLines': ProtocolTemplateSerializer(
+                    ProtocolTemplate.objects.filter(house=house).prefetch_related('time_slots'), many=True
+                ).data,
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class ScheduleView(APIView):
+    """GET /api/protocols/schedule/?month=YYYY-MM — sidebar "Calendrier" month-grid view.
+
+    Farm-wide, across every house/batch: every `ProtocolTemplate` line due on any day of the
+    given month, per that house's active batch (`apps.houses.services.compute_month_schedule` —
+    2026-08-27 bugfix, docs/deviations.md; previously read `PROTOCOL_TASK` `AlertRule` rows,
+    which are only ever generated for a line's *first* due day, so a multi-day line like day
+    1-15 was invisible on the calendar for days 2-15 — see that function's docstring). `month`
+    defaults to the current month. Open to any authenticated user of the farm (like
+    HouseTasksNowView), not Admin/Farm-Manager-only like AlertRuleListCreateView — this is task
+    visibility, not rule management.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        month_param = request.query_params.get('month')
+        try:
+            if month_param:
+                year, month = (int(part) for part in month_param.split('-', 1))
+            else:
+                today = date.today()
+                year, month = today.year, today.month
+            start = date(year, month, 1)
+        except ValueError:
+            return Response({'detail': 'month must be formatted YYYY-MM'}, status=status.HTTP_400_BAD_REQUEST)
+
+        end = date(year, month, monthrange(year, month)[1])
+
+        return Response(compute_month_schedule(request.user.farm, start, end))

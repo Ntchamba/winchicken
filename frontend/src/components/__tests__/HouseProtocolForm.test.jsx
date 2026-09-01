@@ -1,8 +1,28 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import HouseProtocolForm from "../HouseProtocolForm";
+
+// Regression (2026-09-01): callers that don't pass `stockItems` (OnboardingProtocolPage,
+// HouseProtocolPage) fell on a `stockItems = []` default — a fresh array identity every
+// render — which made `useEffect(() => setStockItemList(stockItems), [stockItems])` re-fire
+// on every render and spin into "Maximum update depth exceeded", freezing the page so the
+// "Suivant" button and route changes never committed. The default is now a stable module
+// constant. This pins that the no-prop render is loop-free.
+describe("HouseProtocolForm — no infinite render loop without a stockItems prop", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  test("renders without stockItems and never hits max update depth", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<HouseProtocolForm mode="onboarding" onSave={() => {}} />);
+    expect(screen.getByRole("button", { name: "Suivant" })).toBeInTheDocument();
+    const loopErrors = errorSpy.mock.calls
+      .flat()
+      .filter((a) => typeof a === "string" && a.includes("Maximum update depth"));
+    expect(loopErrors).toEqual([]);
+  });
+});
 
 // Part B (docs/deviations.md Part 15): the onboarding wizard's own "Suivant" button
 // (HouseProtocolForm's save-bar button, labeled "Suivant" in mode="onboarding") must stay
@@ -10,15 +30,26 @@ import HouseProtocolForm from "../HouseProtocolForm";
 // totalRows === 0}`. This exercises the real button through a real user interaction
 // ("Charger un modèle" seeds the starter template), not a synthetic prop.
 describe("HouseProtocolForm — Suivant enables only once data is entered", () => {
-  test("disabled with an empty protocol, enabled after loading the starter template", async () => {
+  test("disabled with an empty protocol, enabled after a template AND a batch name", async () => {
     render(<HouseProtocolForm mode="onboarding" onSave={() => {}} />);
 
     const nextButton = screen.getByRole("button", { name: "Suivant" });
     expect(nextButton).toBeDisabled();
 
     await userEvent.click(screen.getByRole("button", { name: /charger le modèle de départ/i }));
+    // Part A: protocol rows alone are not enough — the batch name is now required.
+    expect(nextButton).toBeDisabled();
+    expect(screen.getByText("Le nom de la bande est requis.")).toBeInTheDocument();
 
+    await userEvent.type(screen.getByRole("textbox", { name: /nom de la bande/i }), "Bande printemps");
     expect(nextButton).toBeEnabled();
+  });
+
+  test("a whitespace-only batch name does not enable Suivant", async () => {
+    render(<HouseProtocolForm mode="onboarding" onSave={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: /charger le modèle de départ/i }));
+    await userEvent.type(screen.getByRole("textbox", { name: /nom de la bande/i }), "   ");
+    expect(screen.getByRole("button", { name: "Suivant" })).toBeDisabled();
   });
 });
 

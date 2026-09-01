@@ -34,6 +34,12 @@ const DEFAULT_CATEGORIES = [
   { id: "default-4", label: "Nettoyage", icon: "SprayCan" },
 ];
 
+// Stable identity for the `stockItems` default — an inline `[]` in the destructure is a fresh
+// array every render, which makes the `setStockItemList(stockItems)` effect below re-fire on
+// every render and spin into "Maximum update depth exceeded" for the callers that don't pass
+// the prop (onboarding + management protocol pages). Same pattern as OnboardingContext's EMPTY_STOCK.
+const EMPTY_STOCK_ITEMS = [];
+
 // Internal values stay English to match ProtocolUnit (backend enum) — .toUpperCase()
 // on these feeds `from_unit`/`to_unit` directly. Display labels are French, separately.
 const UNITS = ["Day", "Week", "Month"];
@@ -186,7 +192,7 @@ export default function HouseProtocolForm({
   onAddAnother,
   helpDocUrl = "/docs/protocol-configuration.md",
   submitLabel,
-  stockItems = [],
+  stockItems = EMPTY_STOCK_ITEMS,
   farmId = null,
 }) {
   // Local mirror of `stockItems` so an item created inline from the Consommation selector
@@ -200,6 +206,7 @@ export default function HouseProtocolForm({
   const [growthCycle, setGrowthCycle] = useState(initialHeader.growthCycle || 56);
   const [growthCycleUnit, setGrowthCycleUnit] = useState(initialHeader.growthCycleUnit || "Day");
   const [batchName, setBatchName] = useState(initialHeader.batchName || "");
+  const [batchNameTouched, setBatchNameTouched] = useState(false);
   const [weighingFrequency, setWeighingFrequency] = useState(initialHeader.weighingFrequency || "");
   const [categories, setCategories] = useState(initialCategories || DEFAULT_CATEGORIES);
   const [activeCategoryId, setActiveCategoryId] = useState((initialCategories || DEFAULT_CATEGORIES)[0]?.id);
@@ -237,6 +244,8 @@ export default function HouseProtocolForm({
 
   const rows = schedules[activeCategoryId] || [];
   const totalRows = Object.values(schedules).reduce((sum, arr) => sum + arr.length, 0);
+  // A batch is created in onboarding mode -> its name is required (server rejects blank too).
+  const batchNameMissing = mode === "onboarding" && !batchName.trim();
 
   const updateRow = (rowId, field, value) => {
     setSchedules((prev) => ({
@@ -478,9 +487,16 @@ export default function HouseProtocolForm({
             <input
               value={batchName}
               onChange={(e) => setBatchName(e.target.value)}
+              onBlur={() => setBatchNameTouched(true)}
               placeholder="ex. Bande printemps 2026"
               required={mode === "onboarding"}
+              aria-invalid={batchNameMissing && (batchNameTouched || totalRows > 0)}
             />
+            {batchNameMissing && (batchNameTouched || totalRows > 0) && (
+              <span className="field-error" style={{ margin: "4px 0 0", fontSize: 12 }}>
+                Le nom de la bande est requis.
+              </span>
+            )}
           </label>
           <label className="field">
             <span>Nom du bâtiment</span>
@@ -784,11 +800,11 @@ export default function HouseProtocolForm({
       <div className="save-bar">
         <span className={`save-message ${saveMessage ? "success" : ""}`}>{saveMessage}</span>
         {onAddAnother && (
-          <button className="add-button" style={{ marginTop: 0 }} onClick={handleAddAnother} disabled={saving || totalRows === 0}>
+          <button className="add-button" style={{ marginTop: 0 }} onClick={handleAddAnother} disabled={saving || totalRows === 0 || batchNameMissing}>
             {saving ? <Loader2 size={16} className="spin" /> : "Ajouter ce bâtiment et en configurer un autre"}
           </button>
         )}
-        <button className="save-button" onClick={handleSave} disabled={saving || totalRows === 0}>
+        <button className="save-button" onClick={handleSave} disabled={saving || totalRows === 0 || batchNameMissing}>
           {saving ? <Loader2 size={16} className="spin" /> : submitLabel || (mode === "onboarding" ? "Suivant" : "Enregistrer le protocole")}
         </button>
       </div>

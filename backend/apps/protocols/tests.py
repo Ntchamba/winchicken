@@ -98,6 +98,41 @@ class OnboardingTimeSlotTests(APITestCase):
         self.assertEqual(len(response.data['protocolLines'][0]['time_slots']), 2)
 
 
+class OnboardingBatchNameRequiredTests(APITestCase):
+    """Part A: a batch may not be created with a blank / whitespace-only name."""
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Batch Name Test')
+        self.admin = User.objects.create_user(
+            email='admin@batch-name-test.local', password='x', name='Admin', role=UserRole.ADMIN, farm=self.farm,
+        )
+        create_role_profile(self.admin)
+        self.client.force_authenticate(user=self.admin)
+
+    def _payload(self, batch_name):
+        return {
+            'house': {'name': 'Bâtiment A', 'maxCapacity': 500},
+            'batch': {'name': batch_name, 'initialCount': 500, 'productionType': 'BROILER'},
+            'protocolLines': [{
+                'categoryIndex': 0, 'from_value': 1, 'from_unit': 'DAY', 'to_value': 15, 'to_unit': 'DAY',
+                'until_end': False, 'what': 'Nourrissage', 'details': '',
+            }],
+        }
+
+    def test_blank_batch_name_is_rejected_with_a_field_error(self):
+        for bad in ('', '   ', '\t\n'):
+            response = self.client.post('/api/protocols/onboarding/', self._payload(bad), format='json')
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+            self.assertIn('name', response.data.get('batch', {}))
+            self.assertFalse(PoultryBatch.objects.exists())
+            self.assertFalse(PoultryHouse.objects.exists())  # nothing half-created
+
+    def test_valid_batch_name_is_accepted_and_stored_trimmed(self):
+        response = self.client.post('/api/protocols/onboarding/', self._payload('  Bande printemps  '), format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(PoultryBatch.objects.get().name, 'Bande printemps')
+
+
 class ScheduleViewTimeSlotTests(APITestCase):
     """GET /api/protocols/schedule/ showing `ProtocolTimeSlot` windows (calendar time-slot
     display fix, 2026-08-27, docs/deviations.md) — a line with time slots must generate one
