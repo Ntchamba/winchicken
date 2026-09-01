@@ -1,22 +1,113 @@
 .dashboard-shell{display:flex;min-height:100vh;background:var(--bg)}
 
-.sidebar{width:264px;flex-shrink:0;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;padding:24px 16px;position:sticky;top:0;height:100vh}
-.sidebar-brand{display:flex;align-items:center;gap:10px;padding:0 8px 24px;border-bottom:1px solid var(--line);margin-bottom:20px}
-.sidebar-section-label{margin:18px 8px 8px;font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+/* Sidebar dark/navy theme (2026-08-26) — supersedes the earlier "match main content
+   background" instruction. Navy is the flat base tone of welcome-bg.jpg (the same image
+   AnimatedBackground animates on the welcome screen), sampled directly (rgb(13,27,40)) rather
+   than reusing the AnimatedBackground component itself — a 264px column has no room for that
+   component's parallax/Ken-Burns motion to read as anything but noise, and the task only
+   asked for the still base tone. The main content area (.dashboard-content) is untouched,
+   still the light theme — only .sidebar and its descendants go dark below. */
+.sidebar{
+  width:264px;flex-shrink:0;background:#0d1b28;border-right:1px solid rgba(255,255,255,.08);
+  display:flex;flex-direction:column;padding:24px 16px;position:sticky;top:0;height:100vh;
+  /* the navy background lives on this fixed-height box; the overflow is confined to
+     .sidebar-scroll below, so the background always fills the whole column (2026-09-01) */
+  overflow:hidden;
+  /* own stacking context so the z-index:-1 firefly layer stays between the navy background
+     and the nav content, and never escapes behind the sidebar itself */
+  isolation:isolate;
+}
+
+/* Scrollable middle region: brand/search stay pinned above it, the bottom nav + user chip
+   stay pinned below it, and only this part scrolls — the page itself never has to scroll
+   to reach a sidebar link (2026-09-01). min-height:0 is required for a flex child to be
+   allowed to shrink below its content height and actually scroll. */
+.sidebar-scroll{
+  flex:1 1 auto;min-height:0;display:flex;flex-direction:column;
+  overflow-y:auto;overscroll-behavior:contain;
+  scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent;
+}
+.sidebar-scroll::-webkit-scrollbar{width:8px}
+.sidebar-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:99px}
+
+/* FireflyField only (no image22 / Ken Burns / wash here) — floats over the sidebar's
+   unchanged navy. Confined to the 264px column by .firefly-field's own overflow:hidden;
+   a narrow slice reads sparser than the full-screen surfaces, which is expected. */
+.sidebar-fireflies{z-index:-1}
+.sidebar-brand{display:flex;align-items:center;gap:10px;padding:0 8px 24px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:20px}
+.sidebar-section-label{margin:18px 8px 8px;font-size:11px;font-weight:700;letter-spacing:.1em;color:rgba(255,255,255,.45);text-transform:uppercase}
 .sidebar-nav{display:flex;flex-direction:column;gap:2px}
-.sidebar-link{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;font-size:13.5px;font-weight:500;color:#374548;text-decoration:none;border:0;background:none;width:100%;text-align:left;cursor:pointer;transition:.15s}
-.sidebar-link:hover{background:var(--surface-2)}
-.sidebar-link.active{background:rgba(11,143,104,.1);color:var(--mint)}
-.sidebar-link.active svg{color:var(--mint)}
-.sidebar-link-ghost{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:10px;font-size:13px;color:var(--mint);border:1px dashed rgba(11,143,104,.35);background:none;width:100%;cursor:pointer;margin-top:4px}
-.sidebar-link-ghost:hover{background:rgba(11,143,104,.06)}
-.sidebar-divider{height:1px;background:var(--line);margin:18px 8px}
+.sidebar .sidebar-link{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;font-size:13.5px;font-weight:500;color:rgba(255,255,255,.82);text-decoration:none;border:0;background:none;width:100%;text-align:left;cursor:pointer;transition:.15s}
+.sidebar .sidebar-link:hover{background:rgba(23,184,146,.16);color:#5eead4}
+.sidebar .sidebar-link.active{background:rgba(23,184,146,.24);color:#5eead4;font-weight:600}
+.sidebar .sidebar-link.active svg{color:#5eead4}
+.sidebar-link-label{display:flex;flex-direction:column;min-width:0;gap:1px}
+.sidebar-link-primary{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar-link-secondary{font-size:11px;font-weight:500;color:rgba(255,255,255,.5);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar .sidebar-link.active .sidebar-link-secondary{color:rgba(94,234,212,.75)}
+.sidebar .sidebar-link-ghost{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:10px;font-size:13px;color:#5eead4;border:1px dashed rgba(94,234,212,.4);background:none;width:100%;cursor:pointer;margin-top:4px}
+/* "Finances" accordion (2026-08-27, Finances restructure Part A) — sub-items nested visually
+   beneath the "Finances" toggle: indented, smaller text, same dark-sidebar styling per the
+   task's own spec. */
+.sidebar-accordion-chevron{margin-left:auto;transition:transform .15s;flex-shrink:0}
+.sidebar-accordion-chevron.open{transform:rotate(180deg)}
+.sidebar-submenu{display:flex;flex-direction:column;gap:1px;padding-left:14px;margin:1px 0 4px}
+.sidebar .sidebar-sublink{display:block;padding:7px 10px;border-radius:9px;font-size:12.5px;font-weight:500;color:rgba(255,255,255,.62);border:0;background:none;width:100%;text-align:left;cursor:pointer;transition:.15s}
+.sidebar .sidebar-sublink:hover{background:rgba(23,184,146,.14);color:#5eead4}
+.sidebar .sidebar-sublink.active{background:rgba(23,184,146,.22);color:#5eead4;font-weight:600}
+.sidebar .sidebar-link-ghost:hover{background:rgba(23,184,146,.14)}
+.sidebar-divider{height:1px;background:rgba(255,255,255,.12);margin:18px 8px}
 .sidebar-spacer{flex:1}
-.sidebar-user{display:flex;align-items:center;gap:10px;padding:10px 8px;border-top:1px solid var(--line);margin-top:8px}
-.sidebar-user-avatar{width:32px;height:32px;border-radius:50%;background:var(--mint-soft);color:var(--mint);display:grid;place-items:center;font-size:12px;font-weight:700;flex-shrink:0}
-.sidebar-user-name{margin:0;font-size:13px;font-weight:600;color:#10242c;line-height:1.3}
-.sidebar-user-role{margin:0;font-size:11.5px;color:var(--muted)}
+.sidebar-user{display:flex;align-items:center;gap:10px;padding:10px 8px;border-top:1px solid rgba(255,255,255,.12);margin-top:8px}
+.sidebar-user-avatar{width:32px;height:32px;border-radius:50%;background:rgba(23,184,146,.22);color:#5eead4;display:grid;place-items:center;font-size:12px;font-weight:700;flex-shrink:0}
+.sidebar-user-name{margin:0;font-size:13px;font-weight:600;color:#fff;line-height:1.3}
+.sidebar-user-role{margin:0;font-size:11.5px;color:rgba(255,255,255,.55)}
 .sidebar-bottom-nav{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+
+/* Search bar, notification bell, count badges, incident shortcut, version string
+   (2026-08-26). */
+.sidebar-brand-row{display:flex;align-items:center;justify-content:space-between;padding:0 8px 16px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:0}
+.sidebar-brand{padding:0;border:0;margin:0}
+
+.notification-bell{position:relative;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;border:0;background:none;color:rgba(255,255,255,.65);cursor:pointer;transition:.15s}
+.notification-bell:hover{background:rgba(255,255,255,.08);color:#fff}
+.notification-bell-badge{position:absolute;top:-2px;right:-2px;min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
+.notification-panel{position:absolute;top:calc(100% + 8px);left:0;width:320px;max-height:420px;overflow-y:auto;background:#fff;border-radius:14px;box-shadow:0 20px 48px rgba(0,0,0,.35);z-index:60;color:#10242c}
+.notification-panel-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line)}
+.notification-panel-header h4{margin:0;font-size:13.5px;font-weight:700}
+.notification-panel-header button{border:0;background:none;color:var(--mint);font-size:11.5px;font-weight:700;cursor:pointer}
+.notification-empty{padding:24px 16px;text-align:center;font-size:13px;color:var(--muted)}
+.notification-row{display:flex;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.notification-row:last-child{border-bottom:0}
+.notification-row.read{opacity:.55}
+.notification-row-icon.danger{color:var(--danger)}
+.notification-row-icon.warning{color:var(--warning,#b9790c)}
+.notification-row-icon.info{color:var(--mint)}
+.notification-row-text{flex:1;min-width:0}
+.notification-row-text p{margin:0;font-size:13px;color:#10242c}
+.notification-row-text span{display:block;margin-top:3px;font-size:11.5px;color:var(--muted)}
+.notification-row-mark{align-self:flex-start;border:0;background:none;color:var(--mint);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+
+.sidebar-search{position:relative;padding:16px 8px 4px}
+.sidebar-search input{width:100%;box-sizing:border-box;padding:8px 10px 8px 32px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:#fff;font-size:13px;outline:none;transition:.15s}
+.sidebar-search input::placeholder{color:rgba(255,255,255,.35)}
+.sidebar-search input:focus{border-color:#5eead4;box-shadow:0 0 0 3px rgba(94,234,212,.18)}
+.sidebar-search-icon{position:absolute;left:18px;top:24px;color:rgba(255,255,255,.35);pointer-events:none}
+.sidebar-search-dropdown{position:absolute;left:8px;right:8px;top:100%;margin-top:4px;background:#fff;border-radius:12px;box-shadow:0 20px 48px rgba(0,0,0,.35);z-index:60;max-height:360px;overflow-y:auto;color:#10242c;padding:6px}
+.sidebar-search-group-label{margin:6px 8px 4px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.sidebar-search-result{display:block;width:100%;text-align:left;border:0;background:none;border-radius:8px;padding:8px 10px;cursor:pointer;font-size:13px;color:#10242c}
+.sidebar-search-result span{display:block;font-size:11.5px;color:var(--muted)}
+.sidebar-search-result.active,.sidebar-search-result:hover{background:rgba(23,184,146,.1)}
+.sidebar-search-empty{padding:16px 10px;text-align:center;font-size:13px;color:var(--muted)}
+
+.sidebar-link-badge{margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:99px;font-size:10.5px;font-weight:700;line-height:18px;text-align:center;color:#fff}
+.sidebar-link-badge.danger{background:var(--danger)}
+.sidebar-link-badge.warning{background:var(--warning,#b9790c)}
+
+.incident-shortcut{display:flex;align-items:center;gap:8px;width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(214,67,63,.4);background:rgba(214,67,63,.14);color:#ffb4b0;font-size:13px;font-weight:700;cursor:pointer;margin-top:4px}
+.incident-shortcut:hover{background:rgba(214,67,63,.22)}
+
+.sidebar-version{margin:8px 0 0;padding:0 8px;font-size:10.5px;color:rgba(255,255,255,.25);text-align:center}
 
 .dashboard-content{flex:1;min-width:0;padding:32px 40px}
 
