@@ -169,6 +169,16 @@ export default function ProtocolEditModal({ houseCode, onClose, onSaved }) {
     setSaveError("");
     try {
       const requests = [housesApi.putProtocol(houseCode, payload.protocolLines)];
+
+      // The "Nom du bâtiment" field was editable but its value (payload.house.buildingName)
+      // was never persisted — PATCH /api/houses/{code}/ (HouseDetailView) exists but nothing
+      // here called it, so renaming a house in this modal was a silent no-op (and on a house
+      // with no active batch nothing at all got saved). Send a non-blank, changed name now.
+      const newHouseName = (payload.house?.buildingName || "").trim();
+      if (newHouseName && newHouseName !== (initialHeader?.buildingName || "")) {
+        requests.push(housesApi.update(houseCode, { name: newHouseName }));
+      }
+
       if (activeBatch) {
         const changedFields = {};
         if (payload.batchName !== activeBatch.name) changedFields.name = payload.batchName;

@@ -23,6 +23,7 @@ vi.mock("../../api/endpoints", () => ({
     getProtocol: vi.fn(),
     detail: vi.fn(),
     putProtocol: vi.fn(),
+    update: vi.fn(),
   },
   batchesApi: {
     list: vi.fn(),
@@ -46,7 +47,16 @@ vi.mock("../HouseProtocolForm", () => ({
   default: (props) => {
     formProps(props);
     return (
-      <button onClick={() => props.onSave({ protocolLines: [], batchName: "Bande Renommée", weighingFrequency: null })}>
+      <button
+        onClick={() =>
+          props.onSave({
+            protocolLines: [],
+            batchName: "Bande Renommée",
+            weighingFrequency: null,
+            house: { buildingName: "Bâtiment Renommé" },
+          })
+        }
+      >
         Fake Save
       </button>
     );
@@ -66,6 +76,7 @@ describe("ProtocolEditModal — sidebar staleness regression", () => {
       data: [{ batch_code: "B-1", status: "ACTIVE", name: "Ancien Nom" }],
     });
     housesApi.putProtocol.mockResolvedValue({ data: [] });
+    housesApi.update.mockResolvedValue({ data: {} });
     batchesApi.quickEdit.mockResolvedValue({ data: {} });
     stockApi.items.mockResolvedValue({ data: { items: [] } });
   });
@@ -99,5 +110,21 @@ describe("ProtocolEditModal — sidebar staleness regression", () => {
     // The renamed batch is what actually reaches the server — the sidebar can only stop being
     // stale if it refetches *after* this resolves, not before.
     expect(batchesApi.quickEdit).toHaveBeenCalledWith("B-1", { name: "Bande Renommée" });
+  });
+
+  test("a changed house name is persisted via PATCH /houses/{code}/ (was a silent no-op)", async () => {
+    render(<ProtocolEditModal houseCode="H-1" onClose={() => {}} onSaved={() => {}} />);
+    await userEvent.click(await screen.findByText("Fake Save"));
+    await waitFor(() =>
+      expect(housesApi.update).toHaveBeenCalledWith("H-1", { name: "Bâtiment Renommé" }),
+    );
+  });
+
+  test("an unchanged / blank house name is not PATCHed", async () => {
+    housesApi.detail.mockResolvedValue({ data: { name: "Bâtiment Renommé" } }); // already equals what the form sends
+    render(<ProtocolEditModal houseCode="H-1" onClose={() => {}} onSaved={() => {}} />);
+    await userEvent.click(await screen.findByText("Fake Save"));
+    await waitFor(() => expect(refetchHouses).toHaveBeenCalled());
+    expect(housesApi.update).not.toHaveBeenCalled();
   });
 });
