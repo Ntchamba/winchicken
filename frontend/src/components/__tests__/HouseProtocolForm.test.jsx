@@ -85,6 +85,40 @@ describe("HouseProtocolForm — management mode (used by the \"Modifier\" modal)
     expect(screen.queryByRole("button", { name: "Suivant" })).not.toBeInTheDocument();
   });
 
+  test("batchEditable=false disables the batch-scoped fields and shows a notice", () => {
+    render(
+      <HouseProtocolForm
+        mode="management"
+        houseCode="H-1"
+        batchEditable={false}
+        initialHeader={{ ...initialHeader, batchName: "" }}
+        initialCategories={initialCategories}
+        initialSchedules={initialSchedules}
+        onSave={() => {}}
+      />
+    );
+
+    expect(screen.getByText(/ce bâtiment n'a pas de bande active/i)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /nom de la bande/i })).toBeDisabled();
+    // the house name stays editable — that IS persistable without a batch
+    expect(screen.getByRole("textbox", { name: /nom du bâtiment/i })).toBeEnabled();
+  });
+
+  test("batchEditable defaults to true — no notice, band name editable", () => {
+    render(
+      <HouseProtocolForm
+        mode="management"
+        houseCode="H-1"
+        initialHeader={initialHeader}
+        initialCategories={initialCategories}
+        initialSchedules={initialSchedules}
+        onSave={() => {}}
+      />
+    );
+    expect(screen.queryByText(/ce bâtiment n'a pas de bande active/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /nom de la bande/i })).toBeEnabled();
+  });
+
   test("loads with the existing protocol data, not empty fields", () => {
     render(
       <HouseProtocolForm

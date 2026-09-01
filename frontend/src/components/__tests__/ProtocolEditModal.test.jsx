@@ -127,4 +127,16 @@ describe("ProtocolEditModal — sidebar staleness regression", () => {
     await waitFor(() => expect(refetchHouses).toHaveBeenCalled());
     expect(housesApi.update).not.toHaveBeenCalled();
   });
+
+  test("passes batchEditable to the form: true with an active batch, false without", async () => {
+    render(<ProtocolEditModal houseCode="H-1" onClose={() => {}} onSaved={() => {}} />);
+    await screen.findByText("Fake Save");
+    expect(formProps.mock.calls.at(-1)[0].batchEditable).toBe(true);
+
+    formProps.mockClear();
+    batchesApi.list.mockResolvedValue({ data: [] }); // no batch at all
+    render(<ProtocolEditModal houseCode="H-2" onClose={() => {}} onSaved={() => {}} />);
+    await screen.findAllByText("Fake Save");
+    expect(formProps.mock.calls.at(-1)[0].batchEditable).toBe(false);
+  });
 });

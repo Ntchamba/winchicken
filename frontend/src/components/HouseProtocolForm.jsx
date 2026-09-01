@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Soup, Thermometer, Stethoscope, Syringe, SprayCan, ShieldCheck, Droplets, Wind, Egg, Bug,
-  ClipboardList, Package, Plus, Trash2, Loader2, Sparkles, HelpCircle, X, Check,
+  ClipboardList, Package, Plus, Trash2, Loader2, Sparkles, HelpCircle, X, Check, Info,
 } from "lucide-react";
 import { housesApi, stockApi } from "../api/endpoints";
 import { getServerErrorMessage } from "../api/errors";
@@ -194,6 +194,9 @@ export default function HouseProtocolForm({
   submitLabel,
   stockItems = EMPTY_STOCK_ITEMS,
   farmId = null,
+  // false = this house has no active batch (management/edit-modal only): the batch-scoped
+  // fields below can't be persisted, so they're disabled and a notice explains why.
+  batchEditable = true,
 }) {
   // Local mirror of `stockItems` so an item created inline from the Consommation selector
   // (ResourceCombobox "+ Créer …") shows up immediately without a prop round-trip.
@@ -481,6 +484,23 @@ export default function HouseProtocolForm({
             Charger le modèle de départ
           </button>
         </div>
+        {!batchEditable && (
+          <div
+            role="status"
+            style={{
+              display: "flex", gap: 9, alignItems: "flex-start", margin: "0 0 18px",
+              padding: "11px 13px", borderRadius: 10,
+              background: "var(--mint-soft, #d7f5ec)", color: "#0b5137", fontSize: 13, lineHeight: 1.45,
+            }}
+          >
+            <Info size={15} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>
+              Ce bâtiment n'a pas de bande active. Le protocole ci-dessous s'appliquera à la
+              prochaine bande démarrée ici — son nom, son effectif et la fréquence de pesée se
+              définissent au démarrage d'une bande, via « Nouvelle bande ».
+            </span>
+          </div>
+        )}
         <div className="detail-grid">
           <label className="field">
             <span>Nom de la bande</span>
@@ -490,6 +510,7 @@ export default function HouseProtocolForm({
               onBlur={() => setBatchNameTouched(true)}
               placeholder="ex. Bande printemps 2026"
               required={mode === "onboarding"}
+              disabled={!batchEditable}
               aria-invalid={batchNameMissing && (batchNameTouched || totalRows > 0)}
             />
             {batchNameMissing && (batchNameTouched || totalRows > 0) && (
@@ -504,13 +525,13 @@ export default function HouseProtocolForm({
           </label>
           <label className="field">
             <span>Poussins mis en place</span>
-            <input type="number" value={chicksPlaced} onChange={(e) => setChicksPlaced(e.target.value)} placeholder="500" />
+            <input type="number" value={chicksPlaced} onChange={(e) => setChicksPlaced(e.target.value)} placeholder="500" disabled={!batchEditable} />
           </label>
           <label className="field">
             <span>Cycle de croissance</span>
             <div className="inline-field">
-              <input type="number" value={growthCycle} onChange={(e) => setGrowthCycle(e.target.value)} />
-              <select value={growthCycleUnit} onChange={(e) => setGrowthCycleUnit(e.target.value)}>
+              <input type="number" value={growthCycle} onChange={(e) => setGrowthCycle(e.target.value)} disabled={!batchEditable} />
+              <select value={growthCycleUnit} onChange={(e) => setGrowthCycleUnit(e.target.value)} disabled={!batchEditable}>
                 {UNITS.map((u) => (
                   <option key={u} value={u}>{UNIT_LABELS_PLURAL[u]}</option>
                 ))}
@@ -519,7 +540,7 @@ export default function HouseProtocolForm({
           </label>
           <label className="field">
             <span>Fréquence de pesée (optionnel)</span>
-            <select value={weighingFrequency} onChange={(e) => setWeighingFrequency(e.target.value)}>
+            <select value={weighingFrequency} onChange={(e) => setWeighingFrequency(e.target.value)} disabled={!batchEditable}>
               <option value="">Aucun rappel</option>
               {UNITS.map((u) => (
                 <option key={u} value={u.toUpperCase()}>{UNIT_LABELS_PLURAL[u]}</option>

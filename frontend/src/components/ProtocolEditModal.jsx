@@ -253,6 +253,7 @@ export default function ProtocolEditModal({ houseCode, onClose, onSaved }) {
                 saving={saving}
                 stockItems={stockItems}
                 farmId={user.farm}
+                batchEditable={Boolean(activeBatch)}
                 onSave={handleSave}
               />
             ) : (
