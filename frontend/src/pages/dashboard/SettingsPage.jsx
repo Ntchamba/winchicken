@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, Loader2, Settings } from "lucide-react";
+import { Bell, CheckCircle2, Loader2, Settings } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import useWebPush from "../../hooks/useWebPush";
@@ -47,7 +47,7 @@ export default function SettingsPage() {
         <p className="schedule-note">
           Recevez une notification sur ce PC à chaque événement (tâche du jour à son créneau,
           alerte, mouvement de stock, écriture financière, cas ou panne signalés) — même quand
-          aucun onglet Winchicken n'est ouvert.
+          aucun onglet Winchicken n'est ouvert. Sans effet sur les autres canaux d'alerte.
         </p>
 
         {!push.supported && (
@@ -55,37 +55,62 @@ export default function SettingsPage() {
             Ce navigateur ne prend pas en charge les notifications push.
           </p>
         )}
-        {push.supported && !push.enabled && (
-          <p className="field-error" style={{ marginTop: 10 }}>
-            Le serveur n'est pas encore configuré pour le push (clés VAPID manquantes).
-          </p>
-        )}
-        {push.supported && push.permission === "denied" && (
-          <p className="field-error" style={{ marginTop: 10 }}>
-            Les notifications sont bloquées pour ce site dans les réglages du navigateur —
-            réautorisez-les puis rechargez la page.
-          </p>
-        )}
-        {push.error && <p className="field-error" style={{ marginTop: 10 }}>{push.error}</p>}
 
-        {push.supported && push.enabled && push.permission !== "denied" && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
-            {push.subscribed ? (
-              <>
-                <span className="schedule-note" style={{ color: "var(--success, #16a34a)" }}>
-                  Activées sur ce PC.
-                </span>
-                <button className="add-button" style={{ marginTop: 0 }} onClick={push.disable} disabled={push.busy}>
-                  {push.busy ? <Loader2 size={14} className="spin" /> : "Désactiver"}
-                </button>
-              </>
-            ) : (
-              <button className="save-button" style={{ width: "auto" }} onClick={push.enable} disabled={push.busy}>
-                {push.busy ? <Loader2 size={16} className="spin" /> : "Activer les notifications bureau"}
+        {/* denied — no JS API can re-prompt; the user must unblock in browser settings */}
+        {push.supported && push.permission === "denied" && (
+          <div className="field-error" style={{ marginTop: 12 }}>
+            <p style={{ margin: 0, fontWeight: 600 }}>Notifications bloquées par le navigateur</p>
+            <p className="schedule-note" style={{ marginTop: 6 }}>
+              Une fois bloquées, aucune page ne peut les redemander. Pour les réautoriser :
+            </p>
+            <ol className="schedule-note" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              <li>Cliquez sur l'icône du site à gauche de la barre d'adresse.</li>
+              <li>Ouvrez « Notifications ».</li>
+              <li>Choisissez « Autoriser », puis rechargez la page.</li>
+            </ol>
+          </div>
+        )}
+
+        {/* granted — informational, not a call to action */}
+        {push.supported && push.permission === "granted" && (
+          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+            <CheckCircle2 size={18} strokeWidth={2} style={{ color: "var(--success, #16a34a)", flexShrink: 0 }} />
+            <span className="schedule-note" style={{ color: "var(--success, #16a34a)", margin: 0 }}>
+              Notifications activées{push.subscribed ? " sur ce PC" : ""}.
+            </span>
+            {push.subscribed && (
+              <button className="add-button" style={{ marginTop: 0 }} onClick={push.disable} disabled={push.busy}>
+                {push.busy ? <Loader2 size={14} className="spin" /> : "Ne plus recevoir sur ce PC"}
+              </button>
+            )}
+            {!push.subscribed && push.enabled && (
+              <button className="add-button" style={{ marginTop: 0 }} onClick={push.enable} disabled={push.busy}>
+                {push.busy ? <Loader2 size={14} className="spin" /> : "Recevoir sur ce PC"}
               </button>
             )}
           </div>
         )}
+
+        {/* default — the only actionable opt-in; requestPermission() fires from this click */}
+        {push.supported && push.permission === "default" && (
+          <button
+            className="save-button"
+            style={{ width: "auto", marginTop: 12 }}
+            onClick={push.enable}
+            disabled={push.busy}
+          >
+            {push.busy ? <Loader2 size={16} className="spin" /> : "Activer les notifications"}
+          </button>
+        )}
+
+        {push.supported && !push.enabled && push.permission !== "denied" && (
+          <p className="schedule-note" style={{ marginTop: 10 }}>
+            Serveur pas encore configuré pour l'envoi (clés VAPID manquantes) — l'autorisation du
+            navigateur peut être accordée dès maintenant, la réception suivra.
+          </p>
+        )}
+
+        {push.error && <p className="field-error" style={{ marginTop: 10 }}>{push.error}</p>}
       </div>
 
       {user.role === "ADMIN" && (

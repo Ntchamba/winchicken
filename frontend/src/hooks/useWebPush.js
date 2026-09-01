@@ -43,6 +43,20 @@ export default function useWebPush() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  // Re-read the browser permission when the tab regains focus. A user who unblocks the site
+  // in browser settings (the only way back from "denied") sees the UI update on return —
+  // no requestPermission() call, no user gesture consumed.
+  useEffect(() => {
+    if (!SUPPORTED) return undefined;
+    const sync = () => setPermission(Notification.permission);
+    document.addEventListener("visibilitychange", sync);
+    window.addEventListener("focus", sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      window.removeEventListener("focus", sync);
+    };
+  }, []);
+
   useEffect(() => {
     if (!SUPPORTED) return;
     let cancelled = false;
