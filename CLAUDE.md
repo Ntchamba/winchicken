@@ -54,3 +54,17 @@ docker compose logs -f worker
 - Code first, explanation after (1-2 lines max if necessary)
 - No reframing of the request
 - No useless disclaimers
+
+## Verification gate for UI / behavioral fixes
+
+This project has a documented history of fixes reported as complete that weren't (sidebar
+scrolling, factory-reset button, batch validation, scheduled notifications). Before any UI or
+behavioral fix is reported to the user as complete — especially in an area that has previously
+been reported fixed and recurred — hand it to the `qa-verifier` subagent via the Task tool.
+
+- `qa-verifier` verifies against the live running app through the connected Chrome extension
+  (computed CSS, real network requests, rendered DOM, console) — never from source alone. It
+  returns a pass/fail verdict with concrete observed evidence and cannot edit code.
+- A `PostToolUse` hook (`.claude/hooks/post-edit-verify.sh`, see its README) already runs the
+  frontend build + lint (+ the related test file) on every `.css`/`.jsx`/`.tsx` edit; the
+  `qa-verifier` gate is the behavioral complement to that build-level gate.
