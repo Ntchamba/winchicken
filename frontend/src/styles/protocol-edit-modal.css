@@ -1,0 +1,78 @@
+.protocol-modal-backdrop{
+  position:fixed;inset:0;background:rgba(15,40,33,.35);
+  display:flex;align-items:center;justify-content:center;padding:24px;z-index:200;
+}
+.protocol-modal-panel{
+  position:relative;width:min(1040px,100%);max-height:90vh;overflow-y:auto;
+  background:#fff;border-radius:20px;box-shadow:0 30px 80px rgba(0,0,0,.28);outline:none;
+}
+.protocol-modal-panel .page-wrap{padding:44px 32px 32px}
+.protocol-modal-close{
+  position:absolute;top:14px;right:14px;z-index:1;
+  display:grid;place-items:center;width:34px;height:34px;border-radius:50%;
+  border:1px solid var(--line);background:#fff;color:var(--muted);cursor:pointer;transition:.15s;
+}
+.protocol-modal-close:hover{background:var(--surface-2);color:#10242c}
+.protocol-modal-close:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+.protocol-modal-error{
+  margin:0;padding:12px 44px 12px 20px;background:rgba(214,67,63,.1);color:var(--danger);
+  font-size:13.5px;font-weight:600;border-bottom:1px solid rgba(214,67,63,.25);
+}
+
+.quick-entry-form{padding:16px 18px}
+.quick-entry-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px}
+.quick-entry-field{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted);font-weight:600}
+.quick-entry-field input,.quick-entry-field select{
+  border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:13.5px;color:#10242c;
+  background:#fff;min-width:110px;
+}
+.quick-entry-field input:focus,.quick-entry-field select:focus{outline:2px solid var(--mint);outline-offset:1px}
+
+/* "Signal de perte" mortality field (2026-08-25) — large, color-scaled by severity instead of
+   a plain small number input. Neutral at 0, amber while a non-zero count's effect on cumulative
+   mortality isn't known yet (before save), red once the saved cumulative figure exceeds the
+   batch's unfavorable reference bound (see QuickEntryPanel's severityFor()). */
+.mortality-input{
+  font-size:22px!important;font-weight:700;text-align:center;min-width:88px!important;
+  border-width:2px!important;transition:background-color .15s,border-color .15s,color .15s;
+}
+.mortality-neutral{background:var(--surface-2)!important;border-color:var(--line)!important;color:#374548}
+.mortality-warning{background:rgba(185,121,12,.12)!important;border-color:var(--warning)!important;color:var(--warning)}
+.mortality-danger{background:rgba(214,67,63,.12)!important;border-color:var(--danger)!important;color:var(--danger)}
+
+.mortality-summary{margin:10px 0 0;font-size:13px;font-weight:600;padding:8px 12px;border-radius:9px;width:fit-content}
+.mortality-summary-neutral{background:var(--surface-2);color:var(--muted)}
+.mortality-summary-warning{background:rgba(185,121,12,.12);color:var(--warning)}
+.mortality-summary-danger{background:rgba(214,67,63,.12);color:var(--danger)}
+
+.weighing-section{padding:16px 18px}
+.weighing-recent-group{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.weighing-recent-house{margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.weighing-recent-list{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:5px}
+.weighing-recent-list li{font-size:12.5px;color:#374548}
+.weighing-recent-list li span{color:var(--muted)}
+
+.batch-modifier-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.batch-modifier-button{
+  border:1px solid var(--line);background:#fff;color:var(--mint);font-size:12.5px;font-weight:600;
+  padding:6px 14px;border-radius:99px;cursor:pointer;white-space:nowrap;transition:.15s;
+}
+.batch-modifier-button:hover{background:var(--mint-soft)}
+
+/* FactoryResetModal (2026-08-26) — reuses .protocol-modal-* chrome above; own content styling. */
+.factory-reset-panel{width:min(560px,100%)}
+.factory-reset-body{padding:44px 32px 32px}
+.factory-reset-icon{
+  display:grid;place-items:center;width:44px;height:44px;border-radius:14px;margin-bottom:16px;
+  background:rgba(214,67,63,.1);color:var(--danger);
+}
+.factory-reset-body h2{margin:0 0 14px;font-family:'Space Grotesk',sans-serif;font-size:20px;letter-spacing:-.02em;color:#10242c}
+.factory-reset-lead{margin:0 0 14px;font-size:13.5px;line-height:1.55;color:#374548}
+.factory-reset-list{margin:0 0 16px;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:13.5px;line-height:1.5;color:#374548}
+.factory-reset-field{margin-bottom:14px}
+.factory-reset-error{margin:0 0 14px;border-radius:9px;border:1px solid rgba(214,67,63,.25)}
+.factory-reset-actions{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:6px}
+/* "Annuler" reuses the global .add-button, which carries margin-top:18px for its normal
+   "add a row" context — neutralise it here and match heights so both buttons share a baseline. */
+.factory-reset-actions>button{margin-top:0;height:38px}
+.factory-reset-continue{width:auto;padding:0 20px;height:38px}
