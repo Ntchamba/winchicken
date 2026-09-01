@@ -10,25 +10,18 @@
 .sidebar{
   width:264px;flex-shrink:0;background:#0d1b28;border-right:1px solid rgba(255,255,255,.08);
   display:flex;flex-direction:column;padding:24px 16px;position:sticky;top:0;height:100vh;
-  /* the navy background lives on this fixed-height box; the overflow is confined to
-     .sidebar-scroll below, so the background always fills the whole column (2026-09-01) */
-  overflow:hidden;
+  /* The whole sidebar scrolls as one — brand, nav, footer and all — inside its own
+     100vh box, so the page itself never has to scroll to reach a sidebar link, and the
+     navy background (fixed to this box, not the scrolling content) fills the column top to
+     bottom regardless of scroll position (2026-09-01). */
+  overflow-y:auto;overscroll-behavior:contain;
+  scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent;
   /* own stacking context so the z-index:-1 firefly layer stays between the navy background
      and the nav content, and never escapes behind the sidebar itself */
   isolation:isolate;
 }
-
-/* Scrollable middle region: brand/search stay pinned above it, the bottom nav + user chip
-   stay pinned below it, and only this part scrolls — the page itself never has to scroll
-   to reach a sidebar link (2026-09-01). min-height:0 is required for a flex child to be
-   allowed to shrink below its content height and actually scroll. */
-.sidebar-scroll{
-  flex:1 1 auto;min-height:0;display:flex;flex-direction:column;
-  overflow-y:auto;overscroll-behavior:contain;
-  scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent;
-}
-.sidebar-scroll::-webkit-scrollbar{width:8px}
-.sidebar-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:99px}
+.sidebar::-webkit-scrollbar{width:8px}
+.sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:99px}
 
 /* FireflyField only (no image22 / Ken Burns / wash here) — floats over the sidebar's
    unchanged navy. Confined to the 264px column by .firefly-field's own overflow:hidden;

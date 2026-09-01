@@ -128,12 +128,6 @@ export default function DashboardLayout({
 
         <SidebarSearch onNavigate={go} />
 
-        {/* Everything between the pinned brand/search (above) and the pinned bottom nav
-            (Aide / Paramètres / Déconnexion / user chip, below) scrolls inside its own
-            container — the page itself never scrolls just to reach a sidebar link, and the
-            navy .sidebar background always fills the column because the overflow lives here,
-            not on .sidebar. */}
-        <div className="sidebar-scroll">
         <button className="sidebar-link active" style={{ marginBottom: 4 }} onClick={() => go("/dashboard")}>
           <Home size={16} strokeWidth={1.8} />
           Vue d'ensemble
@@ -237,7 +231,8 @@ export default function DashboardLayout({
         </nav>
 
         <IncidentShortcut houses={houses} openCasesCount={openCasesCount} />
-        </div>
+
+        <div className="sidebar-spacer" />
 
         <nav className="sidebar-bottom-nav">
           {/* Single link, not a menu (2026-08-26): the only user-facing doc actually available
