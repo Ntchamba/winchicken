@@ -79,6 +79,40 @@ class StockCategoryApiTests(APITestCase):
         self.assertEqual(resp.data['items'][0]['category_kind'], 'CUSTOM')
         self.assertTrue(resp.data['items'][0]['item_code'].startswith('CUS-'))
 
+    def test_put_adds_new_item_to_category_that_already_has_one(self):
+        """Regression: PUT deletes then re-creates every row, so a new row with no item_code
+        used to be handed FEE-<farm>-001 — colliding with the kept row's own FEE-<farm>-001
+        (500 UniqueViolation, surfaced to the user as "impossible d'enregistrer")."""
+        cat = StockCategory.objects.get(farm=self.farm, kind='FEED')
+        StockItem.objects.create(item_code='FEE-{}-001'.format(self.farm.id), farm=self.farm,
+                                 category=cat, name='maïs', unit='kg')
+        resp = self.client.put(
+            f'/api/farms/{self.farm.id}/stock-items/',
+            {'items': [
+                {'item_code': f'FEE-{self.farm.id}-001', 'category': cat.id, 'name': 'maïs', 'unit': 'kg'},
+                {'category': cat.id, 'name': 'tourteau de soja', 'unit': 'kg'},  # new — no item_code
+            ]},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        codes = sorted(i['item_code'] for i in resp.data['items'])
+        self.assertEqual(codes, [f'FEE-{self.farm.id}-001', f'FEE-{self.farm.id}-002'])
+        self.assertEqual(StockItem.objects.filter(farm=self.farm).count(), 2)
+
+    def test_put_adds_two_new_items_at_once_without_code_collision(self):
+        cat = StockCategory.objects.get(farm=self.farm, kind='EQUIPMENT')
+        resp = self.client.put(
+            f'/api/farms/{self.farm.id}/stock-items/',
+            {'items': [
+                {'category': cat.id, 'name': 'Abreuvoir', 'unit': 'u'},
+                {'category': cat.id, 'name': 'Mangeoire', 'unit': 'u'},
+            ]},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        codes = sorted(i['item_code'] for i in resp.data['items'])
+        self.assertEqual(codes, [f'EQU-{self.farm.id}-001', f'EQU-{self.farm.id}-002'])
+
 
 class SupplierApiTests(APITestCase):
     def setUp(self):

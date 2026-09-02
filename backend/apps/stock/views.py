@@ -15,7 +15,7 @@ from apps.stock.models import (
 )
 from apps.stock.serializers import (
     StockCategorySerializer, StockCompositionSerializer, StockItemSerializer, StockMovementSerializer,
-    SupplierSerializer, VaccinationSerializer, generate_item_code,
+    SupplierSerializer, VaccinationSerializer, generate_item_code, next_free_item_code,
 )
 
 _StockItemsPayload = inline_serializer('StockItemsPayload', {'items': StockItemSerializer(many=True)})
@@ -109,6 +109,11 @@ class FarmStockItemsView(APIView):
         with transaction.atomic():
             StockItem.objects.filter(farm=farm).delete()
             created = []
+            # Codes the client sent for rows it wants kept are authoritative and must not
+            # change (StockMovement / composition rows reference them). A row with no code is
+            # a new article and gets one that avoids every kept code — generate_item_code
+            # can't, because every row was just deleted above so its count is 0.
+            used_codes = {e['item_code'] for e in items_data if e.get('item_code')}
             for entry in items_data:
                 category = categories.get(entry.get('category'))
                 if category is None:
@@ -122,7 +127,10 @@ class FarmStockItemsView(APIView):
                         {'detail': f'Fournisseur invalide : {supplier_id!r}.'},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
-                item_code = entry.get('item_code') or generate_item_code(farm.id, category)
+                item_code = entry.get('item_code')
+                if not item_code:
+                    item_code = next_free_item_code(farm.id, category, used_codes)
+                    used_codes.add(item_code)
                 created.append(StockItem(
                     item_code=item_code,
                     farm=farm,

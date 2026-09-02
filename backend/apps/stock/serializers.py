@@ -90,6 +90,21 @@ def generate_item_code(farm_id, category):
     return f'{prefix}-{farm_id}-{count:03d}'
 
 
+def next_free_item_code(farm_id, category, taken):
+    """Like `generate_item_code` but skips any code already in `taken`. Needed by the
+    /stock-items/ PUT, which deletes then re-creates every row in one transaction: mid-
+    transaction the DB row count `generate_item_code` relies on is 0, so a new row would be
+    handed `{PREFIX}-{farm}-001` — colliding with the preserved item_code of an existing row
+    being kept in the same request (the actual cause of the 500 on "add an article")."""
+    prefix = _KIND_PREFIX.get(category.kind, 'CUS')
+    seq = 1
+    while True:
+        code = f'{prefix}-{farm_id}-{seq:03d}'
+        if code not in taken:
+            return code
+        seq += 1
+
+
 class StockMovementSerializer(serializers.ModelSerializer):
     """GET/POST payload for /api/stock-movements/ — one IN (restocking) or OUT (consumption) row.
     Saving one triggers `apps.alerts.services.check_low_stock` for `item` via the
