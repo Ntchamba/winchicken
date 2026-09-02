@@ -2,9 +2,11 @@ from calendar import monthrange
 from datetime import date, timedelta
 
 from django.db import transaction
+from django.http import HttpResponse
 from drf_spectacular.utils import OpenApiExample, extend_schema, inline_serializer
 from rest_framework import serializers, status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -17,6 +19,8 @@ from apps.protocols.serializers import ProtocolCategorySerializer, ProtocolTempl
 from apps.batches.services import sync_weighing_reminder
 from apps.houses.services import compute_month_schedule
 from apps.protocols.services import UNIT_TO_DAYS, expand_protocol_to_alert_rules
+from apps.protocols.xlsx_import import ImportError as XlsxImportError
+from apps.protocols.xlsx_import import build_template_workbook, parse_protocol_rows
 
 
 @extend_schema(
@@ -221,3 +225,47 @@ class ScheduleView(APIView):
         end = date(year, month, monthrange(year, month)[1])
 
         return Response(compute_month_schedule(request.user.farm, start, end))
+
+
+CONTENT_TYPE_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+
+class ProtocolImportTemplateView(APIView):
+    """GET /api/protocols/import-template.xlsx — the ready-to-fill Excel template (headers +
+    example rows). Static content only, no farm data, so it is `AllowAny`: the frontend can
+    offer it as a plain download link without threading the bearer token through an <a href>."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        resp = HttpResponse(build_template_workbook(), content_type=CONTENT_TYPE_XLSX)
+        resp['Content-Disposition'] = 'attachment; filename="modele-protocole.xlsx"'
+        return resp
+
+
+class ProtocolImportView(APIView):
+    """POST /api/protocols/import-xlsx/ (multipart, field `file`) — parse an uploaded .xlsx into
+    protocol rows for the form. Parse-only: nothing is written here, the frontend merges the
+    rows into `HouseProtocolForm` for the user to review before the normal save. Farm-agnostic
+    on purpose — onboarding uploads this before the house exists.
+
+    Returns `{rows: [...], imported: int, skipped: [{line, reason}]}`. Same editor roles as the
+    protocol itself (Admin / Farm Manager / Farmer)."""
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        upload = request.FILES.get('file')
+        if upload is None:
+            return Response({'detail': 'Aucun fichier reçu.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not upload.name.lower().endswith('.xlsx'):
+            return Response(
+                {'detail': 'Format non pris en charge. Importez un fichier .xlsx (Excel).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            result = parse_protocol_rows(upload)
+        except XlsxImportError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)

@@ -1,8 +1,15 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import HouseProtocolForm from "../HouseProtocolForm";
+import { protocolImportApi, stockApi } from "../../api/endpoints";
+
+vi.mock("../../api/endpoints", () => ({
+  protocolImportApi: { parse: vi.fn(), templateUrl: "http://test/protocols/import-template.xlsx" },
+  stockApi: { addItem: vi.fn() },
+  housesApi: { addProtocolCategory: vi.fn() },
+}));
 
 // Regression (2026-09-01): callers that don't pass `stockItems` (OnboardingProtocolPage,
 // HouseProtocolPage) fell on a `stockItems = []` default — a fresh array identity every
@@ -137,5 +144,56 @@ describe("HouseProtocolForm — management mode (used by the \"Modifier\" modal)
     // Empty-protocol state would disable Suivant/Enregistrer (totalRows === 0) — asserting it's
     // enabled is an indirect but real check that the seeded row actually landed in state.
     expect(screen.getByRole("button", { name: "Enregistrer le protocole" })).toBeEnabled();
+  });
+});
+
+// Excel import (docs/excel-import.md): the parsed rows are merged into the form, missing
+// categories / stock items are auto-created, and a clear summary lists every skipped row.
+describe("HouseProtocolForm — import Excel", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  test("merges parsed rows, auto-creates a new category + stock item, and reports skipped rows", async () => {
+    protocolImportApi.parse.mockResolvedValue({
+      data: {
+        rows: [
+          { category: "Alimentation", fromValue: 1, toValue: 15, untilEnd: false,
+            what: "Aliment démarrage", details: "3000 kcal", consumption: "Provende", quantityPerDay: 40 },
+          { category: "Biosécurité", fromValue: 1, toValue: null, untilEnd: true,
+            what: "Pédiluve désinfectant", details: "", consumption: null, quantityPerDay: null },
+        ],
+        imported: 2,
+        skipped: [{ line: 4, reason: "action manquante" }],
+      },
+    });
+    stockApi.addItem.mockResolvedValue({ data: { item_code: "FEE-7-001", name: "Provende", unit: "kg" } });
+
+    const { container } = render(<HouseProtocolForm mode="onboarding" farmId={7} onSave={() => {}} />);
+    const fileInput = container.querySelector('input[type="file"]');
+    await userEvent.upload(fileInput, new File(["xlsx"], "protocole.xlsx"));
+
+    // summary: 2 imported, 1 skipped, with the specific reason and line number
+    expect(await screen.findByText(/2 lignes importées avec succès, 1 ligne ignorée/i)).toBeInTheDocument();
+    expect(screen.getByText("Ligne 4 : action manquante")).toBeInTheDocument();
+
+    // the first imported row is visible (form auto-switched to its category)
+    expect(screen.getByDisplayValue("Aliment démarrage")).toBeInTheDocument();
+
+    // a "Provende" stock item was created, hinted by the row's own category
+    expect(stockApi.addItem).toHaveBeenCalledWith(7, expect.objectContaining({
+      name: "Provende", category_hint: "Alimentation",
+    }));
+
+    // the unknown "Biosécurité" category now has a tab
+    expect(screen.getByRole("button", { name: /Biosécurité/ })).toBeInTheDocument();
+  });
+
+  test("a parse failure shows the server message, no rows added", async () => {
+    protocolImportApi.parse.mockRejectedValue({
+      isAxiosError: true,
+      response: { data: { detail: "En-têtes de colonnes introuvables : « Action »." } },
+    });
+    const { container } = render(<HouseProtocolForm mode="onboarding" farmId={7} onSave={() => {}} />);
+    await userEvent.upload(container.querySelector('input[type="file"]'), new File(["x"], "bad.xlsx"));
+    expect(await screen.findByText(/En-têtes de colonnes introuvables/)).toBeInTheDocument();
   });
 });

@@ -175,3 +175,116 @@ class ScheduleViewTimeSlotTests(APITestCase):
         self.assertEqual(len(entries), 1)
         self.assertIsNone(entries[0]['startTime'])
         self.assertIsNone(entries[0]['endTime'])
+
+
+class ProtocolXlsxImportTests(APITestCase):
+    """Parser + endpoints for the "Importer un fichier Excel" feature (docs/excel-import.md)."""
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Import')
+        self.admin = User.objects.create_user(
+            email='admin@import-test.local', password='x', name='Admin', role=UserRole.ADMIN, farm=self.farm,
+        )
+        create_role_profile(self.admin)
+        self.client.force_authenticate(user=self.admin)
+
+    @staticmethod
+    def _xlsx(rows, headers=None):
+        from io import BytesIO
+
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.append(headers or ['Catégorie', 'De', 'À', 'Action', 'Détails', 'Consommation', 'Quantité/jour'])
+        for r in rows:
+            ws.append(r)
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        buf.name = 'import.xlsx'
+        return buf
+
+    def _upload(self, buf):
+        return self.client.post('/api/protocols/import-xlsx/', {'file': buf}, format='multipart')
+
+    def test_template_download_is_a_valid_xlsx_and_needs_no_auth(self):
+        self.client.force_authenticate(user=None)
+        resp = self.client.get('/api/protocols/import-template.xlsx')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('spreadsheetml', resp['Content-Type'])
+        self.assertIn('attachment', resp['Content-Disposition'])
+        from io import BytesIO
+
+        from apps.protocols.xlsx_import import parse_protocol_rows
+        parsed = parse_protocol_rows(BytesIO(resp.content))
+        self.assertEqual(parsed['imported'], 3)  # the template's example rows round-trip
+
+    def test_valid_rows_parse_with_consumption_and_until_end(self):
+        buf = self._xlsx([
+            ['Alimentation', 1, 15, 'Aliment démarrage', '3000 kcal', 'Provende', 40],
+            ['Nettoyage', 1, '', 'Ajout de litière', '', '', ''],  # blank À -> until end of cycle
+        ])
+        resp = self._upload(buf)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['imported'], 2)
+        self.assertEqual(resp.data['skipped'], [])
+        r0, r1 = resp.data['rows']
+        self.assertEqual((r0['category'], r0['fromValue'], r0['toValue'], r0['what']),
+                         ('Alimentation', 1.0, 15.0, 'Aliment démarrage'))
+        self.assertEqual((r0['consumption'], r0['quantityPerDay']), ('Provende', 40.0))
+        self.assertTrue(r1['untilEnd'])
+        self.assertIsNone(r1['toValue'])
+
+    def test_bad_rows_are_skipped_with_specific_reasons_not_a_whole_import_failure(self):
+        buf = self._xlsx([
+            ['Alimentation', 1, 15, 'OK row', '', '', ''],   # line 2 — fine
+            ['Alimentation', 5, '', '', '', '', ''],          # line 3 — action manquante
+            ['Alimentation', '', 10, 'No De', '', '', ''],    # line 4 — De manquant
+            ['Alimentation', 20, 10, 'A before De', '', '', ''],  # line 5 — À < De
+            ['', 1, 2, 'No category', '', '', ''],            # line 6 — catégorie manquante
+            ['', '', '', '', '', '', ''],                     # line 7 — fully empty, ignored silently
+        ])
+        resp = self._upload(buf)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['imported'], 1)
+        reasons = {s['line']: s['reason'] for s in resp.data['skipped']}
+        self.assertEqual(set(reasons), {3, 4, 5, 6})
+        self.assertIn('action', reasons[3].lower())
+        self.assertIn('de', reasons[4].lower())
+        self.assertIn('inférieur', reasons[5].lower())
+        self.assertIn('catégorie', reasons[6].lower())
+
+    def test_quantity_without_consumption_is_dropped_but_row_still_imports(self):
+        buf = self._xlsx([['Alimentation', 1, 5, 'Action', '', '', 40]])
+        resp = self._upload(buf)
+        self.assertEqual(resp.data['imported'], 1)
+        self.assertIsNone(resp.data['rows'][0]['consumption'])
+        self.assertIsNone(resp.data['rows'][0]['quantityPerDay'])
+
+    def test_headers_matched_by_name_not_position(self):
+        buf = self._xlsx(
+            [['Aliment démarrage', 'Alimentation', 1, 15]],
+            headers=['Action', 'Catégorie', 'De', 'À'],
+        )
+        resp = self._upload(buf)
+        self.assertEqual(resp.data['imported'], 1)
+        self.assertEqual(resp.data['rows'][0]['what'], 'Aliment démarrage')
+        self.assertEqual(resp.data['rows'][0]['category'], 'Alimentation')
+
+    def test_missing_required_header_column_is_a_clear_400(self):
+        buf = self._xlsx([['Alimentation', 1, 'x']], headers=['Catégorie', 'De', 'Détails'])
+        resp = self._upload(buf)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('Action', resp.data['detail'])
+
+    def test_non_xlsx_upload_is_rejected(self):
+        from io import BytesIO
+        f = BytesIO(b'category,de\n')
+        f.name = 'protocol.csv'
+        resp = self.client.post('/api/protocols/import-xlsx/', {'file': f}, format='multipart')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_import_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        resp = self._upload(self._xlsx([['Alimentation', 1, 2, 'A', '', '', '']]))
+        self.assertEqual(resp.status_code, 401)

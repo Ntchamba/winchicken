@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
 const client = axios.create({ baseURL: API_URL });
 
@@ -41,11 +41,22 @@ client.interceptors.response.use(
       refreshPromise = null;
       setTokens({ ...tokens, access: data.access });
       original.headers.Authorization = `Bearer ${data.access}`;
-      return client(original);
+      // Awaited here (not `return client(original)`) so a retry that still 401s — e.g. the
+      // refresh token itself is still cryptographically valid but the user row behind it is
+      // gone, as after a factory reset (apps.core.services.factory_reset_farm): SimpleJWT's
+      // TokenRefreshView never touches the User table, so the refresh above "succeeds" and
+      // hands back a token for a user that no longer exists — falls into the same catch below
+      // instead of rejecting silently past it, which a bare `return` would have done (a
+      // `return`ed promise's rejection isn't caught by this try/catch).
+      return await client(original);
     } catch (refreshError) {
       refreshPromise = null;
       setTokens(null);
-      window.location.href = "/login";
+      // "/" (the landing page), not "/login": it re-checks GET /api/farm/exists/ on its own and
+      // shows "Créer la ferme" instead of "Se connecter" when the farm is gone (factory reset)
+      // — "/login" has no such check and would offer a login form for a farm that no longer
+      // exists. For the ordinary token-expiry case this costs one extra click, not a break.
+      window.location.href = "/";
       return Promise.reject(refreshError);
     }
   }

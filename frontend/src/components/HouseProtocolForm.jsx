@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Soup, Thermometer, Stethoscope, Syringe, SprayCan, ShieldCheck, Droplets, Wind, Egg, Bug,
   ClipboardList, Package, Plus, Trash2, Loader2, Sparkles, HelpCircle, X, Check, Info,
+  FileSpreadsheet, Download,
 } from "lucide-react";
-import { housesApi, stockApi } from "../api/endpoints";
+import { housesApi, protocolImportApi, stockApi } from "../api/endpoints";
 import { getServerErrorMessage } from "../api/errors";
 import ResourceCombobox from "./ResourceCombobox";
 import UnitField from "./UnitField";
@@ -215,12 +216,12 @@ export default function HouseProtocolForm({
   const [activeCategoryId, setActiveCategoryId] = useState((initialCategories || DEFAULT_CATEGORIES)[0]?.id);
   const [schedules, setSchedules] = useState(initialSchedules);
 
-  // Inline creation of a StockItem straight from a protocol row's "Ressource" combobox: name =
-  // typed text, category defaulted from this row's protocol category (via category_hint →
-  // StockCategory.kind server-side), unit "kg" (adjustable right after, via UnitField).
-  const createStockItem = async (name) => {
-    const cat = categories.find((c) => c.id === activeCategoryId);
-    const { data } = await stockApi.addItem(farmId, { name, unit: "kg", category_hint: cat?.label });
+  // Inline creation of a StockItem — from a protocol row's "Ressource" combobox (category
+  // defaulted from the active row's protocol category) or from the Excel import (category
+  // defaulted from that row's own Catégorie). `category_hint` → StockCategory.kind server-side.
+  const createStockItem = async (name, categoryLabel) => {
+    const hint = categoryLabel || categories.find((c) => c.id === activeCategoryId)?.label;
+    const { data } = await stockApi.addItem(farmId, { name, unit: "kg", category_hint: hint });
     setStockItemList((prev) => [...prev, data]);
     setCreatedInlineCodes((prev) => new Set(prev).add(data.item_code));
     return data;
@@ -232,6 +233,12 @@ export default function HouseProtocolForm({
   };
   const [saveMessage, setSaveMessage] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
+
+  // Excel import (docs/excel-import.md) — parse server-side, merge rows into the form.
+  const importInputRef = useRef(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null); // { imported, skipped: [{line, reason}] }
+  const [importError, setImportError] = useState("");
 
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
@@ -310,6 +317,81 @@ export default function HouseProtocolForm({
     setSchedules(STARTER_TEMPLATE);
   };
 
+  // Parse an uploaded .xlsx server-side, then merge every returned row into the form —
+  // auto-creating any category / stock item it names via the same flows the "+" button and
+  // the resource combobox use. Existing rows are kept; the user reviews everything before save.
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // let the same file be picked again
+    if (!file) return;
+
+    setImporting(true);
+    setImportError("");
+    setImportResult(null);
+    try {
+      const { data } = await protocolImportApi.parse(file);
+
+      // 1. Resolve every distinct Catégorie to a category id, creating the missing ones.
+      const labelToId = {};
+      for (const c of categories) labelToId[c.label.trim().toLowerCase()] = c.id;
+      for (const name of new Set(data.rows.map((r) => r.category))) {
+        const key = name.trim().toLowerCase();
+        if (labelToId[key] == null) labelToId[key] = (await createCategory(name, "Package")).id;
+      }
+
+      // 2. Resolve every distinct Consommation to a StockItem code, creating the missing ones.
+      const nameToCode = {};
+      for (const s of stockItemList) nameToCode[s.name.trim().toLowerCase()] = s.item_code;
+      for (const r of data.rows) {
+        if (!r.consumption) continue;
+        const key = r.consumption.trim().toLowerCase();
+        if (nameToCode[key] == null && farmId) {
+          nameToCode[key] = (await createStockItem(r.consumption, r.category)).item_code;
+        }
+      }
+
+      // 3. Build the rows (unit is always "Day" — see the note by the import button) and append.
+      setSchedules((prev) => {
+        const next = { ...prev };
+        for (const r of data.rows) {
+          const catId = labelToId[r.category.trim().toLowerCase()];
+          if (catId == null) continue;
+          const code = r.consumption ? nameToCode[r.consumption.trim().toLowerCase()] : null;
+          next[catId] = [
+            ...(next[catId] || []),
+            makeRow({
+              fromValue: r.fromValue,
+              toValue: r.untilEnd ? 1 : r.toValue,
+              untilEnd: r.untilEnd,
+              what: r.what,
+              details: r.details || "",
+              stockItemCode: code || null,
+              consumptionMode: "fixed",
+              quantityPerDay: code && r.quantityPerDay != null ? r.quantityPerDay : "",
+            }),
+          ];
+        }
+        return next;
+      });
+
+      if (data.rows.length) {
+        const firstCat = labelToId[data.rows[0].category.trim().toLowerCase()];
+        if (firstCat != null) setActiveCategoryId(firstCat);
+      }
+      setImportResult({ imported: data.imported, skipped: data.skipped });
+    } catch (err) {
+      // createCategory/createStockItem throw a plain Error with a ready message; the parse
+      // request throws an axios error → route it through the shared parser.
+      setImportError(
+        err?.isAxiosError
+          ? getServerErrorMessage(err, "Échec de l'import du fichier Excel.")
+          : err?.message || "Échec de l'import du fichier Excel.",
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const openAddSlot = (rowId) => {
     setAddingSlotForRow(rowId);
     setSlotStart("");
@@ -336,6 +418,26 @@ export default function HouseProtocolForm({
     updateRow(rowId, "timeSlots", (row?.timeSlots || []).filter((s) => s.id !== slotId));
   };
 
+  // Add a category the same way the "+" button does — optimistic local add, then persist in
+  // management mode. Returns the resolved category `{ id, label, icon }` (with its real id
+  // once persisted). Shared by the "+" flow and the Excel import's auto-create.
+  const createCategory = async (label, icon = ICON_OPTIONS[0].name) => {
+    const tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const local = { id: tempId, label, icon };
+    setCategories((prev) => [...prev, local]);
+
+    if (mode !== "management" || !houseCode) return local;
+    try {
+      const { data } = await housesApi.addProtocolCategory(houseCode, { label, icon });
+      setCategories((prev) => prev.map((c) => (c.id === tempId ? data : c)));
+      setActiveCategoryId((cur) => (cur === tempId ? data.id : cur));
+      return data;
+    } catch (err) {
+      setCategories((prev) => prev.filter((c) => c.id !== tempId));
+      throw new Error(getServerErrorMessage(err, "Impossible d'ajouter la catégorie."));
+    }
+  };
+
   const addCategory = async () => {
     const label = newCategoryLabel.trim();
     if (!label) {
@@ -343,23 +445,16 @@ export default function HouseProtocolForm({
       return;
     }
     setCategoryError("");
-    const tempId = `pending-${Date.now()}`;
-    setCategories((prev) => [...prev, { id: tempId, label, icon: newCategoryIcon }]);
-    setActiveCategoryId(tempId);
     setAddingCategory(false);
     setNewCategoryLabel("");
+    const icon = newCategoryIcon;
     setNewCategoryIcon(ICON_OPTIONS[0].name);
-
-    if (mode === "management" && houseCode) {
-      try {
-        const { data } = await housesApi.addProtocolCategory(houseCode, { label, icon: newCategoryIcon });
-        setCategories((prev) => prev.map((c) => (c.id === tempId ? data : c)));
-        setActiveCategoryId((cur) => (cur === tempId ? data.id : cur));
-      } catch (err) {
-        setCategories((prev) => prev.filter((c) => c.id !== tempId));
-        setActiveCategoryId((cur) => (cur === tempId ? categories[0]?.id : cur));
-        setCategoryError(getServerErrorMessage(err, "Impossible d'ajouter la catégorie."));
-      }
+    try {
+      const created = await createCategory(label, icon);
+      setActiveCategoryId(created.id);
+    } catch (err) {
+      setActiveCategoryId((cur) => cur);
+      setCategoryError(err.message);
     }
   };
 
@@ -479,11 +574,69 @@ export default function HouseProtocolForm({
               {batchName || "Nouvelle bande"}
             </h1>
           </div>
-          <button className="add-button" style={{ marginTop: 0 }} onClick={loadStarterTemplate} disabled={saving}>
-            <Sparkles size={14} strokeWidth={2.2} />
-            Charger le modèle de départ
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button className="add-button" style={{ marginTop: 0 }} onClick={loadStarterTemplate} disabled={saving}>
+                <Sparkles size={14} strokeWidth={2.2} />
+                Charger le modèle de départ
+              </button>
+              <a
+                className="add-button"
+                style={{ marginTop: 0, textDecoration: "none" }}
+                href={protocolImportApi?.templateUrl}
+              >
+                <Download size={14} strokeWidth={2.2} />
+                Télécharger un modèle
+              </a>
+              <button
+                className="add-button"
+                style={{ marginTop: 0 }}
+                onClick={() => importInputRef.current?.click()}
+                disabled={saving || importing}
+              >
+                {importing ? <Loader2 size={14} className="spin" /> : <FileSpreadsheet size={14} strokeWidth={2.2} />}
+                Importer un fichier Excel
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".xlsx"
+                onChange={handleImportFile}
+                style={{ display: "none" }}
+              />
+            </div>
+            <span className="schedule-note" style={{ margin: 0, fontSize: 11.5, textAlign: "right" }}>
+              Import Excel : toutes les lignes prennent l'unité « Jour » — modifiable ligne par ligne ensuite.
+            </span>
+          </div>
         </div>
+        {importError && (
+          <p className="field-error" style={{ margin: "0 0 14px" }}>{importError}</p>
+        )}
+        {importResult && (
+          <div
+            role="status"
+            style={{
+              margin: "0 0 16px", padding: "11px 13px", borderRadius: 10, fontSize: 13, lineHeight: 1.5,
+              background: importResult.skipped.length ? "#fff4f0" : "var(--mint-soft, #d7f5ec)",
+              color: importResult.skipped.length ? "#8a3b1f" : "#0b5137",
+            }}
+          >
+            <strong>
+              {importResult.imported} ligne{importResult.imported > 1 ? "s" : ""} importée
+              {importResult.imported > 1 ? "s" : ""} avec succès
+              {importResult.skipped.length > 0 && `, ${importResult.skipped.length} ligne${importResult.skipped.length > 1 ? "s" : ""} ignorée${importResult.skipped.length > 1 ? "s" : ""}`}
+              .
+            </strong>
+            {importResult.skipped.length > 0 && (
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                {importResult.skipped.map((s) => (
+                  <li key={s.line}>Ligne {s.line} : {s.reason}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         {!batchEditable && (
           <div
             role="status"

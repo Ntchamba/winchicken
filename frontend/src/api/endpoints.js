@@ -1,4 +1,16 @@
-import client from "./client";
+import client, { API_URL } from "./client";
+
+// Protocol rows Excel import (docs/excel-import.md). `parse` uploads an .xlsx and gets back
+// the parsed rows + per-row skip report — the frontend merges them into HouseProtocolForm.
+// `templateUrl` is a plain link target (the endpoint is AllowAny, static content).
+export const protocolImportApi = {
+  parse: (file) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return client.post("/protocols/import-xlsx/", fd);
+  },
+  templateUrl: `${API_URL}/protocols/import-template.xlsx`,
+};
 
 export const farmApi = {
   exists: () => client.get("/farm/exists/"),

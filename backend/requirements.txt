@@ -47,3 +47,5 @@ pywebpush==2.0.3
 py-vapid==1.9.2
 http-ece==1.2.0
 cryptography==46.0.2
+
+openpyxl==3.1.5

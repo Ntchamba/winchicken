@@ -20,7 +20,12 @@ const navigateMock = vi.fn();
 vi.mock("react-router-dom", () => ({ useNavigate: () => navigateMock }));
 vi.mock("../../../context/AuthContext", () => ({ useAuth: vi.fn() }));
 vi.mock("../../../context/OnboardingContext", () => ({ useOnboarding: vi.fn() }));
-vi.mock("../../../api/endpoints", () => ({ onboardingApi: { submit: vi.fn() } }));
+vi.mock("../../../api/endpoints", () => ({
+  onboardingApi: { submit: vi.fn() },
+  protocolImportApi: { parse: vi.fn(), templateUrl: "" },
+  stockApi: { addItem: vi.fn() },
+  housesApi: { addProtocolCategory: vi.fn() },
+}));
 
 function mockOnboardingContext() {
   useOnboarding.mockReturnValue({
@@ -49,6 +54,8 @@ describe("OnboardingProtocolPage — true first-time onboarding (is_configured: 
     render(<OnboardingProtocolPage />);
 
     await userEvent.click(screen.getByRole("button", { name: /charger le modèle de départ/i }));
+    // Part A: the submit buttons are disabled until the batch has a name.
+    await userEvent.type(screen.getByRole("textbox", { name: /nom de la bande/i }), "Bande test");
     await userEvent.click(screen.getByRole("button", { name: "Ajouter ce bâtiment et en configurer un autre" }));
 
     await waitFor(() => expect(onboardingApi.submit).toHaveBeenCalledTimes(1));
@@ -67,6 +74,8 @@ describe("OnboardingProtocolPage — true first-time onboarding (is_configured: 
     render(<OnboardingProtocolPage />);
 
     await userEvent.click(screen.getByRole("button", { name: /charger le modèle de départ/i }));
+    // Part A: the submit buttons are disabled until the batch has a name.
+    await userEvent.type(screen.getByRole("textbox", { name: /nom de la bande/i }), "Bande test");
     await userEvent.click(screen.getByRole("button", { name: "Ajouter ce bâtiment et en configurer un autre" }));
     await screen.findByText("Bâtiment A");
 
@@ -95,6 +104,8 @@ describe("OnboardingProtocolPage — '+ Nouvelle bande' add-house flow (is_confi
     render(<OnboardingProtocolPage />);
 
     await userEvent.click(screen.getByRole("button", { name: /charger le modèle de départ/i }));
+    // Part A: the submit buttons are disabled until the batch has a name.
+    await userEvent.type(screen.getByRole("textbox", { name: /nom de la bande/i }), "Bande test");
     await userEvent.click(screen.getByRole("button", { name: "Créer la bande" }));
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/dashboard", { replace: true }));
