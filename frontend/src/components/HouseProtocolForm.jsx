@@ -219,9 +219,9 @@ export default function HouseProtocolForm({
   // Inline creation of a StockItem — from a protocol row's "Ressource" combobox (category
   // defaulted from the active row's protocol category) or from the Excel import (category
   // defaulted from that row's own Catégorie). `category_hint` → StockCategory.kind server-side.
-  const createStockItem = async (name, categoryLabel) => {
+  const createStockItem = async (name, categoryLabel, unit) => {
     const hint = categoryLabel || categories.find((c) => c.id === activeCategoryId)?.label;
-    const { data } = await stockApi.addItem(farmId, { name, unit: "kg", category_hint: hint });
+    const { data } = await stockApi.addItem(farmId, { name, unit: unit || "kg", category_hint: hint });
     setStockItemList((prev) => [...prev, data]);
     setCreatedInlineCodes((prev) => new Set(prev).add(data.item_code));
     return data;
@@ -348,7 +348,8 @@ export default function HouseProtocolForm({
         if (!r.consumption) continue;
         const key = r.consumption.trim().toLowerCase();
         if (nameToCode[key] == null && farmId) {
-          nameToCode[key] = (await createStockItem(r.consumption, r.category)).item_code;
+          // Unité from the file is only used for a *new* resource; an existing one keeps its own.
+          nameToCode[key] = (await createStockItem(r.consumption, r.category, r.unit)).item_code;
         }
       }
 
@@ -356,7 +357,7 @@ export default function HouseProtocolForm({
       // skipped rows and keep what's there. (The user was already warned this is a full
       // replacement; this only guards an accidental total erase from a malformed file.)
       if (data.rows.length === 0) {
-        setImportResult({ imported: 0, skipped: data.skipped });
+        setImportResult({ imported: 0, skipped: data.skipped, warnings: data.warnings || [] });
         return;
       }
 
@@ -380,6 +381,9 @@ export default function HouseProtocolForm({
               stockItemCode: code || null,
               consumptionMode: "fixed",
               quantityPerDay: code && r.quantityPerDay != null ? r.quantityPerDay : "",
+              // Reuse the form's own time-slot shape ({ id, startTime, endTime }); the server
+              // already dropped any malformed segment and reported it in `warnings`.
+              timeSlots: (r.timeSlots || []).map((s) => ({ id: nextId++, startTime: s.startTime, endTime: s.endTime })),
             }),
           );
         }
@@ -388,7 +392,7 @@ export default function HouseProtocolForm({
 
       const firstCat = labelToId[data.rows[0].category.trim().toLowerCase()];
       if (firstCat != null) setActiveCategoryId(firstCat);
-      setImportResult({ imported: data.imported, skipped: data.skipped, replaced: true });
+      setImportResult({ imported: data.imported, skipped: data.skipped, warnings: data.warnings || [], replaced: true });
     } catch (err) {
       // createCategory/createStockItem throw a plain Error with a ready message; the parse
       // request throws an axios error → route it through the shared parser.
@@ -649,8 +653,8 @@ export default function HouseProtocolForm({
             role="status"
             style={{
               margin: "0 0 16px", padding: "11px 13px", borderRadius: 10, fontSize: 13, lineHeight: 1.5,
-              background: importResult.skipped.length ? "#fff4f0" : "var(--mint-soft, #d7f5ec)",
-              color: importResult.skipped.length ? "#8a3b1f" : "#0b5137",
+              background: (importResult.skipped.length || importResult.warnings?.length) ? "#fff4f0" : "var(--mint-soft, #d7f5ec)",
+              color: (importResult.skipped.length || importResult.warnings?.length) ? "#8a3b1f" : "#0b5137",
             }}
           >
             <strong>
@@ -665,10 +669,13 @@ export default function HouseProtocolForm({
                 Les lignes précédentes ont été retirées. Enregistrez pour appliquer.
               </span>
             )}
-            {importResult.skipped.length > 0 && (
+            {(importResult.skipped.length > 0 || importResult.warnings?.length > 0) && (
               <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
                 {importResult.skipped.map((s) => (
-                  <li key={s.line}>Ligne {s.line} : {s.reason}</li>
+                  <li key={`s-${s.line}-${s.reason}`}>Ligne {s.line} : {s.reason}</li>
+                ))}
+                {(importResult.warnings || []).map((w, i) => (
+                  <li key={`w-${w.line}-${i}`}>Ligne {w.line} : {w.reason}</li>
                 ))}
               </ul>
             )}

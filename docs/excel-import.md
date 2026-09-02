@@ -32,12 +32,14 @@ does not matter.
 | Header | Type | Notes |
 |---|---|---|
 | **Catégorie** | text | Matched to an existing `ProtocolCategory` by name; created automatically if unknown. |
-| **De** | number | Start of the period. Required. |
+| **De** | number | Start of the period. Required. Unit is always **"Jour"** (no unit column). |
 | **À** | number | End of the period. **Blank ⇒ "jusqu'à la fin du cycle".** |
 | **Action** | text | → `ProtocolTemplate.what`. Required. |
 | **Détails** | text | → `ProtocolTemplate.details`. |
 | **Consommation** | text, optional | Stock resource this row consumes; matched to a `StockItem` by name, created if unknown. |
+| **Unité** | text, optional | Unit for a resource that has to be **created** (e.g. "kg", "L", "sac"). If the resource already exists, its own unit is kept and this cell is ignored for that row. |
 | **Quantité/jour** | number, optional | Fixed daily quantity of that resource. |
+| **Créneaux** | text, optional | One cell, one or more `HH:MM-HH:MM` windows separated by `;` — e.g. `06:30-07:30;18:30-19:30`. Blank = day-range only. A malformed segment (bad format, or end ≤ start) is **dropped and reported as a warning** — the row still imports without that slot. Slots reuse the form's own time-slot shape and the existing `ProtocolTimeSlot` write path. |
 
 ## Backend
 
@@ -60,8 +62,13 @@ does not matter.
 | `À` < `De` | skipped, reason: `« À » (x) est inférieur à « De » (y)` |
 | every cell blank | ignored silently (not counted as skipped) |
 | `Quantité/jour` filled but `Consommation` blank | quantity dropped, **row still imported** |
+| a malformed `Créneaux` segment | that segment dropped, **row still imported**, reason listed as a *warning*: `Ligne N : créneau mal formé « … » ignoré, ligne importée sans cet horaire` |
 | a required **header column** absent | whole file rejected with a clear 400 |
 | file is not `.xlsx` / unreadable | 400 with a clear message |
+
+Response shape: `{rows, imported, skipped:[{line,reason}], warnings:[{line,reason}]}` — `warnings`
+rows were imported (only a time slot was dropped); the summary lists skipped **and** warning
+lines under the count.
 
 ## Decisions made (autonomous mode)
 
@@ -89,8 +96,21 @@ does not matter.
 8. **Fully-empty rows are ignored**, not reported as skipped.
 9. **Template endpoint is `AllowAny`** (static example content) so the download is a plain link.
 10. Import controls live **in the header card**, next to "Charger le modèle de départ" — the
-    only change to the form outside the header card is appending the parsed rows to `schedules`.
+    only change to the form outside the header card is populating the rows in `schedules`.
 11. French decimals (`12,5`) are accepted in number cells.
+12. **"Unité"** is a *resource* unit (used only when creating a new `StockItem`), not the
+    De/À period unit — the period unit stays "Jour" and the "Unité" cell is ignored when the
+    named resource already exists.
+13. **"Créneaux"**: `HH:MM-HH:MM` windows separated by `;` in one cell. A malformed segment is
+    dropped + reported as a *warning* while the rest of the row imports (spec point 3). Slots
+    are built in the form's own `{ id, startTime, endTime }` shape — the same one manual slots
+    and `STARTER_TEMPLATE` use — and persist through the existing `ProtocolTimeSlot` write path.
+14. **Additive vs. replacement:** this feature's spec (point 4) describes *additive* merging,
+    but the intervening task "Change Excel import from additive to full replacement" (commit
+    `59a2da5`) deliberately made it a **full replacement behind a confirm dialog** to fix
+    re-import row duplication. That decision is kept — the Unité/Créneaux columns are added on
+    top of it. (Point 4 appears to be un-updated boilerplate carried over from the original
+    protocol-import task.)
 
 ---
 

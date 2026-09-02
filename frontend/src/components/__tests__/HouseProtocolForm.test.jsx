@@ -239,4 +239,35 @@ describe("HouseProtocolForm — import Excel (full replacement)", () => {
     await userEvent.upload(container.querySelector('input[type="file"]'), new File(["x"], "bad.xlsx"));
     expect(await screen.findByText(/En-têtes de colonnes introuvables/)).toBeInTheDocument();
   });
+
+  test("imports time slots, a new resource with its file unit, and lists a malformed-créneau warning", async () => {
+    protocolImportApi.parse.mockResolvedValue({
+      data: {
+        rows: [{
+          category: "Alimentation", fromValue: 1, toValue: 15, untilEnd: false,
+          what: "Nourrissage", details: "", consumption: "Provende", unit: "sac", quantityPerDay: 40,
+          timeSlots: [{ startTime: "06:30", endTime: "07:30" }, { startTime: "18:30", endTime: "19:30" }],
+        }],
+        imported: 1,
+        skipped: [],
+        warnings: [{ line: 3, reason: "créneau mal formé « 06h30-07h30 » ignoré, ligne importée sans cet horaire" }],
+      },
+    });
+    stockApi.addItem.mockResolvedValue({ data: { item_code: "FEE-7-001", name: "Provende", unit: "sac" } });
+
+    const { container } = render(<HouseProtocolForm mode="onboarding" farmId={7} onSave={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: /Importer un fichier Excel/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Choisir le fichier et remplacer/i }));
+    await userEvent.upload(container.querySelector('input[type="file"]'), new File(["x"], "p.xlsx"));
+
+    // the two time windows are rendered as removable chips on the imported row
+    expect(await screen.findByDisplayValue("Nourrissage")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Supprimer le créneau/ })).toHaveLength(2);
+
+    // the new resource was created with the file's unit, not the hardcoded "kg"
+    expect(stockApi.addItem).toHaveBeenCalledWith(7, expect.objectContaining({ name: "Provende", unit: "sac" }));
+
+    // the malformed-créneau warning is listed even though the row imported
+    expect(screen.getByText(/Ligne 3 : créneau mal formé/)).toBeInTheDocument();
+  });
 });

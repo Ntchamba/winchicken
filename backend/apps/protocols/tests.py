@@ -288,3 +288,45 @@ class ProtocolXlsxImportTests(APITestCase):
         self.client.force_authenticate(user=None)
         resp = self._upload(self._xlsx([['Alimentation', 1, 2, 'A', '', '', '']]))
         self.assertEqual(resp.status_code, 401)
+
+    # --- Unité + Créneaux columns (2026-09-02) ---
+    _H9 = ['Catégorie', 'De', 'À', 'Action', 'Détails', 'Consommation', 'Unité', 'Quantité/jour', 'Créneaux']
+
+    def test_two_time_windows_in_one_cell_parse_to_two_slots(self):
+        buf = self._xlsx([['Alimentation', 1, 15, 'Nourrissage', '', 'Provende', 'kg', 40, '06:30-07:30;18:30-19:30']],
+                         headers=self._H9)
+        resp = self._upload(buf)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        row = resp.data['rows'][0]
+        self.assertEqual(row['unit'], 'kg')
+        self.assertEqual(row['timeSlots'], [
+            {'startTime': '06:30', 'endTime': '07:30'},
+            {'startTime': '18:30', 'endTime': '19:30'},
+        ])
+        self.assertEqual(resp.data['warnings'], [])
+
+    def test_malformed_creneau_segment_is_dropped_row_still_imports_with_a_warning(self):
+        buf = self._xlsx([
+            ['Alimentation', 1, 5, 'Ok row', '', '', '', '', '06h30-07h30;18:00-19:00'],  # 1st seg malformed
+            ['Alimentation', 6, 10, 'End before start', '', '', '', '', '19:00-08:00'],    # end <= start
+        ], headers=self._H9)
+        resp = self._upload(buf)
+        self.assertEqual(resp.data['imported'], 2)          # both rows still imported
+        self.assertEqual(resp.data['skipped'], [])
+        # line 2: only the good window survives
+        self.assertEqual(resp.data['rows'][0]['timeSlots'], [{'startTime': '18:00', 'endTime': '19:00'}])
+        # line 3: no slot at all
+        self.assertEqual(resp.data['rows'][1]['timeSlots'], [])
+        warns = {w['line']: w['reason'] for w in resp.data['warnings']}
+        self.assertIn(2, warns)
+        self.assertIn('06h30-07h30', warns[2])
+        self.assertIn('mal formé', warns[2])
+        self.assertIn(3, warns)
+        self.assertIn('19:00-08:00', warns[3])
+
+    def test_unit_is_returned_per_row_for_new_resource_creation(self):
+        buf = self._xlsx([['Vaccination', 1, 1, 'Vaccin', '', 'Sérum X', 'flacon', 2, '']], headers=self._H9)
+        resp = self._upload(buf)
+        self.assertEqual(resp.data['rows'][0]['unit'], 'flacon')
+        self.assertEqual(resp.data['rows'][0]['consumption'], 'Sérum X')
+        self.assertEqual(resp.data['rows'][0]['quantityPerDay'], 2.0)

@@ -2,27 +2,30 @@
 
 For non-technical farm users: they download a template, fill it in, and upload it on the
 protocol configuration screen (onboarding step *and* the "Modifier" edit modal). This module
-only **parses and validates** the file into a list of plain row dicts + a per-row skip report;
+only **parses and validates** the file into a list of plain row dicts + a per-row report;
 it never writes `ProtocolTemplate` rows. The frontend (`HouseProtocolForm`) merges the parsed
-rows into the form so the user reviews everything before the normal save — exactly like
-manually-added rows (see docs/excel-import.md).
+rows into the form so the user reviews everything before the normal save (see
+docs/excel-import.md).
 
 Decisions (docs/excel-import.md):
   * `openpyxl` (no pandas dependency).
-  * No unit column — every imported row is period unit "Jour" (the frontend applies DAY);
-    the user changes individual rows to Semaine/Mois afterwards in the normal UI.
+  * Period unit for De/À is always "Jour" (the frontend applies DAY); "Unité" is a *resource*
+    unit, only used when "Consommation" names a resource that must be created — an existing
+    resource keeps its own unit and the file's value is ignored for that row.
   * Columns are matched by header name (case-insensitive, trimmed), not position.
   * A row missing "Catégorie", "De" or "Action", or with "À" < "De", is skipped and reported —
     one bad row never fails the whole import. Fully-empty rows are ignored silently.
   * "Quantité/jour" with no "Consommation" → the quantity is dropped, the row still imports.
+  * A malformed "Créneaux" segment is dropped and reported as a *warning* — the row still
+    imports, just without that time slot.
 """
+import re
 from io import BytesIO
 
 from openpyxl import Workbook, load_workbook
 
-# Exact French headers the template ships with. `HEADER_ALIASES` maps a normalised header
-# (lower-cased, stripped, accents kept) to the internal key.
-HEADERS = ['Catégorie', 'De', 'À', 'Action', 'Détails', 'Consommation', 'Quantité/jour']
+# Exact French headers the template ships with.
+HEADERS = ['Catégorie', 'De', 'À', 'Action', 'Détails', 'Consommation', 'Unité', 'Quantité/jour', 'Créneaux']
 _HEADER_KEYS = {
     'catégorie': 'category',
     'de': 'from_value',
@@ -30,14 +33,20 @@ _HEADER_KEYS = {
     'action': 'what',
     'détails': 'details',
     'consommation': 'consumption',
-    'quantité/jour': 'quantity_per_day',
+    'unité': 'unit', 'unite': 'unit',
+    'quantité/jour': 'quantity_per_day', 'quantite/jour': 'quantity_per_day',
+    'créneaux': 'time_slots', 'creneaux': 'time_slots',
 }
 
 EXAMPLE_ROWS = [
-    ['Alimentation', 1, 15, 'Aliment démarrage', '3000 kcal, 22,5% de protéines', 'Provende', 40],
-    ['Alimentation', 15, 30, 'Aliment croissance', '3150 kcal, 21,5% de protéines', 'Provende', 55],
-    ['Vaccination', 1, 1, 'Maladie de Newcastle', 'Hitchner B1, goutte oculaire', '', ''],
+    # a resource + unit + daily quantity, AND two time windows in one cell
+    ['Alimentation', 1, 15, 'Aliment démarrage', '3000 kcal, 22,5% de protéines',
+     'Provende', 'kg', 40, '06:30-07:30;18:30-19:30'],
+    ['Alimentation', 15, 30, 'Aliment croissance', '3150 kcal, 21,5% de protéines', 'Provende', 'kg', 55, ''],
+    ['Vaccination', 1, 1, 'Maladie de Newcastle', 'Hitchner B1, goutte oculaire', '', '', '', ''],
 ]
+
+_SLOT_RE = re.compile(r'^\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*$')
 
 
 def build_template_workbook() -> bytes:
@@ -73,16 +82,46 @@ def _as_number(value):
         return None
 
 
+def _norm_time(hhmm):
+    """'6:30' -> '06:30'; returns None if not a real HH:MM in range."""
+    h, m = hhmm.split(':')
+    h, m = int(h), int(m)
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        return None
+    return f'{h:02d}:{m:02d}'
+
+
+def _parse_slots(text):
+    """Split a "Créneaux" cell on ';' and parse each `HH:MM-HH:MM` segment.
+    Returns (slots, bad_segments): slots = [{'startTime','endTime'}]; bad_segments = raw strings
+    that were malformed (unparseable or end <= start) and were dropped."""
+    slots, bad = [], []
+    for seg in _clean(text).split(';'):
+        seg = seg.strip()
+        if not seg:
+            continue
+        match = _SLOT_RE.match(seg)
+        start = _norm_time(match.group(1)) if match else None
+        end = _norm_time(match.group(2)) if match else None
+        if not match or start is None or end is None or end <= start:
+            bad.append(seg)
+            continue
+        slots.append({'startTime': start, 'endTime': end})
+    return slots, bad
+
+
 class ImportError(Exception):
     """Raised for a file that cannot be used at all (unreadable, no recognisable headers)."""
 
 
 def parse_protocol_rows(file_obj) -> dict:
-    """Parse an uploaded .xlsx into `{'rows': [...], 'imported': int, 'skipped': [...]}`.
+    """Parse an uploaded .xlsx into
+    `{'rows': [...], 'imported': int, 'skipped': [...], 'warnings': [...]}`.
 
     Each ok row: {category, fromValue, toValue|None, untilEnd, what, details,
-                  consumption|None, quantityPerDay|None}. `skipped`: [{line, reason}] where
-    `line` is the 1-based spreadsheet row number (header is line 1).
+                  consumption|None, unit, quantityPerDay|None, timeSlots:[{startTime,endTime}]}.
+    `skipped` / `warnings`: [{line, reason}] — `line` is the 1-based spreadsheet row number
+    (header is line 1). `warnings` rows were imported (a bad Créneaux segment was dropped).
     """
     try:
         wb = load_workbook(file_obj, read_only=True, data_only=True)
@@ -114,7 +153,7 @@ def parse_protocol_rows(file_obj) -> dict:
         i = col_index.get(key)
         return row[i] if i is not None and i < len(row) else None
 
-    rows, skipped = [], []
+    rows, skipped, warnings = [], [], []
     for line, raw in enumerate(rows_iter, start=2):
         if raw is None or all(_clean(c) == '' for c in raw):
             continue  # fully-empty row — ignore, don't report
@@ -151,6 +190,11 @@ def parse_protocol_rows(file_obj) -> dict:
 
         consumption = _clean(cell(raw, 'consumption')) or None
         qpd = _as_number(cell(raw, 'quantity_per_day'))
+        slots, bad_segments = _parse_slots(cell(raw, 'time_slots'))
+        for seg in bad_segments:
+            warnings.append({'line': line, 'reason': (
+                f"créneau mal formé « {seg} » ignoré, ligne importée sans cet horaire"
+            )})
         rows.append({
             'category': category,
             'fromValue': from_value,
@@ -159,8 +203,10 @@ def parse_protocol_rows(file_obj) -> dict:
             'what': what,
             'details': _clean(cell(raw, 'details')),
             'consumption': consumption,
+            'unit': _clean(cell(raw, 'unit')),
             'quantityPerDay': qpd if consumption else None,
+            'timeSlots': slots,
         })
 
     wb.close()
-    return {'rows': rows, 'imported': len(rows), 'skipped': skipped}
+    return {'rows': rows, 'imported': len(rows), 'skipped': skipped, 'warnings': warnings}
