@@ -34,6 +34,14 @@ export const employeesApi = {
   remove: (id) => client.delete(`/employees/${id}/`),
   setHourlyRate: (id, hourlyRate) => client.patch(`/employees/${id}/hourly-rate/`, { hourly_rate: hourlyRate }),
   payrollList: () => client.get("/employees/payroll/"),
+  // Excel import — update-or-create by Email (never deletes, never resets an existing
+  // password; new accounts get a temp password returned in `newAccounts`).
+  importXlsx: (file) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return client.post("/employees/import-xlsx/", fd);
+  },
+  importTemplateUrl: `${API_URL}/employees/import-template.xlsx`,
 };
 
 export const housesApi = {
@@ -99,6 +107,14 @@ export const stockApi = {
   categories: (farmId) => client.get(`/farms/${farmId}/stock-categories/`),
   addCategory: (farmId, payload) => client.post(`/farms/${farmId}/stock-categories/`, payload),
   removeCategory: (categoryId) => client.delete(`/stock-categories/${categoryId}/`),
+  // Excel import — update-or-create StockItem params by Article name (never deletes, no
+  // movement/quantity change). `importTemplateUrl` is a plain download link (AllowAny).
+  importXlsx: (farmId, file) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return client.post(`/farms/${farmId}/stock-items/import-xlsx/`, fd);
+  },
+  importTemplateUrl: `${API_URL}/stock-items/import-template.xlsx`,
   suppliers: (farmId) => client.get(`/farms/${farmId}/suppliers/`),
   addSupplier: (farmId, payload) => client.post(`/farms/${farmId}/suppliers/`, payload),
   updateSupplier: (id, payload) => client.put(`/suppliers/${id}/`, payload),

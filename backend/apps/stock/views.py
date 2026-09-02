@@ -2,7 +2,8 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import generics, serializers, status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -476,3 +477,44 @@ class VaccinationListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         return Vaccination.objects.filter(batch__house__farm=self.request.user.farm)
+
+
+class StockImportTemplateView(APIView):
+    """GET /api/stock-items/import-template.xlsx — the ready-to-fill Stock import template.
+    AllowAny (static example content) so the frontend offers it as a plain download link."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from apps.stock.xlsx_import import build_stock_template
+        from apps.core.xlsx import xlsx_download
+        return xlsx_download(build_stock_template(), 'modele-stock.xlsx')
+
+
+class StockImportView(APIView):
+    """POST /api/farms/{farmId}/stock-items/import-xlsx/ (multipart, field `file`) — update-or-
+    create StockItem parameters by Article name. Never deletes; never creates a StockMovement.
+    Admin / Farm Manager / Farmer. Returns {updated, created, skipped:[{line, reason}]}."""
+
+    permission_classes = [IsAdminOrFarmManagerOrFarmer]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, farm_id):
+        from apps.stock.xlsx_import import parse_and_apply_stock_import
+        from apps.core.xlsx import WorkbookError
+
+        farm = get_object_or_404(Farm, pk=farm_id)
+        upload = request.FILES.get('file')
+        if upload is None:
+            return Response({'detail': 'Aucun fichier reçu.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not upload.name.lower().endswith('.xlsx'):
+            return Response({'detail': 'Importez un fichier .xlsx (Excel).'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = parse_and_apply_stock_import(farm, upload)
+        except WorkbookError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        record_audit_log(
+            request.user, 'stock.imported',
+            f"Import stock ({result['updated']} maj, {result['created']} créé(s))",
+        )
+        return Response(result)

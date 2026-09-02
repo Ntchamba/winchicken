@@ -623,3 +623,87 @@ class CompositionAutoDeductOnOutputAddTests(APITestCase):
         # 1000 * 5000 / 1800 ≈ 2777.8 needed, only 1000 on hand — still deducted (negative)
         self.assertLess(current_quantity(self.mais), 0)
         self.assertEqual(len(resp.data['composition_deduction']['shortfalls']), 2)
+
+
+class StockXlsxImportTests(APITestCase):
+    """Excel import for Stock — update-or-create by Article name, never deletes, no movements
+    (docs/excel-import.md)."""
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Stock Import')
+        self.admin = _make_user(self.farm)
+        self.client.force_authenticate(user=self.admin)
+        self.feed = StockCategory.objects.get(farm=self.farm, kind='FEED')
+        self.existing = StockItem.objects.create(
+            item_code=f'FEE-{self.farm.id}-001', farm=self.farm, category=self.feed,
+            name='Provende', unit='kg', alert_threshold=50, unit_price='400.00',
+        )
+        # a stock movement so we can prove the import never touches quantity/history
+        StockMovement.objects.create(item=self.existing, movement_type=MovementType.IN, quantity=120, movement_date='2026-05-01')
+
+    @staticmethod
+    def _xlsx(rows, headers=None):
+        from io import BytesIO
+
+        from openpyxl import Workbook
+        wb = Workbook(); ws = wb.active
+        ws.append(headers or ['Article', 'Catégorie', 'Détail', 'Unité', "Seuil d'alerte", 'Prix unitaire', 'Fournisseur'])
+        for r in rows:
+            ws.append(r)
+        buf = BytesIO(); wb.save(buf); buf.seek(0); buf.name = 's.xlsx'
+        return buf
+
+    def _upload(self, buf):
+        return self.client.post(f'/api/farms/{self.farm.id}/stock-items/import-xlsx/', {'file': buf}, format='multipart')
+
+    def test_template_downloads_without_auth(self):
+        self.client.force_authenticate(user=None)
+        resp = self.client.get('/api/stock-items/import-template.xlsx')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('attachment', resp['Content-Disposition'])
+
+    def test_existing_item_updates_params_only_no_quantity_change(self):
+        before_qty = list(StockMovement.objects.filter(item=self.existing).values_list('quantity', flat=True))
+        resp = self._upload(self._xlsx([
+            ['Provende', 'Aliment', 'Grower', 'kg', 80, 465, 'Agrivet'],   # existing -> update
+            ['Sciure', 'Litière', 'copeaux', 'sac', 10, 2000, ''],         # new
+        ]))
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual((resp.data['updated'], resp.data['created']), (1, 1))
+        self.assertEqual(resp.data['skipped'], [])
+
+        self.existing.refresh_from_db()
+        self.assertEqual(str(self.existing.unit_price), '465.00')
+        self.assertEqual(self.existing.alert_threshold, 80)
+        self.assertEqual(self.existing.feed_stage, 'GROWER')
+        # quantity / movement history untouched
+        self.assertEqual(list(StockMovement.objects.filter(item=self.existing).values_list('quantity', flat=True)), before_qty)
+        self.assertFalse(StockMovement.objects.filter(item__name='Sciure').exists())
+
+        # new item created with an auto-created supplier + custom category
+        new = StockItem.objects.get(farm=self.farm, name='Sciure')
+        self.assertEqual(new.category.label, 'Litière')
+        self.assertEqual(new.item_type, 'copeaux')
+        self.assertTrue(Supplier.objects.filter(farm=self.farm, name='Agrivet').exists())
+
+    def test_never_deletes_items_absent_from_the_file(self):
+        StockItem.objects.create(item_code=f'EQU-{self.farm.id}-001', farm=self.farm,
+                                 category=StockCategory.objects.get(farm=self.farm, kind='EQUIPMENT'),
+                                 name='Abreuvoir', unit='u')
+        self._upload(self._xlsx([['Provende', 'Aliment', '', 'kg', 10, 400, '']]))
+        self.assertTrue(StockItem.objects.filter(farm=self.farm, name='Abreuvoir').exists())
+
+    def test_bad_row_is_skipped_with_reason_others_still_apply(self):
+        resp = self._upload(self._xlsx([
+            ['', 'Aliment', '', 'kg', 1, 1, ''],        # line 2 — no name
+            ['Maïs', '', '', 'kg', 1, 1, ''],           # line 3 — no category
+            ['Tourteau', 'Aliment', '', 'kg', 5, 300, ''],  # line 4 — ok (new)
+        ]))
+        self.assertEqual(resp.data['created'], 1)
+        reasons = {s['line']: s['reason'] for s in resp.data['skipped']}
+        self.assertEqual(set(reasons), {2, 3})
+
+    def test_worker_cannot_import(self):
+        self.client.force_authenticate(user=_make_user(self.farm, role=UserRole.WORKER, email='w@stock-imp.local'))
+        resp = self._upload(self._xlsx([['X', 'Aliment', '', 'kg', 1, 1, '']]))
+        self.assertEqual(resp.status_code, 403)

@@ -1,20 +1,29 @@
+from decimal import Decimal, InvalidOperation
+
 from django.db import IntegrityError
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiExample, extend_schema, inline_serializer
 from rest_framework import generics, permissions, serializers, status
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from apps.core.models import ContactMessage, Farm, NewsletterSubscriber, User
-from apps.core.permissions import IsAdminOrSecondaryAdmin
+from apps.core.models import AuditLogEntry, ContactMessage, Farm, NewsletterSubscriber, User
+from apps.core.permissions import IsAdmin, IsAdminOrFarmManager, IsAdminOrSecondaryAdmin
 from apps.core.serializers import (
+    AuditLogEntrySerializer,
     ContactMessageSerializer,
+    EmployeePayrollSerializer,
     EmployeeSerializer,
     FarmCreateSerializer,
+    FarmResetSerializer,
     MeSerializer,
+    PreLoginResetConfirmSerializer,
+    PreLoginResetRequestSerializer,
     WinchickenTokenObtainPairSerializer,
 )
+from apps.core.services import factory_reset_farm, record_audit_log
 
 
 @extend_schema(
@@ -76,6 +85,123 @@ class FarmCreateView(generics.CreateAPIView):
         return Response(token_serializer.validated_data, status=status.HTTP_201_CREATED)
 
 
+@extend_schema(
+    request=FarmResetSerializer,
+    responses={
+        204: None,
+        400: inline_serializer('FarmResetError', {'detail': serializers.CharField()}),
+        403: inline_serializer('FarmResetForbidden', {'detail': serializers.CharField()}),
+    },
+    description=(
+        'Administrateur-only, irreversible: wipes the Farm and every row that cascades from it '
+        '(docs/deviations.md — the sanctioned exception to "no way to delete a farm").'
+    ),
+)
+class FarmResetView(APIView):
+    """POST /api/farm/reset/ — the sanctioned exception to this project's "no farm deletion" rule
+    (docs/deviations.md Part 12). Administrateur-only (`IsAdmin`, checked server-side — a
+    non-Administrateur caller gets 403 regardless of what the frontend shows/hides) and requires
+    re-entering the caller's own current password (`FarmResetSerializer`, re-validated against
+    the real password hash — never trusted from the frontend). The actual wipe
+    (`apps.core.services.factory_reset_farm`) runs in one transaction: `Farm.objects.delete()`
+    cascades to every farm-scoped table, including the caller's own `User` row, so there is no
+    separate "log the caller out" step needed — see that function's docstring for why deleting
+    the row is already enough to invalidate every issued JWT.
+    """
+
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        serializer = FarmResetSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        factory_reset_farm(request.user.farm, request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema(
+    request=PreLoginResetRequestSerializer,
+    responses={
+        200: inline_serializer('PreLoginResetToken', {
+            'token': serializers.CharField(), 'farm_name': serializers.CharField(),
+        }),
+        400: inline_serializer('PreLoginResetRequestError', {
+            'non_field_errors': serializers.ListField(child=serializers.CharField()),
+        }),
+    },
+    description=(
+        'Step 1 of the unauthenticated farm-reset flow reachable from /login (no session). '
+        'Verifies Administrateur email + password and returns a 5-minute signed token for step 2. '
+        'Any failure returns the same generic "Identifiants invalides." — no account enumeration.'
+    ),
+)
+class FarmResetRequestView(APIView):
+    """POST /api/farm/reset/request/ — credential-gated entry point for resetting the farm
+    *without* logging in (the in-dashboard `FarmResetView` above needs a live session; this one
+    exists precisely for the case where nobody can). Publicly reachable (`AllowAny`); the
+    Administrateur check lives entirely in `PreLoginResetRequestSerializer` and every failure
+    mode collapses to one generic error so an anonymous caller can't probe accounts.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = PreLoginResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response({'token': serializer.build_token(), 'farm_name': serializer.validated_data['user'].farm.name})
+
+
+@extend_schema(
+    request=PreLoginResetConfirmSerializer,
+    responses={
+        204: None,
+        400: inline_serializer('PreLoginResetConfirmError', {
+            'non_field_errors': serializers.ListField(child=serializers.CharField()),
+        }),
+    },
+    description=(
+        'Step 2 of the unauthenticated farm-reset flow: exchanges the step-1 token + the exact '
+        'farm name for the irreversible wipe (same effect as POST /api/farm/reset/).'
+    ),
+)
+class FarmResetConfirmView(APIView):
+    """POST /api/farm/reset/confirm/ — consumes the step-1 token, re-verifies the account is an
+    existing Administrateur, checks the typed-back `Farm.name`, then runs the same
+    `apps.core.services.factory_reset_farm` the dashboard flow does. `AllowAny`: the token *is*
+    the authorization.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = PreLoginResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        factory_reset_farm(user.farm, user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AuditLogListView(generics.ListAPIView):
+    """GET /api/audit-log/?action=&date_from=&date_to= — Administrateur only
+    (docs/deviations.md Part 15). `action` filters to one exact code (e.g. "batch.deleted");
+    `date_from`/`date_to` are inclusive `YYYY-MM-DD` bounds on the entry's date."""
+
+    serializer_class = AuditLogEntrySerializer
+    permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        qs = AuditLogEntry.objects.filter(farm=self.request.user.farm)
+        action = self.request.query_params.get('action')
+        if action:
+            qs = qs.filter(action=action)
+        date_from = self.request.query_params.get('date_from')
+        if date_from:
+            qs = qs.filter(timestamp__date__gte=date_from)
+        date_to = self.request.query_params.get('date_to')
+        if date_to:
+            qs = qs.filter(timestamp__date__lte=date_to)
+        return qs
+
+
 class LoginView(TokenObtainPairView):
     """POST /api/auth/login/"""
 
@@ -108,6 +234,10 @@ class EmployeeListCreateView(generics.ListCreateAPIView):
         context['farm'] = self.request.user.farm
         return context
 
+    def perform_create(self, serializer):
+        employee = serializer.save()
+        record_audit_log(self.request.user, 'employee.created', f'{employee.name} ({employee.get_role_display()})')
+
 
 class EmployeeDetailView(generics.RetrieveUpdateDestroyAPIView):
     """GET/PUT/DELETE /api/employees/{id}/ — view, edit or remove one employee account.
@@ -119,6 +249,53 @@ class EmployeeDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return User.objects.filter(farm=self.request.user.farm)
+
+    def perform_update(self, serializer):
+        employee = serializer.save()
+        record_audit_log(self.request.user, 'employee.updated', f'{employee.name} ({employee.get_role_display()})')
+
+    def perform_destroy(self, instance):
+        record_audit_log(self.request.user, 'employee.deleted', f'{instance.name} ({instance.get_role_display()})')
+
+
+class EmployeeHourlyRateView(APIView):
+    """PATCH /api/employees/{id}/hourly-rate/ — Admin/Farm Manager (2026-08-27, Salaires module,
+    Part D: "Administrateur sets/edits... Gérant de ferme can also edit it"). Deliberately a
+    narrow, separate endpoint rather than widening `EmployeeDetailView`'s own
+    `IsAdminOrSecondaryAdmin` to include Farm Manager — that would let Farm Manager edit an
+    employee's role/password/email too, well beyond "manage payroll rates," which is all this
+    task actually asked for."""
+
+    permission_classes = [IsAdminOrFarmManager]
+
+    def patch(self, request, pk):
+        employee = get_object_or_404(User, pk=pk, farm=request.user.farm)
+        raw = request.data.get('hourly_rate')
+        if raw in (None, ''):
+            employee.hourly_rate = None
+        else:
+            try:
+                employee.hourly_rate = Decimal(str(raw))
+            except InvalidOperation:
+                return Response({'hourly_rate': ['Doit être un nombre valide.']}, status=status.HTTP_400_BAD_REQUEST)
+        employee.save(update_fields=['hourly_rate'])
+        return Response({'hourly_rate': employee.hourly_rate})
+
+
+class EmployeePayrollListView(generics.ListAPIView):
+    """GET /api/employees/payroll/ — Admin/Farm Manager only (2026-08-27, Salaires module Part D).
+    A narrow id/name/hourly_rate read of every employee on the farm, used by
+    SalairesSection.jsx's rate-editing list. Farm Manager has no visibility into the full
+    Employees page (`canSeeEmployees` stays Admin/Secondary-Admin only, unchanged) — this is the
+    equivalent read surface for the one thing Farm Manager is allowed to manage here: payroll
+    rates. Deliberately excludes email/phone/role/is_active — not a general employee list, and
+    editing still goes through the separate EmployeeHourlyRateView PATCH above, not this view."""
+
+    serializer_class = EmployeePayrollSerializer
+    permission_classes = [IsAdminOrFarmManager]
+
+    def get_queryset(self):
+        return User.objects.filter(farm=self.request.user.farm).exclude(pk=self.request.user.pk).order_by('name')
 
 
 @extend_schema(
@@ -173,3 +350,45 @@ class NewsletterSubscribeView(APIView):
             return Response({'detail': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
         NewsletterSubscriber.objects.get_or_create(email=email)
         return Response({'detail': 'Subscribed.'}, status=status.HTTP_201_CREATED)
+
+
+class EmployeeImportTemplateView(APIView):
+    """GET /api/employees/import-template.xlsx — ready-to-fill Employees import template.
+    AllowAny (static example content) so it can be a plain download link."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        from apps.core.employee_xlsx_import import build_employee_template
+        from apps.core.xlsx import xlsx_download
+        return xlsx_download(build_employee_template(), 'modele-employes.xlsx')
+
+
+class EmployeeImportView(APIView):
+    """POST /api/employees/import-xlsx/ (multipart, field `file`) — update-or-create employee
+    accounts by Email. Never deletes; never resets an existing account's password. New accounts
+    get a generated temporary password, returned once in `newAccounts`. Admin / Secondary Admin.
+    Returns {updated, created, skipped:[{line, reason}], newAccounts:[{line, name, email, password}]}.
+    """
+
+    permission_classes = [IsAdminOrSecondaryAdmin]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        from apps.core.employee_xlsx_import import parse_and_apply_employee_import
+        from apps.core.xlsx import WorkbookError
+
+        upload = request.FILES.get('file')
+        if upload is None:
+            return Response({'detail': 'Aucun fichier reçu.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not upload.name.lower().endswith('.xlsx'):
+            return Response({'detail': 'Importez un fichier .xlsx (Excel).'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = parse_and_apply_employee_import(request.user, request.user.farm, upload)
+        except WorkbookError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        record_audit_log(
+            request.user, 'employee.imported',
+            f"Import employés ({result['updated']} maj, {result['created']} créé(s))",
+        )
+        return Response(result)

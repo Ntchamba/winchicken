@@ -1,4 +1,4 @@
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from unittest import mock
 
@@ -478,3 +478,94 @@ class PreLoginFarmResetTests(APITestCase):
             self.request_url, {'email': 'admin@prelogin.local', 'password': 'Sup3rSecret!'}, format='json',
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+class EmployeeXlsxImportTests(APITestCase):
+    """Excel import for Employees — update-or-create by Email, never deletes, never resets an
+    existing password, generates + returns a temp password per new account (docs/excel-import.md)."""
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Employés Import')
+        self.admin = User.objects.create_user(email='admin@emp-imp.local', password='AdminPass1!', name='Admin',
+                                              role=UserRole.ADMIN, farm=self.farm)
+        create_role_profile(self.admin)
+        self.client.force_authenticate(user=self.admin)
+        self.existing = User.objects.create_user(email='marie@emp-imp.local', password='MariePass1!', name='Marie D.',
+                                                 role=UserRole.WORKER, civility='MME', farm=self.farm)
+        create_role_profile(self.existing)
+
+    @staticmethod
+    def _xlsx(rows, headers=None):
+        from openpyxl import Workbook
+        wb = Workbook(); ws = wb.active
+        ws.append(headers or ['Nom', 'Email', 'Rôle', 'Civilité', 'Taux horaire'])
+        for r in rows:
+            ws.append(r)
+        buf = BytesIO(); wb.save(buf); buf.seek(0); buf.name = 'e.xlsx'
+        return buf
+
+    def _upload(self, buf):
+        return self.client.post('/api/employees/import-xlsx/', {'file': buf}, format='multipart')
+
+    def test_template_downloads_without_auth(self):
+        self.client.force_authenticate(user=None)
+        resp = self.client.get('/api/employees/import-template.xlsx')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('attachment', resp['Content-Disposition'])
+
+    def test_existing_updates_role_password_unchanged_new_gets_temp_password(self):
+        resp = self._upload(self._xlsx([
+            ['Marie Dupont', 'marie@emp-imp.local', 'Fermier', 'Mme', 1500],   # existing -> role WORKER->FARMER
+            ['Jean Kouassi', 'jean@emp-imp.local', 'Gérant de ferme', 'M.', ''],  # new
+        ]))
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual((resp.data['updated'], resp.data['created']), (1, 1))
+        self.assertEqual(resp.data['skipped'], [])
+
+        self.existing.refresh_from_db()
+        self.assertEqual(self.existing.role, UserRole.FARMER)
+        self.assertEqual(self.existing.name, 'Marie Dupont')
+        self.assertEqual(str(self.existing.hourly_rate), '1500.00')
+        self.assertTrue(self.existing.check_password('MariePass1!'))  # password NOT reset
+
+        new = User.objects.get(email='jean@emp-imp.local')
+        self.assertEqual(new.role, UserRole.FARM_MANAGER)
+        acc = resp.data['newAccounts']
+        self.assertEqual(len(acc), 1)
+        self.assertEqual(acc[0]['email'], 'jean@emp-imp.local')
+        self.assertTrue(acc[0]['password'])
+        self.assertTrue(new.check_password(acc[0]['password']))  # the returned temp password works
+
+    def test_invalid_role_is_skipped_specifically_not_guessed(self):
+        resp = self._upload(self._xlsx([
+            ['Bad Role', 'bad@emp-imp.local', 'Superviseur', 'M.', ''],   # line 2 — invalid role
+            ['Ok Person', 'ok@emp-imp.local', 'OUVRIER', 'M.', ''],       # line 3 — enum value accepted
+        ]))
+        self.assertEqual(resp.data['created'], 1)
+        self.assertFalse(User.objects.filter(email='bad@emp-imp.local').exists())
+        reasons = {s['line']: s['reason'] for s in resp.data['skipped']}
+        self.assertIn(2, reasons)
+        self.assertIn('rôle invalide', reasons[2].lower())
+
+    def test_admin_role_in_file_is_rejected(self):
+        resp = self._upload(self._xlsx([['X', 'x@emp-imp.local', 'ADMIN', 'M.', '']]))
+        self.assertEqual(resp.data['created'], 0)
+        self.assertEqual(len(resp.data['skipped']), 1)
+
+    def test_never_deletes_an_employee_absent_from_the_file(self):
+        self._upload(self._xlsx([['New Only', 'newonly@emp-imp.local', 'Fermier', 'M.', '']]))
+        self.assertTrue(User.objects.filter(email='marie@emp-imp.local').exists())
+
+    def test_role_profile_row_is_swapped_on_role_change(self):
+        from apps.core.models import Farmer, Worker
+        self.assertTrue(Worker.objects.filter(user=self.existing).exists())
+        self._upload(self._xlsx([['Marie', 'marie@emp-imp.local', 'Fermier', 'Mme', '']]))
+        self.assertFalse(Worker.objects.filter(user=self.existing).exists())
+        self.assertTrue(Farmer.objects.filter(user=self.existing).exists())
+
+    def test_farmer_cannot_import_employees(self):
+        farmer = User.objects.create_user(email='f@emp-imp.local', password='x', name='F', role=UserRole.FARMER, farm=self.farm)
+        create_role_profile(farmer)
+        self.client.force_authenticate(user=farmer)
+        resp = self._upload(self._xlsx([['X', 'z@emp-imp.local', 'Fermier', 'M.', '']]))
+        self.assertEqual(resp.status_code, 403)

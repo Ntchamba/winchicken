@@ -4,6 +4,8 @@ from apps.stock import views
 
 urlpatterns = [
     path('farms/<int:farm_id>/stock-items/', views.FarmStockItemsView.as_view(), name='farm-stock-items'),
+    path('farms/<int:farm_id>/stock-items/import-xlsx/', views.StockImportView.as_view(), name='farm-stock-import'),
+    path('stock-items/import-template.xlsx', views.StockImportTemplateView.as_view(), name='stock-import-template'),
     path('farms/<int:farm_id>/stock-categories/', views.FarmStockCategoriesView.as_view(), name='farm-stock-categories'),
     path('stock-categories/<int:pk>/', views.StockCategoryDetailView.as_view(), name='stock-category-detail'),
     path('farms/<int:farm_id>/suppliers/', views.FarmSuppliersView.as_view(), name='farm-suppliers'),

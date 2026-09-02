@@ -14,6 +14,8 @@ vi.mock("../../api/endpoints", () => ({
     items: vi.fn(),
     suppliers: vi.fn(),
     putItems: vi.fn(),
+    importXlsx: vi.fn(),
+    importTemplateUrl: "http://test/stock-items/import-template.xlsx",
   },
 }));
 
@@ -49,5 +51,22 @@ describe("StockParametersModal", () => {
   test("does not fetch while closed", () => {
     render(<StockParametersModal open={false} farmId={7} onClose={onClose} onSaved={onSaved} />);
     expect(stockApi.categories).not.toHaveBeenCalled();
+  });
+
+  test("Excel import posts the file, shows the update/create/skip summary, and refreshes", async () => {
+    stockApi.importXlsx.mockResolvedValue({
+      data: { updated: 1, created: 1, skipped: [{ line: 4, reason: "catégorie manquante" }] },
+    });
+    const { container } = render(<StockParametersModal open farmId={7} onClose={onClose} onSaved={onSaved} />);
+    await screen.findByText("Fake Save");
+
+    stockApi.categories.mockClear();
+    await userEvent.upload(container.querySelector('input[type="file"]'), new File(["x"], "stock.xlsx"));
+
+    await waitFor(() => expect(stockApi.importXlsx).toHaveBeenCalledWith(7, expect.any(File)));
+    expect(await screen.findByText(/1 ligne mise à jour, 1 ligne créée, 1 ligne ignorée/i)).toBeInTheDocument();
+    expect(screen.getByText("Ligne 4 : catégorie manquante")).toBeInTheDocument();
+    expect(stockApi.categories).toHaveBeenCalled(); // reloaded after import
+    expect(onSaved).toHaveBeenCalled();
   });
 });
