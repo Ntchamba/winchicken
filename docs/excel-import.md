@@ -8,11 +8,21 @@ the two behave identically.
 ## User flow
 
 1. Click **"Télécharger un modèle"** → `modele-protocole.xlsx` (headers + 3 example rows).
-2. Fill it in, upload it with **"Importer un fichier Excel"**.
-3. The file is parsed **server-side**; the rows are added to whatever is already in the form.
-   Nothing is saved yet — the user reviews existing + imported rows and then saves normally.
-4. A summary appears: *"X ligne(s) importée(s) avec succès[, Y ligne(s) ignorée(s)]"* with one
-   bullet per skipped row (`Ligne N : <raison>`).
+2. Fill it in, click **"Importer un fichier Excel"** → an explicit warning:
+   *"Cet import va remplacer toutes les lignes de protocole actuelles de ce bâtiment par le
+   contenu du fichier. Cette action est irréversible."* — **Annuler** / **Choisir le fichier
+   et remplacer**. Nothing is parsed until the user confirms.
+3. On confirm, the file is parsed **server-side** and the form's protocol becomes **exactly the
+   file's rows — full replacement, not a merge** (re-importing an edited file never duplicates
+   or leaves stray rows). Still nothing is *saved* yet: the user reviews the result and saves
+   normally. `PUT /houses/{code}/protocol/` then does the DB replace transactionally (all rows
+   for the house deleted + recreated in one transaction) and regenerates the active batch's
+   future `PROTOCOL_TASK` `AlertRule` rows — **past `Alert` / `SmsMessage` history is left
+   untouched** (`expand_protocol_to_alert_rules`, already used by every protocol edit).
+4. A summary appears: *"Protocole remplacé — X ligne(s) importée(s) avec succès[, Y ligne(s)
+   ignorée(s)]"* with one bullet per skipped row (`Ligne N : <raison>`).
+5. **Guard:** a file with **zero usable rows** does *not* wipe the protocol — the skip report
+   is shown and the existing rows are kept (protection against an accidental total erase).
 
 ## Excel format
 
@@ -60,8 +70,13 @@ does not matter.
    to the import button states this; the user changes individual rows to Semaine/Mois in the
    normal UI afterwards.
 3. **Parse-only endpoint.** The backend never writes `ProtocolTemplate` rows on import — the
-   frontend merges the parsed rows into the form for review before the normal save (spec point
-   4 is authoritative over "Create the ProtocolTemplate row" in spec point 2).
+   frontend sets the form's rows to the parsed rows for review before the normal save. The
+   transactional DB replace + `AlertRule` regeneration + history preservation asked for by the
+   "make import replace, not append" change are **already done by the existing save path**
+   (`HouseProtocolView.put`), so no separate import-write path was added.
+3b. **Import is a full replacement**, behind a confirm dialog, since re-importing an edited
+   file must make the protocol match the file — not append. A file with 0 usable rows is the
+   one exception: it does not wipe the protocol (accidental-erase guard).
 4. **Category / stock-item auto-creation happens client-side**, reusing the form's existing
    flows: `createCategory` (the "+" button's logic — local-only in onboarding, persisted
    immediately in "Modifier") and `createStockItem` (the resource combobox's inline "+ Créer"

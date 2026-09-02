@@ -234,10 +234,12 @@ export default function HouseProtocolForm({
   const [saveMessage, setSaveMessage] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
 
-  // Excel import (docs/excel-import.md) — parse server-side, merge rows into the form.
+  // Excel import (docs/excel-import.md) — parse server-side, then REPLACE the form's rows with
+  // the file's content (full replacement, not append). Destructive → a confirm step first.
   const importInputRef = useRef(null);
+  const [importConfirmOpen, setImportConfirmOpen] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState(null); // { imported, skipped: [{line, reason}] }
+  const [importResult, setImportResult] = useState(null); // { imported, skipped: [{line, reason}], replaced }
   const [importError, setImportError] = useState("");
 
   const [addingCategory, setAddingCategory] = useState(false);
@@ -350,15 +352,25 @@ export default function HouseProtocolForm({
         }
       }
 
-      // 3. Build the rows (unit is always "Day" — see the note by the import button) and append.
-      setSchedules((prev) => {
-        const next = { ...prev };
+      // A file with no usable row must not silently wipe the whole protocol — report the
+      // skipped rows and keep what's there. (The user was already warned this is a full
+      // replacement; this only guards an accidental total erase from a malformed file.)
+      if (data.rows.length === 0) {
+        setImportResult({ imported: 0, skipped: data.skipped });
+        return;
+      }
+
+      // 3. FULL REPLACEMENT (not append): the protocol becomes exactly the file's rows. The
+      //    normal save then does the transactional DB replace + AlertRule regeneration (past
+      //    Alert/SmsMessage history is preserved) via PUT /houses/{code}/protocol/. Unit is
+      //    always "Day" — see the note by the import button.
+      setSchedules(() => {
+        const next = {};
         for (const r of data.rows) {
           const catId = labelToId[r.category.trim().toLowerCase()];
           if (catId == null) continue;
           const code = r.consumption ? nameToCode[r.consumption.trim().toLowerCase()] : null;
-          next[catId] = [
-            ...(next[catId] || []),
+          (next[catId] ||= []).push(
             makeRow({
               fromValue: r.fromValue,
               toValue: r.untilEnd ? 1 : r.toValue,
@@ -369,16 +381,14 @@ export default function HouseProtocolForm({
               consumptionMode: "fixed",
               quantityPerDay: code && r.quantityPerDay != null ? r.quantityPerDay : "",
             }),
-          ];
+          );
         }
         return next;
       });
 
-      if (data.rows.length) {
-        const firstCat = labelToId[data.rows[0].category.trim().toLowerCase()];
-        if (firstCat != null) setActiveCategoryId(firstCat);
-      }
-      setImportResult({ imported: data.imported, skipped: data.skipped });
+      const firstCat = labelToId[data.rows[0].category.trim().toLowerCase()];
+      if (firstCat != null) setActiveCategoryId(firstCat);
+      setImportResult({ imported: data.imported, skipped: data.skipped, replaced: true });
     } catch (err) {
       // createCategory/createStockItem throw a plain Error with a ready message; the parse
       // request throws an axios error → route it through the shared parser.
@@ -591,7 +601,7 @@ export default function HouseProtocolForm({
               <button
                 className="add-button"
                 style={{ marginTop: 0 }}
-                onClick={() => importInputRef.current?.click()}
+                onClick={() => setImportConfirmOpen(true)}
                 disabled={saving || importing}
               >
                 {importing ? <Loader2 size={14} className="spin" /> : <FileSpreadsheet size={14} strokeWidth={2.2} />}
@@ -610,6 +620,27 @@ export default function HouseProtocolForm({
             </span>
           </div>
         </div>
+        {importConfirmOpen && (
+          <div className="card schedule-card" style={{ margin: "0 0 16px", borderColor: "var(--danger)" }}>
+            <p style={{ margin: "0 0 12px", fontSize: 14 }}>
+              Cet import va <strong>remplacer toutes les lignes de protocole actuelles</strong> de ce bâtiment
+              par le contenu du fichier. Cette action est irréversible.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                className="delete-button"
+                style={{ width: "auto", padding: "0 16px" }}
+                onClick={() => {
+                  setImportConfirmOpen(false);
+                  importInputRef.current?.click();
+                }}
+              >
+                Choisir le fichier et remplacer
+              </button>
+              <button className="add-button" onClick={() => setImportConfirmOpen(false)}>Annuler</button>
+            </div>
+          </div>
+        )}
         {importError && (
           <p className="field-error" style={{ margin: "0 0 14px" }}>{importError}</p>
         )}
@@ -623,11 +654,17 @@ export default function HouseProtocolForm({
             }}
           >
             <strong>
+              {importResult.replaced && "Protocole remplacé — "}
               {importResult.imported} ligne{importResult.imported > 1 ? "s" : ""} importée
               {importResult.imported > 1 ? "s" : ""} avec succès
               {importResult.skipped.length > 0 && `, ${importResult.skipped.length} ligne${importResult.skipped.length > 1 ? "s" : ""} ignorée${importResult.skipped.length > 1 ? "s" : ""}`}
               .
             </strong>
+            {importResult.replaced && (
+              <span style={{ display: "block", marginTop: 4, fontWeight: 400 }}>
+                Les lignes précédentes ont été retirées. Enregistrez pour appliquer.
+              </span>
+            )}
             {importResult.skipped.length > 0 && (
               <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
                 {importResult.skipped.map((s) => (

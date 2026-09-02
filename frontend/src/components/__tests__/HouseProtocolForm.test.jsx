@@ -3,7 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import HouseProtocolForm from "../HouseProtocolForm";
-import { protocolImportApi, stockApi } from "../../api/endpoints";
+import { housesApi, protocolImportApi, stockApi } from "../../api/endpoints";
 
 vi.mock("../../api/endpoints", () => ({
   protocolImportApi: { parse: vi.fn(), templateUrl: "http://test/protocols/import-template.xlsx" },
@@ -147,44 +147,85 @@ describe("HouseProtocolForm — management mode (used by the \"Modifier\" modal)
   });
 });
 
-// Excel import (docs/excel-import.md): the parsed rows are merged into the form, missing
-// categories / stock items are auto-created, and a clear summary lists every skipped row.
-describe("HouseProtocolForm — import Excel", () => {
+// Excel import (docs/excel-import.md): a destructive **full replacement** — the file's rows
+// become the whole protocol (not appended), behind an explicit warning; missing categories /
+// stock items are auto-created; a clear summary lists every skipped row.
+describe("HouseProtocolForm — import Excel (full replacement)", () => {
   afterEach(() => vi.clearAllMocks());
 
-  test("merges parsed rows, auto-creates a new category + stock item, and reports skipped rows", async () => {
-    protocolImportApi.parse.mockResolvedValue({
-      data: {
-        rows: [
-          { category: "Alimentation", fromValue: 1, toValue: 15, untilEnd: false,
-            what: "Aliment démarrage", details: "3000 kcal", consumption: "Provende", quantityPerDay: 40 },
-          { category: "Biosécurité", fromValue: 1, toValue: null, untilEnd: true,
-            what: "Pédiluve désinfectant", details: "", consumption: null, quantityPerDay: null },
-        ],
-        imported: 2,
-        skipped: [{ line: 4, reason: "action manquante" }],
-      },
-    });
+  const twoRows = {
+    data: {
+      rows: [
+        { category: "Alimentation", fromValue: 1, toValue: 15, untilEnd: false,
+          what: "Aliment démarrage", details: "3000 kcal", consumption: "Provende", quantityPerDay: 40 },
+        { category: "Biosécurité", fromValue: 1, toValue: null, untilEnd: true,
+          what: "Pédiluve désinfectant", details: "", consumption: null, quantityPerDay: null },
+      ],
+      imported: 2,
+      skipped: [{ line: 4, reason: "action manquante" }],
+    },
+  };
+
+  test("warns before parsing anything, and does nothing on cancel", async () => {
+    render(<HouseProtocolForm mode="onboarding" farmId={7} onSave={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: /Importer un fichier Excel/i }));
+
+    expect(screen.getByText(/remplacer toutes les lignes de protocole actuelles/i)).toBeInTheDocument();
+    expect(screen.getByText(/irréversible/i)).toBeInTheDocument();
+    expect(protocolImportApi.parse).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Annuler" }));
+    expect(screen.queryByText(/remplacer toutes les lignes/i)).not.toBeInTheDocument();
+  });
+
+  test("replaces every existing row with the file's rows, auto-creates category + stock item, reports skips", async () => {
+    protocolImportApi.parse.mockResolvedValue(twoRows);
     stockApi.addItem.mockResolvedValue({ data: { item_code: "FEE-7-001", name: "Provende", unit: "kg" } });
+    housesApi.addProtocolCategory.mockResolvedValue({ data: { id: 2, label: "Biosécurité", icon: "Package" } });
 
-    const { container } = render(<HouseProtocolForm mode="onboarding" farmId={7} onSave={() => {}} />);
-    const fileInput = container.querySelector('input[type="file"]');
-    await userEvent.upload(fileInput, new File(["xlsx"], "protocole.xlsx"));
+    const { container } = render(
+      <HouseProtocolForm
+        mode="management"
+        houseCode="H-1"
+        farmId={7}
+        initialCategories={[{ id: 1, label: "Alimentation", icon: "Soup" }]}
+        initialSchedules={{ 1: [{ id: 99, fromValue: 1, fromUnit: "Day", toValue: 5, toUnit: "Day", what: "Vieille ligne à supprimer", details: "" }] }}
+        onSave={() => {}}
+      />
+    );
 
-    // summary: 2 imported, 1 skipped, with the specific reason and line number
-    expect(await screen.findByText(/2 lignes importées avec succès, 1 ligne ignorée/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Vieille ligne à supprimer")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Importer un fichier Excel/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Choisir le fichier et remplacer/i }));
+    await userEvent.upload(container.querySelector('input[type="file"]'), new File(["xlsx"], "protocole.xlsx"));
+
+    // pre-existing row is gone, the file's row is in
+    expect(await screen.findByDisplayValue("Aliment démarrage")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Vieille ligne à supprimer")).not.toBeInTheDocument();
+
+    expect(screen.getByText(/Protocole remplacé — 2 lignes importées avec succès, 1 ligne ignorée/i)).toBeInTheDocument();
     expect(screen.getByText("Ligne 4 : action manquante")).toBeInTheDocument();
+    expect(stockApi.addItem).toHaveBeenCalledWith(7, expect.objectContaining({ name: "Provende", category_hint: "Alimentation" }));
+    expect(screen.getByText("Biosécurité")).toBeInTheDocument(); // a new category tab
+  });
 
-    // the first imported row is visible (form auto-switched to its category)
-    expect(screen.getByDisplayValue("Aliment démarrage")).toBeInTheDocument();
+  test("a file with no usable row does NOT wipe the protocol (guard against accidental erase)", async () => {
+    protocolImportApi.parse.mockResolvedValue({ data: { rows: [], imported: 0, skipped: [{ line: 2, reason: "action manquante" }] } });
+    const { container } = render(
+      <HouseProtocolForm
+        mode="management" houseCode="H-1" farmId={7}
+        initialCategories={[{ id: 1, label: "Alimentation", icon: "Soup" }]}
+        initialSchedules={{ 1: [{ id: 99, fromValue: 1, fromUnit: "Day", toValue: 5, toUnit: "Day", what: "Ligne conservée", details: "" }] }}
+        onSave={() => {}}
+      />
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Importer un fichier Excel/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Choisir le fichier et remplacer/i }));
+    await userEvent.upload(container.querySelector('input[type="file"]'), new File(["x"], "empty.xlsx"));
 
-    // a "Provende" stock item was created, hinted by the row's own category
-    expect(stockApi.addItem).toHaveBeenCalledWith(7, expect.objectContaining({
-      name: "Provende", category_hint: "Alimentation",
-    }));
-
-    // the unknown "Biosécurité" category now has a tab
-    expect(screen.getByRole("button", { name: /Biosécurité/ })).toBeInTheDocument();
+    expect(await screen.findByText("Ligne 2 : action manquante")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Ligne conservée")).toBeInTheDocument(); // untouched
   });
 
   test("a parse failure shows the server message, no rows added", async () => {
@@ -193,6 +234,8 @@ describe("HouseProtocolForm — import Excel", () => {
       response: { data: { detail: "En-têtes de colonnes introuvables : « Action »." } },
     });
     const { container } = render(<HouseProtocolForm mode="onboarding" farmId={7} onSave={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: /Importer un fichier Excel/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Choisir le fichier et remplacer/i }));
     await userEvent.upload(container.querySelector('input[type="file"]'), new File(["x"], "bad.xlsx"));
     expect(await screen.findByText(/En-têtes de colonnes introuvables/)).toBeInTheDocument();
   });
