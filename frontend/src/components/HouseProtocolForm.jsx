@@ -624,23 +624,30 @@ export default function HouseProtocolForm({
           </div>
         )}
         <div className="detail-grid">
-          <label className="field">
-            <span>Nom de la bande</span>
-            <input
-              value={batchName}
-              onChange={(e) => setBatchName(e.target.value)}
-              onBlur={() => setBatchNameTouched(true)}
-              placeholder="ex. Bande printemps 2026"
-              required={mode === "onboarding"}
-              disabled={!batchEditable}
-              aria-invalid={batchNameMissing && (batchNameTouched || totalRows > 0)}
-            />
-            {batchNameMissing && (batchNameTouched || totalRows > 0) && (
-              <span className="field-error" style={{ margin: "4px 0 0", fontSize: 12 }}>
-                Le nom de la bande est requis.
-              </span>
-            )}
-          </label>
+          {/* Hidden outright when the house has no active batch, rather than shown disabled
+              (2026-09-11): there is no batch to name, so an inert field just invites the
+              question "why can't I type here?". The notice above already explains that a
+              batch's name is set when one is started. The other batch-scoped fields stay
+              visible-but-disabled — they describe the protocol that will apply to the next
+              batch, so seeing their values is still useful. */}
+          {batchEditable && (
+            <label className="field">
+              <span>Nom de la bande</span>
+              <input
+                value={batchName}
+                onChange={(e) => setBatchName(e.target.value)}
+                onBlur={() => setBatchNameTouched(true)}
+                placeholder="ex. Bande printemps 2026"
+                required={mode === "onboarding"}
+                aria-invalid={batchNameMissing && (batchNameTouched || totalRows > 0)}
+              />
+              {batchNameMissing && (batchNameTouched || totalRows > 0) && (
+                <span className="field-error" style={{ margin: "4px 0 0", fontSize: 12 }}>
+                  Le nom de la bande est requis.
+                </span>
+              )}
+            </label>
+          )}
           <label className="field">
             <span>Nom du bâtiment</span>
             <input value={buildingName} onChange={(e) => setBuildingName(e.target.value)} placeholder="ex. Bâtiment A" />

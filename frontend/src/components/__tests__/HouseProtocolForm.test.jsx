@@ -92,7 +92,7 @@ describe("HouseProtocolForm — management mode (used by the \"Modifier\" modal)
     expect(screen.queryByRole("button", { name: "Suivant" })).not.toBeInTheDocument();
   });
 
-  test("batchEditable=false disables the batch-scoped fields and shows a notice", () => {
+  test("batchEditable=false hides the batch name, disables the other batch fields, shows a notice", () => {
     render(
       <HouseProtocolForm
         mode="management"
@@ -106,9 +106,34 @@ describe("HouseProtocolForm — management mode (used by the \"Modifier\" modal)
     );
 
     expect(screen.getByText(/ce bâtiment n'a pas de bande active/i)).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: /nom de la bande/i })).toBeDisabled();
+    // 2026-09-11: the batch name is now hidden outright rather than shown disabled — there is
+    // no batch to name, and an inert field only invites "why can't I type here?".
+    expect(screen.queryByRole("textbox", { name: /nom de la bande/i })).not.toBeInTheDocument();
+    // The remaining batch-scoped fields stay visible but disabled: they describe the protocol
+    // the next batch will inherit, so their values are still worth seeing.
+    expect(screen.getByRole("spinbutton", { name: /poussins mis en place/i })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: /fréquence de pesée/i })).toBeDisabled();
     // the house name stays editable — that IS persistable without a batch
     expect(screen.getByRole("textbox", { name: /nom du bâtiment/i })).toBeEnabled();
+  });
+
+  test("batchEditable=false still shows the batch name once a batch exists", () => {
+    render(
+      <HouseProtocolForm
+        mode="management"
+        houseCode="H-1"
+        batchEditable
+        initialHeader={{ ...initialHeader, batchName: "Bande printemps" }}
+        initialCategories={initialCategories}
+        initialSchedules={initialSchedules}
+        onSave={() => {}}
+      />
+    );
+
+    const field = screen.getByRole("textbox", { name: /nom de la bande/i });
+    expect(field).toBeInTheDocument();
+    expect(field).toBeEnabled();
+    expect(field).toHaveValue("Bande printemps");
   });
 
   test("batchEditable defaults to true — no notice, band name editable", () => {
