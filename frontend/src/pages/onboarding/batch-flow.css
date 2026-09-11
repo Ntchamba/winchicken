@@ -1,0 +1,156 @@
+/* Batch-creation flow: the header step, the manual-vs-Excel choice, and the Excel screen.
+   Everything here sits inside OnboardingLayout, so the page background, the card surface
+   and the mint/navy tokens come from the existing theme — this file only lays things out. */
+
+.batch-step-card {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.batch-step-title {
+  margin: 0 0 6px;
+  font-size: 20px;
+  color: #12343b;
+}
+
+.batch-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 20px;
+}
+
+.batch-step-next {
+  margin-top: 0;
+}
+
+/* Choice + import cards. `auto-fit` collapses to one column on its own once the columns
+   can no longer hold their min width, which is what keeps this usable under 400px. */
+.batch-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.batch-choice-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  /* Generous tap target — this is the primary control of the screen. */
+  min-height: 168px;
+  padding: 22px;
+  text-align: left;
+  background: #fff;
+  border: 1.5px solid #d7e3e0;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.batch-choice-card:hover,
+.batch-choice-card:focus-visible {
+  border-color: #1f9d76;
+  box-shadow: 0 10px 24px rgba(18, 52, 59, .10);
+  transform: translateY(-2px);
+}
+
+.batch-choice-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #d7f5ec;
+  color: #0b5137;
+}
+
+.batch-choice-name {
+  font-size: 16px;
+  font-weight: 650;
+  color: #12343b;
+}
+
+.batch-choice-hint {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: #53696d;
+}
+
+.batch-import-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  background: #fff;
+  border: 1.5px solid #d7e3e0;
+  border-radius: 16px;
+}
+
+.batch-import-card--disabled {
+  background: #f6f8f8;
+  border-style: dashed;
+}
+
+.batch-import-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.batch-import-name {
+  font-size: 15.5px;
+  font-weight: 650;
+  color: #12343b;
+}
+
+.batch-import-badge {
+  padding: 2px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #8a6d1f;
+  background: #fdf3d7;
+  border-radius: 999px;
+}
+
+.batch-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: auto;
+}
+
+.batch-import-summary {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  border-radius: 10px;
+}
+
+.batch-import-summary--ok {
+  color: #0b5137;
+  background: #d7f5ec;
+}
+
+.batch-import-summary--warn {
+  color: #8a3b1f;
+  background: #fff4f0;
+}
+
+@media (max-width: 480px) {
+  .batch-choice-card {
+    min-height: 0;
+    padding: 18px;
+  }
+
+  .batch-step-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
