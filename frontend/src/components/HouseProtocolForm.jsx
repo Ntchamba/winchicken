@@ -1,39 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Soup, Thermometer, Stethoscope, Syringe, SprayCan, ShieldCheck, Droplets, Wind, Egg, Bug,
-  ClipboardList, Package, Plus, Trash2, Loader2, Sparkles, HelpCircle, X, Check, Info,
+  Soup, Plus, Trash2, Loader2, Sparkles, HelpCircle, X, Check, Info,
   FileSpreadsheet, Download,
 } from "lucide-react";
 import { housesApi, protocolImportApi, stockApi } from "../api/endpoints";
 import { getServerErrorMessage } from "../api/errors";
 import ResourceCombobox from "./ResourceCombobox";
 import UnitField from "./UnitField";
+import { DEFAULT_CATEGORIES, ICON_OPTIONS, iconFor, makeRow } from "../utils/protocolRows";
+import { resolveProtocolImportRows } from "../utils/protocolImportResolve";
 import "../styles/house-protocol-theme-light.css";
 
-// Curated icon picker for custom categories — kept in sync by hand with the backend's
-// CUSTOM_CATEGORY_ICON_CHOICES (apps/protocols/models.py). The 5 defaults' own icons are a
-// subset of this same list, so one map covers both.
-const ICON_OPTIONS = [
-  { name: "Soup", Icon: Soup }, { name: "Thermometer", Icon: Thermometer },
-  { name: "Stethoscope", Icon: Stethoscope }, { name: "Syringe", Icon: Syringe },
-  { name: "SprayCan", Icon: SprayCan }, { name: "ShieldCheck", Icon: ShieldCheck },
-  { name: "Droplets", Icon: Droplets }, { name: "Wind", Icon: Wind },
-  { name: "Egg", Icon: Egg }, { name: "Bug", Icon: Bug },
-  { name: "ClipboardList", Icon: ClipboardList }, { name: "Package", Icon: Package },
-];
-const ICON_MAP = Object.fromEntries(ICON_OPTIONS.map((o) => [o.name, o.Icon]));
-export const iconFor = (name) => ICON_MAP[name] || ClipboardList;
-
-// Mirrors apps.protocols.models.DEFAULT_PROTOCOL_CATEGORIES exactly (label + icon + order) —
-// used as the starting category list in onboarding mode, before the house (and its real,
-// backend-seeded categories) exists. `id` here is a stable local key, not a database id.
-const DEFAULT_CATEGORIES = [
-  { id: "default-0", label: "Alimentation", icon: "Soup" },
-  { id: "default-1", label: "Température", icon: "Thermometer" },
-  { id: "default-2", label: "Santé et soins", icon: "Stethoscope" },
-  { id: "default-3", label: "Vaccination", icon: "Syringe" },
-  { id: "default-4", label: "Nettoyage", icon: "SprayCan" },
-];
+// Re-exported from its own module (utils/protocolRows) since 2026-09-11 — the onboarding
+// Excel-import screen shares the same row factory. Kept exported here so the five existing
+// `import { iconFor } from ".../HouseProtocolForm"` call sites stay untouched.
+export { iconFor };
 
 // Stable identity for the `stockItems` default — an inline `[]` in the destructure is a fresh
 // array every render, which makes the `setStockItemList(stockItems)` effect below re-fire on
@@ -47,27 +28,6 @@ const UNITS = ["Day", "Week", "Month"];
 const UNIT_LABELS = { Day: "Jour", Week: "Semaine", Month: "Mois" };
 const UNIT_LABELS_PLURAL = { Day: "Jours", Week: "Semaines", Month: "Mois" };
 const UNIT_TO_DAYS = { Day: 1, Week: 7, Month: 30 };
-
-let nextId = 100;
-const makeRow = (overrides = {}) => ({
-  id: nextId++,
-  fromValue: 1,
-  fromUnit: "Day",
-  toValue: 1,
-  toUnit: "Day",
-  untilEnd: false,
-  what: "",
-  details: "",
-  timeSlots: [],
-  stockItemCode: null,
-  // "fixed" → quantityPerDay units/day; "dose" → dosePerBird per live bird (× batch count).
-  // Mutually exclusive — only the active mode's field is sent (see consumptionFields).
-  consumptionMode: "fixed",
-  quantityPerDay: "",
-  dosePerBird: "",
-  coverageWarning: "",
-  ...overrides,
-});
 
 // The stock-consumption fields of one protocol-line payload, from a row's dosage mode.
 // Mirrors ProtocolTemplateSerializer.validate: at most one of the two amounts is non-null.
@@ -333,65 +293,30 @@ export default function HouseProtocolForm({
     try {
       const { data } = await protocolImportApi.parse(file);
 
-      // 1. Resolve every distinct Catégorie to a category id, creating the missing ones.
-      const labelToId = {};
-      for (const c of categories) labelToId[c.label.trim().toLowerCase()] = c.id;
-      for (const name of new Set(data.rows.map((r) => r.category))) {
-        const key = name.trim().toLowerCase();
-        if (labelToId[key] == null) labelToId[key] = (await createCategory(name, "Package")).id;
-      }
-
-      // 2. Resolve every distinct Consommation to a StockItem code, creating the missing ones.
-      const nameToCode = {};
-      for (const s of stockItemList) nameToCode[s.name.trim().toLowerCase()] = s.item_code;
-      for (const r of data.rows) {
-        if (!r.consumption) continue;
-        const key = r.consumption.trim().toLowerCase();
-        if (nameToCode[key] == null && farmId) {
-          // Unité from the file is only used for a *new* resource; an existing one keeps its own.
-          nameToCode[key] = (await createStockItem(r.consumption, r.category, r.unit)).item_code;
-        }
-      }
+      // Category/stock-item resolution + row building is shared with the onboarding Excel
+      // screen — see utils/protocolImportResolve.js.
+      const { schedules: next, firstCategoryId } = await resolveProtocolImportRows(data, {
+        categories,
+        stockItemList,
+        farmId,
+        createCategory,
+        createStockItem,
+      });
 
       // A file with no usable row must not silently wipe the whole protocol — report the
       // skipped rows and keep what's there. (The user was already warned this is a full
       // replacement; this only guards an accidental total erase from a malformed file.)
-      if (data.rows.length === 0) {
+      if (next === null) {
         setImportResult({ imported: 0, skipped: data.skipped, warnings: data.warnings || [] });
         return;
       }
 
-      // 3. FULL REPLACEMENT (not append): the protocol becomes exactly the file's rows. The
-      //    normal save then does the transactional DB replace + AlertRule regeneration (past
-      //    Alert/SmsMessage history is preserved) via PUT /houses/{code}/protocol/. Unit is
-      //    always "Day" — see the note by the import button.
-      setSchedules(() => {
-        const next = {};
-        for (const r of data.rows) {
-          const catId = labelToId[r.category.trim().toLowerCase()];
-          if (catId == null) continue;
-          const code = r.consumption ? nameToCode[r.consumption.trim().toLowerCase()] : null;
-          (next[catId] ||= []).push(
-            makeRow({
-              fromValue: r.fromValue,
-              toValue: r.untilEnd ? 1 : r.toValue,
-              untilEnd: r.untilEnd,
-              what: r.what,
-              details: r.details || "",
-              stockItemCode: code || null,
-              consumptionMode: "fixed",
-              quantityPerDay: code && r.quantityPerDay != null ? r.quantityPerDay : "",
-              // Reuse the form's own time-slot shape ({ id, startTime, endTime }); the server
-              // already dropped any malformed segment and reported it in `warnings`.
-              timeSlots: (r.timeSlots || []).map((s) => ({ id: nextId++, startTime: s.startTime, endTime: s.endTime })),
-            }),
-          );
-        }
-        return next;
-      });
-
-      const firstCat = labelToId[data.rows[0].category.trim().toLowerCase()];
-      if (firstCat != null) setActiveCategoryId(firstCat);
+      // FULL REPLACEMENT (not append): the protocol becomes exactly the file's rows. The
+      // normal save then does the transactional DB replace + AlertRule regeneration (past
+      // Alert/SmsMessage history is preserved) via PUT /houses/{code}/protocol/. Unit is
+      // always "Day" — see the note by the import button.
+      setSchedules(next);
+      if (firstCategoryId != null) setActiveCategoryId(firstCategoryId);
       setImportResult({ imported: data.imported, skipped: data.skipped, warnings: data.warnings || [], replaced: true });
     } catch (err) {
       // createCategory/createStockItem throw a plain Error with a ready message; the parse
