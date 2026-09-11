@@ -707,3 +707,87 @@ class StockXlsxImportTests(APITestCase):
         self.client.force_authenticate(user=_make_user(self.farm, role=UserRole.WORKER, email='w@stock-imp.local'))
         resp = self._upload(self._xlsx([['X', 'Aliment', '', 'kg', 1, 1, '']]))
         self.assertEqual(resp.status_code, 403)
+
+
+class StockImportRemappingTests(StockXlsxImportTests):
+    """Column remapping + dry-run preview for the Stock import (Prompt 2)."""
+
+    def _preview(self, buf):
+        return self.client.post(
+            f'/api/farms/{self.farm.id}/stock-items/import-xlsx/',
+            {'file': buf, 'dry_run': '1'}, format='multipart',
+        )
+
+    def test_file_with_different_wording_still_imports(self):
+        buf = self._xlsx(
+            [['Maïs concassé', 'Aliment', 'Starter', 'kg', 80, 500, 'Agrivet']],
+            headers=['Désignation', 'Famille', 'Précision', 'Unité de mesure',
+                     'Stock minimum', "Prix d'achat", 'Nom du fournisseur'],
+        )
+        resp = self._upload(buf)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['created'], 1)
+        created = StockItem.objects.get(farm=self.farm, name='Maïs concassé')
+        self.assertEqual(created.unit, 'kg')
+        self.assertEqual(created.alert_threshold, 80)
+        self.assertEqual(str(created.unit_price), '500.00')
+        self.assertEqual(created.supplier.name, 'Agrivet')
+
+    def test_typos_in_headers_are_recovered(self):
+        buf = self._xlsx(
+            [['Provende', 'Aliment', '', 'kg', 75, 410, '']],
+            headers=['Artcle', 'Catgorie', 'Detail', 'Unite', "Seuil d'alrte", 'Prix unitaire', 'Fournisseur'],
+        )
+        resp = self._upload(buf)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['updated'], 1)
+        self.existing.refresh_from_db()
+        self.assertEqual(self.existing.alert_threshold, 75)
+
+    def test_absent_optional_column_reports_its_default_and_keeps_going(self):
+        buf = self._xlsx([['Provende', 'Aliment']], headers=['Article', 'Catégorie'])
+        resp = self._upload(buf)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        by_key = {m['key']: m for m in resp.data['columns']['matches']}
+        self.assertEqual(by_key['unit_price']['method'], 'default')
+        self.assertEqual(by_key['supplier']['method'], 'default')
+
+    def test_unmatched_required_column_is_a_clear_400(self):
+        buf = self._xlsx([['x', 1]], headers=['Numéro de facture', 'Montant'])
+        resp = self._upload(buf)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('Article', str(resp.data))
+
+    def test_dry_run_reports_what_would_happen_and_writes_nothing(self):
+        before = StockItem.objects.filter(farm=self.farm).count()
+        buf = self._xlsx([
+            ['Provende', 'Aliment', '', 'kg', 999, 999, ''],   # would update the existing one
+            ['Tout neuf', 'Aliment', '', 'kg', 10, 20, ''],    # would be created
+        ])
+        resp = self._preview(buf)
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertTrue(resp.data['dryRun'])
+        self.assertEqual(resp.data['updated'], 1)
+        self.assertEqual(resp.data['created'], 1)
+        # Nothing committed: no new row, and the existing item keeps its own values.
+        self.assertEqual(StockItem.objects.filter(farm=self.farm).count(), before)
+        self.assertFalse(StockItem.objects.filter(farm=self.farm, name='Tout neuf').exists())
+        self.existing.refresh_from_db()
+        self.assertEqual(self.existing.alert_threshold, 50)
+        self.assertEqual(str(self.existing.unit_price), '400.00')
+
+    def test_dry_run_on_an_unusable_file_reports_the_column_instead_of_failing(self):
+        buf = self._xlsx([['x', 1]], headers=['Numéro de facture', 'Montant'])
+        resp = self._preview(buf)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertIn('Article', resp.data['columns']['unresolved'])
+
+    def test_confirming_after_a_dry_run_actually_writes(self):
+        rows = [['Tout neuf', 'Aliment', '', 'kg', 10, 20, '']]
+        self._preview(self._xlsx(rows))
+        self.assertFalse(StockItem.objects.filter(farm=self.farm, name='Tout neuf').exists())
+
+        resp = self._upload(self._xlsx(rows))
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertTrue(StockItem.objects.filter(farm=self.farm, name='Tout neuf').exists())

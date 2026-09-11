@@ -25,7 +25,9 @@ const METHOD = {
  * @param {() => void} onCancel
  * @param {boolean} [busy]
  */
-export default function ImportColumnPreview({ columns, rowCount, skipped = [], onConfirm, onCancel, busy = false }) {
+export default function ImportColumnPreview({
+  columns, rowCount, skipped = [], onConfirm, onCancel, busy = false, summary = null,
+}) {
   const matches = columns?.matches || [];
   const unresolved = columns?.unresolved || [];
   const unknown = columns?.unknownHeaders || [];
@@ -86,8 +88,12 @@ export default function ImportColumnPreview({ columns, rowCount, skipped = [], o
       ) : (
         <p className={`batch-import-summary ${skipped.length ? "batch-import-summary--warn" : "batch-import-summary--ok"}`}>
           <strong>
-            {rowCount} ligne{rowCount > 1 ? "s" : ""} prête{rowCount > 1 ? "s" : ""} à importer
-            {skipped.length > 0 && `, ${skipped.length} ignorée${skipped.length > 1 ? "s" : ""}`}.
+            {summary || (
+              <>
+                {rowCount} ligne{rowCount > 1 ? "s" : ""} prête{rowCount > 1 ? "s" : ""} à importer
+                {skipped.length > 0 && `, ${skipped.length} ignorée${skipped.length > 1 ? "s" : ""}`}.
+              </>
+            )}
           </strong>
           {skipped.length > 0 && (
             <span style={{ display: "block", marginTop: 4 }}>

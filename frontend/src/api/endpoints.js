@@ -113,9 +113,12 @@ export const stockApi = {
   removeCategory: (categoryId) => client.delete(`/stock-categories/${categoryId}/`),
   // Excel import — update-or-create StockItem params by Article name (never deletes, no
   // movement/quantity change). `importTemplateUrl` is a plain download link (AllowAny).
-  importXlsx: (farmId, file) => {
+  // `dryRun` returns the column mapping and what *would* change without writing anything —
+  // the batch-creation screen previews that, then re-posts without the flag to commit.
+  importXlsx: (farmId, file, { dryRun = false } = {}) => {
     const fd = new FormData();
     fd.append("file", file);
+    if (dryRun) fd.append("dry_run", "1");
     return client.post(`/farms/${farmId}/stock-items/import-xlsx/`, fd);
   },
   importTemplateUrl: `${API_URL}/stock-items/import-template.xlsx`,

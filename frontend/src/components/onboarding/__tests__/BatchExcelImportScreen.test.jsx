@@ -180,15 +180,40 @@ describe("BatchExcelImportScreen", () => {
     expect(await screen.findByText(/Colonne « Catégorie » manquante./)).toBeInTheDocument();
   });
 
-  test("imports a stock file through the update-or-create importer and shows its summary", async () => {
-    stockApi.importXlsx.mockResolvedValue({ data: { updated: 3, created: 2, skipped: [] } });
+  test("previews a stock file as a dry run, then commits it on confirmation", async () => {
+    stockApi.importXlsx
+      .mockResolvedValueOnce({ data: { updated: 3, created: 2, skipped: [], columns: columnsReport(), dryRun: true } })
+      .mockResolvedValueOnce({ data: { updated: 3, created: 2, skipped: [], columns: columnsReport() } });
     renderScreen();
 
     const file = xlsx("stock.xlsx");
     await uploadTo("Stock", file);
 
-    await waitFor(() => expect(stockApi.importXlsx).toHaveBeenCalledWith(1, file));
+    // First call is the dry run — the server rolls it back, so nothing is written yet.
+    await waitFor(() => expect(stockApi.importXlsx).toHaveBeenCalledWith(1, file, { dryRun: true }));
+    expect(await screen.findByText(/3 articles à mettre à jour, 2 à créer/i)).toBeInTheDocument();
+    expect(stockApi.importXlsx).toHaveBeenCalledTimes(1);
+
+    await confirmImport();
+
+    // Second call has no dry-run flag: this is the one that commits.
+    await waitFor(() => expect(stockApi.importXlsx).toHaveBeenCalledTimes(2));
+    expect(stockApi.importXlsx.mock.calls[1]).toEqual([1, file]);
     expect(await screen.findByText(/3 mises à jour, 2 créées, 0 ignorée/i)).toBeInTheDocument();
+  });
+
+  test("cancelling a stock preview writes nothing", async () => {
+    stockApi.importXlsx.mockResolvedValue({
+      data: { updated: 1, created: 0, skipped: [], columns: columnsReport(), dryRun: true },
+    });
+    renderScreen();
+
+    await uploadTo("Stock", xlsx("stock.xlsx"));
+    await screen.findByText(/1 article à mettre à jour/i);
+    await userEvent.click(screen.getByRole("button", { name: /Annuler/i }));
+
+    expect(screen.queryByText(/Vérifiez les colonnes reconnues/i)).not.toBeInTheDocument();
+    expect(stockApi.importXlsx).toHaveBeenCalledTimes(1); // only the dry run
   });
 
   // No finance import endpoint exists (apps/finance/urls.py has none), so the card must be

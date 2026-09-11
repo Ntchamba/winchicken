@@ -509,10 +509,15 @@ class StockImportView(APIView):
             return Response({'detail': 'Aucun fichier reçu.'}, status=status.HTTP_400_BAD_REQUEST)
         if not upload.name.lower().endswith('.xlsx'):
             return Response({'detail': 'Importez un fichier .xlsx (Excel).'}, status=status.HTTP_400_BAD_REQUEST)
+        # `dry_run=1` (the batch-creation preview) reports the column mapping and what would
+        # change, and writes nothing — the user confirms before anything is committed.
+        dry_run = str(request.data.get('dry_run', '')).lower() in ('1', 'true', 'oui')
         try:
-            result = parse_and_apply_stock_import(farm, upload)
+            result = parse_and_apply_stock_import(farm, upload, dry_run=dry_run)
         except WorkbookError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if dry_run:
+            return Response(result)
         record_audit_log(
             request.user, 'stock.imported',
             f"Import stock ({result['updated']} maj, {result['created']} créé(s))",

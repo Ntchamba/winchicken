@@ -40,6 +40,7 @@ export default function BatchExcelImportScreen({ farmId, onProtocolImported, onC
   const [protocolDone, setProtocolDone] = useState(false);
 
   const [stockBusy, setStockBusy] = useState(false);
+  const [stockPreview, setStockPreview] = useState(null); // dry run awaiting confirmation
   const [stockResult, setStockResult] = useState(null);
   const [stockError, setStockError] = useState("");
 
@@ -126,13 +127,31 @@ export default function BatchExcelImportScreen({ farmId, onProtocolImported, onC
     }
   };
 
+  // Stock, step 1: dry run. The server applies the file and rolls it back, so the preview's
+  // counts are the real ones — nothing is written yet.
   const importStock = async (file) => {
     setStockBusy(true);
     setStockError("");
     setStockResult(null);
+    setStockPreview(null);
     try {
-      const { data } = await stockApi.importXlsx(farmId, file);
+      const { data } = await stockApi.importXlsx(farmId, file, { dryRun: true });
+      setStockPreview({ ...data, file });
+    } catch (err) {
+      setStockError(getServerErrorMessage(err, "Échec de l'import du fichier Excel."));
+    } finally {
+      setStockBusy(false);
+    }
+  };
+
+  // Stock, step 2: the same file again, for real.
+  const confirmStock = async () => {
+    setStockBusy(true);
+    setStockError("");
+    try {
+      const { data } = await stockApi.importXlsx(farmId, stockPreview.file);
       setStockResult(data);
+      setStockPreview(null);
     } catch (err) {
       setStockError(getServerErrorMessage(err, "Échec de l'import du fichier Excel."));
     } finally {
@@ -156,6 +175,22 @@ export default function BatchExcelImportScreen({ farmId, onProtocolImported, onC
           busy={protocolBusy}
           onConfirm={confirmProtocol}
           onCancel={() => setProtocolPreview(null)}
+        />
+      )}
+
+      {stockPreview && (
+        <ImportColumnPreview
+          columns={stockPreview.columns}
+          rowCount={(stockPreview.updated || 0) + (stockPreview.created || 0)}
+          skipped={stockPreview.skipped || []}
+          busy={stockBusy}
+          summary={
+            `${stockPreview.updated} article${stockPreview.updated > 1 ? "s" : ""} à mettre à jour, ` +
+            `${stockPreview.created} à créer, ` +
+            `${(stockPreview.skipped || []).length} ignoré${(stockPreview.skipped || []).length > 1 ? "s" : ""}.`
+          }
+          onConfirm={confirmStock}
+          onCancel={() => setStockPreview(null)}
         />
       )}
 

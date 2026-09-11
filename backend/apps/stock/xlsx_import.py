@@ -11,24 +11,18 @@ from decimal import Decimal, InvalidOperation
 from django.db import transaction
 from django.db.models import Max
 
+from apps.core.column_matching import match_columns
 from apps.core.xlsx import (
-    WorkbookError, as_bool, as_number, build_workbook, cell_getter, clean,
-    header_index, open_rows, require_headers,
+    WorkbookError, as_bool, as_number, build_workbook, cell_getter, clean, open_rows,
 )
+from apps.stock.import_columns import COLUMNS
 from apps.stock.models import FeedStage, StockCategory, StockItem, Supplier
 from apps.stock.serializers import _KIND_PREFIX  # noqa: F401 (used via next_free_item_code)
 from apps.stock.serializers import StockItemSerializer, next_free_item_code
 
-HEADERS = ['Article', 'Catégorie', 'Détail', 'Unité', 'Seuil d\'alerte', 'Prix unitaire', 'Fournisseur']
-_ALIASES = {
-    'article': 'name',
-    'catégorie': 'category',
-    'détail': 'detail',
-    'unité': 'unit',
-    "seuil d'alerte": 'alert_threshold',
-    'prix unitaire': 'unit_price',
-    'fournisseur': 'supplier',
-}
+# Exact French headers the template ships with. Accepted spellings beyond these live in
+# apps/stock/import_columns.py.
+HEADERS = [c.label for c in COLUMNS]
 
 EXAMPLE_ROWS = [
     ['Provende', 'Aliment', 'Starter', 'kg', 200, 450, 'Agrivet SARL'],
@@ -87,12 +81,55 @@ def _detail_fields(kind, detail_text):
     return {'item_type': detail}
 
 
-def parse_and_apply_stock_import(farm, file_obj) -> dict:
+def parse_and_apply_stock_import(farm, file_obj, dry_run=False) -> dict:
+    """Update-or-create StockItem parameters from an .xlsx.
+
+    Headers are resolved by the shared matcher (synonyms + edit distance), so a file whose
+    columns don't match the template still imports — see apps/core/column_matching.py.
+
+    `dry_run=True` reports what *would* happen (and the column mapping) without writing
+    anything, for the preview the batch-creation screen shows before committing.
+    """
     header, rows_iter = open_rows(file_obj)
-    index = header_index(header, _ALIASES)
-    require_headers(index, [('Article', 'name'), ('Catégorie', 'category')])
+    report = match_columns(header, COLUMNS)
+    index = report.index
+
+    if report.unresolved:
+        if dry_run:
+            # Let the preview point at the column that needs attention rather than failing
+            # with a message the user can't act on column by column.
+            return {'updated': 0, 'created': 0, 'skipped': [], 'columns': report.as_dict(), 'dryRun': True}
+        raise WorkbookError(
+            'En-têtes de colonnes introuvables : '
+            + ', '.join(f'« {m.label} »' for m in report.unresolved)
+            + '. Téléchargez le modèle et conservez la première ligne.'
+        )
+
     get = cell_getter(index)
 
+    if dry_run:
+        # Run the real import and roll it back, so the preview counts and skip reasons come
+        # from the same code that will commit — a separately-written "what would happen"
+        # branch is exactly the thing that drifts from the real one.
+        try:
+            with transaction.atomic():
+                result = _import_rows(farm, rows_iter, get, report)
+                raise _DryRunRollback(result)
+        except _DryRunRollback as stop:
+            return {**stop.result, 'dryRun': True}
+
+    return _import_rows(farm, rows_iter, get, report)
+
+
+class _DryRunRollback(Exception):
+    """Carries the would-be result out of the transaction that is being rolled back."""
+
+    def __init__(self, result):
+        super().__init__('dry run')
+        self.result = result
+
+
+def _import_rows(farm, rows_iter, get, report) -> dict:
     cat_cache, sup_cache = {}, {}
     used_codes = set(StockItem.objects.filter(farm=farm).values_list('item_code', flat=True))
     updated = created = 0
@@ -142,7 +179,7 @@ def parse_and_apply_stock_import(farm, file_obj) -> dict:
         except Exception as exc:  # serializer ValidationError, integrity, etc. — skip this row
             skipped.append({'line': line, 'reason': _reason(exc)})
 
-    return {'updated': updated, 'created': created, 'skipped': skipped}
+    return {'updated': updated, 'created': created, 'skipped': skipped, 'columns': report.as_dict()}
 
 
 def _to_decimal(value):
