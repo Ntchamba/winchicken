@@ -13,6 +13,11 @@
 .section-link{display:flex;align-items:center;gap:4px;border:0;background:none;color:var(--mint);font-size:13px;font-weight:600;cursor:pointer;padding:0}
 .section-link:hover{text-decoration:underline}
 
+/* Finances single-page view (2026-08-27, Finances restructure Part A) — big title marking each
+   of the 4 stacked sections (Ventes/Achats/Salaires/Globale), one visual tier above the
+   `.section-row h2` sub-headers each section uses internally. */
+.finances-section-title{margin:0 0 16px;font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:600;letter-spacing:-.02em;color:#10242c;padding-bottom:10px;border-bottom:1px solid var(--line);scroll-margin-top:24px}
+
 .house-list{display:flex;flex-direction:column;gap:10px;margin-bottom:32px}
 .house-item{display:flex;align-items:center;justify-content:space-between;gap:16px;width:100%;background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px;cursor:pointer;transition:.15s;text-align:left}
 .house-item:hover{border-color:rgba(11,143,104,.35);box-shadow:0 8px 24px rgba(15,40,33,.07)}
@@ -24,8 +29,21 @@
 .house-progress{width:64px;height:5px;border-radius:99px;background:var(--surface-2);overflow:hidden}
 .house-progress-fill{height:100%;background:var(--mint-fill);border-radius:99px}
 .status-pill{padding:5px 11px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap}
-.status-pill.active{background:rgba(11,143,104,.12);color:var(--mint)}
-.status-pill.void{background:rgba(95,115,119,.14);color:var(--muted)}
+.status-pill.active,.status-pill.received{background:rgba(11,143,104,.12);color:var(--mint)}
+.status-pill.void,.status-pill.cancelled{background:rgba(95,115,119,.14);color:var(--muted)}
+.status-pill.pending{background:rgba(185,121,12,.14);color:var(--warning)}
+
+/* "Commandes fournisseurs" item picker (2026-08-27, purchase-order task) — no existing
+   searchable-item-select pattern to reuse elsewhere in this app (checked before assuming one
+   existed); reuses the dropdown-result *panel* look from SidebarSearch (light-on-white, works
+   in any container) with a plain `.field input`-styled text field instead of that component's
+   own dark-sidebar input skin, which would look wrong on this page's light cards. */
+.item-picker{position:relative}
+.item-picker-dropdown{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 48px rgba(0,0,0,.14);z-index:20;max-height:260px;overflow-y:auto;padding:6px}
+.item-picker-result{display:block;width:100%;text-align:left;border:0;background:none;border-radius:8px;padding:8px 10px;cursor:pointer;font-size:13px;color:#10242c}
+.item-picker-result span{display:block;font-size:11.5px;color:var(--muted)}
+.item-picker-result:hover{background:var(--surface-2)}
+.item-picker-empty{padding:14px 10px;text-align:center;font-size:13px;color:var(--muted)}
 
 .alert-feed{display:flex;flex-direction:column;gap:10px;margin-bottom:32px}
 .alert-item{display:flex;align-items:flex-start;gap:12px;background:#fff;border:1px solid var(--line);border-left:3px solid var(--line);border-radius:14px;padding:13px 16px}
@@ -39,6 +57,12 @@
 .alert-text p{margin:0;font-size:13.5px;color:#10242c}
 .alert-text span{font-size:12px;color:var(--muted)}
 .empty-state{padding:20px;border:1px dashed var(--line);border-radius:14px;color:var(--muted);font-size:13.5px;text-align:center}
+
+/* Task assignment (2026-08-26) — "tâches à effectuer maintenant" assignee selector/label,
+   and the highlight for a task assigned to the viewing user. */
+.task-assignee-select{border:1px solid var(--line);border-radius:8px;background:var(--surface-2);padding:5px 8px;font-size:12px;color:#10242c}
+.task-assignee-label{font-size:12px;font-weight:600;color:var(--mint)}
+.alert-item.task-assigned-mine{background:var(--mint-soft);border-color:rgba(11,143,104,.3)}
 
 .quick-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
 .quick-action{display:flex;flex-direction:column;align-items:flex-start;gap:8px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;cursor:pointer;text-align:left;transition:.15s}
@@ -96,6 +120,127 @@
 .banner{display:flex;align-items:center;gap:10px;background:var(--mint-soft);border:1px solid rgba(11,143,104,.25);color:var(--mint);border-radius:12px;padding:11px 16px;font-size:13px;font-weight:600;margin-bottom:20px}
 .banner.demo{background:#fff4e0;border-color:rgba(185,121,12,.3);color:var(--warning,#b9790c)}
 
+/* "Signaler un cas inhabituel" (2026-08-26) — was a small text .section-link, too easy to
+   miss; now a full-weight button matching .save-button's "big primary action" scale
+   (13px/20px padding), warning-toned (not danger — this isn't a destructive action). */
+.report-issue-button{
+  display:flex;align-items:center;gap:9px;border:1px solid rgba(185,121,12,.35);
+  background:rgba(185,121,12,.1);color:var(--warning,#b9790c);font-size:14px;font-weight:700;
+  padding:13px 20px;border-radius:12px;cursor:pointer;transition:.15s;
+}
+.report-issue-button:hover{background:var(--warning,#b9790c);color:#fff;border-color:var(--warning,#b9790c)}
+
+/* Settings page danger zone (2026-08-26) — visually separated from ordinary settings per the
+   factory-reset task: red-tinted border/background, apart from any other card on the page. */
+.danger-zone{
+  margin-top:32px;padding:26px 28px;border-radius:20px;
+  background:rgba(214,67,63,.05);border:1px solid rgba(214,67,63,.3);
+}
+.danger-zone h2{margin:0 0 6px;font-family:'Space Grotesk',sans-serif;font-size:16px;color:var(--danger)}
+.danger-zone p{margin:0 0 18px;font-size:13px;color:var(--muted)}
+.danger-zone-action{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.danger-zone-action strong{display:block;font-size:13.5px;color:#10242c;margin-bottom:3px}
+.danger-zone-action span{font-size:12.5px;color:var(--muted)}
+.danger-zone-button{
+  flex-shrink:0;border:1px solid rgba(214,67,63,.35);background:rgba(214,67,63,.1);color:var(--danger);
+  font-size:13px;font-weight:700;padding:11px 18px;border-radius:11px;cursor:pointer;transition:.15s;
+}
+.danger-zone-button:hover{background:var(--danger);color:#fff}
+
+/* Farm health score badge (2026-08-26, Part A) — global view, near the stat cards. */
+.farm-health-badge{display:flex;align-items:flex-start;gap:14px;padding:18px 22px;border-radius:18px;margin-bottom:22px;border:1px solid}
+.farm-health-label{margin:0 0 3px;font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700}
+.farm-health-reason{margin:0;font-size:13px}
+.farm-health-good{background:var(--mint-soft);border-color:rgba(11,143,104,.3);color:var(--mint)}
+.farm-health-good .farm-health-reason{color:#0c6b4e}
+.farm-health-watch{background:rgba(185,121,12,.1);border-color:rgba(185,121,12,.3);color:var(--warning,#b9790c)}
+.farm-health-watch .farm-health-reason{color:#8a5c09}
+.farm-health-critical{background:rgba(214,67,63,.1);border-color:rgba(214,67,63,.35);color:var(--danger)}
+.farm-health-critical .farm-health-reason{color:#a3312d}
+
+/* Upcoming-48h widget (2026-08-26, Part C) — global view. */
+.upcoming-48h-card{margin-bottom:22px}
+.upcoming-48h-list{display:flex;flex-direction:column;gap:10px}
+.upcoming-48h-row{display:flex;align-items:flex-start;gap:10px}
+.upcoming-48h-text p{margin:0;font-size:13px;font-weight:600;color:#10242c}
+.upcoming-48h-text span{font-size:12px;color:var(--muted)}
+
+/* Cycle timeline with milestone ticks (2026-08-26, Part B) — per-house view. */
+.cycle-timeline-card{padding-bottom:34px}
+.cycle-timeline-track{position:relative;height:6px;border-radius:99px;background:var(--surface-2);margin:0 6px}
+.cycle-timeline-fill{position:absolute;top:0;left:0;height:100%;border-radius:99px;background:var(--mint-fill)}
+.cycle-timeline-endpoint{position:absolute;top:50%;width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid var(--mint-fill);transform:translate(-50%,-50%);z-index:1}
+.cycle-timeline-endpoint.cycle-timeline-current{width:14px;height:14px;background:var(--mint-fill);border-color:#fff;box-shadow:0 0 0 3px rgba(11,143,104,.25);z-index:2}
+.cycle-timeline-tick{
+  position:absolute;top:50%;width:22px;height:22px;border-radius:50%;transform:translate(-50%,-50%);
+  display:grid;place-items:center;border:0;cursor:pointer;padding:0;z-index:3;transition:.15s;
+}
+.cycle-timeline-tick-past{background:var(--surface-2);color:var(--muted)}
+.cycle-timeline-tick-upcoming{background:var(--mint-soft);color:var(--mint);box-shadow:0 0 0 2px #fff}
+.cycle-timeline-tick:hover,.cycle-timeline-tick:focus-visible{transform:translate(-50%,-50%) scale(1.15)}
+.cycle-timeline-tooltip{
+  position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);
+  background:#10242c;color:#fff;border-radius:10px;padding:9px 12px;font-size:12px;
+  white-space:nowrap;box-shadow:0 10px 28px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:2px;text-align:left;
+}
+.cycle-timeline-tooltip strong{font-size:12.5px}
+.cycle-timeline-tooltip span{color:rgba(255,255,255,.7)}
+.cycle-timeline-labels{display:flex;justify-content:space-between;margin-top:26px;font-size:11.5px;color:var(--muted)}
+
+/* Shared "needs attention" pulse (2026-08-27) — used on the notification-bell badge
+   (sidebar-theme.css), the sidebar's open-case count badge (sidebar-theme.css), and the
+   "Cas signalés" badge/section below. A *smooth* opacity+glow pulse, deliberately not a hard
+   on/off strobe: rapid flashing above ~3Hz is a documented seizure trigger for photosensitive
+   users, not just a style choice to avoid. This cycles at 1.3s (~0.77Hz) — nowhere near that
+   threshold — and only ever touches the small badge/section itself, never a large area or the
+   whole screen. `prefers-reduced-motion` gets a static highlighted ring instead of any
+   animation at all, per that media feature's actual purpose (not just a slower pulse). Elements
+   only render this class while there's something to alert on (unread count > 0 / open cases >
+   0) — the pulse stops on its own once resolved/read, because the badge itself stops rendering;
+   nothing here needs a separate "stop pulsing" code path. See root README.md for the full
+   accessibility rationale. */
+@keyframes pulse-alert{
+  0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(214,67,63,.45)}
+  50%{opacity:.6;box-shadow:0 0 0 5px rgba(214,67,63,0)}
+}
+.pulse-alert{animation:pulse-alert 1.3s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){
+  .pulse-alert{animation:none;opacity:1;box-shadow:0 0 0 3px rgba(214,67,63,.35)}
+}
+
+/* "Cas signalés" incidents panel (2026-08-26, Part D) — reused on both the global view
+   (farm-wide) and the per-house view (scoped), same component and styling either way. */
+.incidents-panel{margin-bottom:26px}
+.incidents-panel-header{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.incidents-panel-header h2{display:flex;align-items:center;gap:8px;margin:0;font-family:'Space Grotesk',sans-serif;font-size:18px;color:var(--danger)}
+.incidents-count-badge{background:var(--danger);color:#fff;font-size:12px;font-weight:700;padding:4px 11px;border-radius:99px}
+.incidents-tabs{display:flex;gap:8px;margin-bottom:14px}
+.incidents-tab{display:flex;align-items:center;gap:7px;border:1px solid rgba(13,49,41,.12);border-radius:999px;padding:8px 14px;background:#fff;color:var(--muted);font-size:12.5px;font-weight:600;cursor:pointer;transition:.15s}
+.incidents-tab:hover{border-color:rgba(11,143,104,.4);color:#10242c}
+.incidents-tab.active{border-color:var(--mint-fill);background:var(--mint-fill);color:#082019}
+.incidents-list{display:flex;flex-direction:column;gap:12px}
+.incident-card{
+  display:flex;gap:14px;padding:18px 20px;border-radius:16px;background:#fff;
+  border:1px solid rgba(214,67,63,.25);border-left:4px solid var(--danger);box-shadow:0 8px 22px rgba(214,67,63,.06);
+}
+.incident-card.incident-fault{border-left-color:var(--warning,#b9790c);border-color:rgba(185,121,12,.25);box-shadow:0 8px 22px rgba(185,121,12,.06)}
+.incident-icon{display:grid;place-items:center;width:38px;height:38px;flex-shrink:0;border-radius:12px;background:rgba(214,67,63,.1);color:var(--danger)}
+.incident-fault .incident-icon{background:rgba(185,121,12,.12);color:var(--warning,#b9790c)}
+.incident-body{flex:1;min-width:0}
+.incident-top-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.incident-title{margin:0;font-size:14px;font-weight:700;color:#10242c}
+.incident-time{font-size:12px;color:var(--muted);white-space:nowrap}
+.incident-description{margin:6px 0 0;font-size:13.5px;color:#374548;line-height:1.5}
+.incident-description-clamped{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.incident-expand{margin-top:4px;border:0;background:none;padding:0;color:var(--mint);font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:3px}
+.incident-reporter{margin:8px 0 0;font-size:12px;color:var(--muted)}
+.incident-resolve-button{
+  align-self:flex-start;flex-shrink:0;display:flex;align-items:center;gap:6px;border:1px solid rgba(11,143,104,.3);
+  background:var(--mint-soft);color:var(--mint);font-size:12.5px;font-weight:700;padding:9px 14px;border-radius:10px;cursor:pointer;transition:.15s;
+}
+.incident-resolve-button:hover{background:var(--mint-fill);color:#082019}
+.incident-resolve-button:disabled{opacity:.6;cursor:wait}
+
 @media(max-width:1023px){
   .stat-grid{grid-template-columns:repeat(2,1fr)}
   .quick-actions{grid-template-columns:repeat(2,1fr)}
@@ -108,3 +253,7 @@
   .house-meta{width:100%;justify-content:space-between}
   .data-table th:nth-child(4),.data-table td:nth-child(4){display:none}
 }
+
+/* Baseline tap target for controls inside page content (2026-09-11). Filter chips,
+   pagination and selects were 25-34px tall, which is not a finger-sized target. */
+.page-wrap button,.page-wrap select{min-height:44px}

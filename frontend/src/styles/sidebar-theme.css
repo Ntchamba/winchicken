@@ -30,7 +30,7 @@
 .sidebar-brand{display:flex;align-items:center;gap:10px;padding:0 8px 24px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:20px}
 .sidebar-section-label{margin:18px 8px 8px;font-size:11px;font-weight:700;letter-spacing:.1em;color:rgba(255,255,255,.45);text-transform:uppercase}
 .sidebar-nav{display:flex;flex-direction:column;gap:2px}
-.sidebar .sidebar-link{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;font-size:13.5px;font-weight:500;color:rgba(255,255,255,.82);text-decoration:none;border:0;background:none;width:100%;text-align:left;cursor:pointer;transition:.15s}
+.sidebar .sidebar-link{display:flex;align-items:center;gap:10px;min-height:44px;padding:11px 12px;border-radius:10px;font-size:13.5px;font-weight:500;color:rgba(255,255,255,.82);text-decoration:none;border:0;background:none;width:100%;text-align:left;cursor:pointer;transition:.15s}
 .sidebar .sidebar-link:hover{background:rgba(23,184,146,.16);color:#5eead4}
 .sidebar .sidebar-link.active{background:rgba(23,184,146,.24);color:#5eead4;font-weight:600}
 .sidebar .sidebar-link.active svg{color:#5eead4}
@@ -38,14 +38,14 @@
 .sidebar-link-primary{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sidebar-link-secondary{font-size:11px;font-weight:500;color:rgba(255,255,255,.5);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sidebar .sidebar-link.active .sidebar-link-secondary{color:rgba(94,234,212,.75)}
-.sidebar .sidebar-link-ghost{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:10px;font-size:13px;color:#5eead4;border:1px dashed rgba(94,234,212,.4);background:none;width:100%;cursor:pointer;margin-top:4px}
+.sidebar .sidebar-link-ghost{display:flex;align-items:center;gap:8px;min-height:44px;padding:11px 12px;border-radius:10px;font-size:13px;color:#5eead4;border:1px dashed rgba(94,234,212,.4);background:none;width:100%;cursor:pointer;margin-top:4px}
 /* "Finances" accordion (2026-08-27, Finances restructure Part A) — sub-items nested visually
    beneath the "Finances" toggle: indented, smaller text, same dark-sidebar styling per the
    task's own spec. */
 .sidebar-accordion-chevron{margin-left:auto;transition:transform .15s;flex-shrink:0}
 .sidebar-accordion-chevron.open{transform:rotate(180deg)}
 .sidebar-submenu{display:flex;flex-direction:column;gap:1px;padding-left:14px;margin:1px 0 4px}
-.sidebar .sidebar-sublink{display:block;padding:7px 10px;border-radius:9px;font-size:12.5px;font-weight:500;color:rgba(255,255,255,.62);border:0;background:none;width:100%;text-align:left;cursor:pointer;transition:.15s}
+.sidebar .sidebar-sublink{display:flex;align-items:center;min-height:40px;padding:9px 12px;border-radius:9px;font-size:12.5px;font-weight:500;color:rgba(255,255,255,.62);border:0;background:none;width:100%;text-align:left;cursor:pointer;transition:.15s}
 .sidebar .sidebar-sublink:hover{background:rgba(23,184,146,.14);color:#5eead4}
 .sidebar .sidebar-sublink.active{background:rgba(23,184,146,.22);color:#5eead4;font-weight:600}
 .sidebar .sidebar-link-ghost:hover{background:rgba(23,184,146,.14)}
@@ -62,7 +62,7 @@
 .sidebar-brand-row{display:flex;align-items:center;justify-content:space-between;padding:0 8px 16px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:0}
 .sidebar-brand{padding:0;border:0;margin:0}
 
-.notification-bell{position:relative;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;border:0;background:none;color:rgba(255,255,255,.65);cursor:pointer;transition:.15s}
+.notification-bell{position:relative;display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;border:0;background:none;color:rgba(255,255,255,.65);cursor:pointer;transition:.15s}
 .notification-bell:hover{background:rgba(255,255,255,.08);color:#fff}
 .notification-bell-badge{position:absolute;top:-2px;right:-2px;min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center}
 .notification-panel{position:absolute;top:calc(100% + 8px);left:0;width:320px;max-height:420px;overflow-y:auto;background:#fff;border-radius:14px;box-shadow:0 20px 48px rgba(0,0,0,.35);z-index:60;color:#10242c}
@@ -97,7 +97,7 @@
 .sidebar-link-badge.danger{background:var(--danger)}
 .sidebar-link-badge.warning{background:var(--warning,#b9790c)}
 
-.incident-shortcut{display:flex;align-items:center;gap:8px;width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(214,67,63,.4);background:rgba(214,67,63,.14);color:#ffb4b0;font-size:13px;font-weight:700;cursor:pointer;margin-top:4px}
+.incident-shortcut{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;padding:12px;border-radius:10px;border:1px solid rgba(214,67,63,.4);background:rgba(214,67,63,.14);color:#ffb4b0;font-size:13px;font-weight:700;cursor:pointer;margin-top:4px}
 .incident-shortcut:hover{background:rgba(214,67,63,.22)}
 
 .sidebar-version{margin:8px 0 0;padding:0 8px;font-size:10.5px;color:rgba(255,255,255,.25);text-align:center}
