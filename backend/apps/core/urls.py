@@ -20,6 +20,7 @@ urlpatterns = [
     path('employees/payroll/', views.EmployeePayrollListView.as_view(), name='employee-payroll-list'),
     path('employees/<int:pk>/', views.EmployeeDetailView.as_view(), name='employee-detail'),
     path('employees/<int:pk>/hourly-rate/', views.EmployeeHourlyRateView.as_view(), name='employee-hourly-rate'),
+    path('farm/overview/', views.FarmOverviewView.as_view(), name='farm-overview'),
     path('contact/', views.ContactMessageView.as_view(), name='contact'),
     path('newsletter/', views.NewsletterSubscribeView.as_view(), name='newsletter'),
 ]

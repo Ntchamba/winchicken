@@ -18,6 +18,9 @@ export const protocolImportApi = {
 
 export const farmApi = {
   exists: () => client.get("/farm/exists/"),
+  // "Bilan global" tree — core status + santé/finances/stock branches, all computed
+  // server-side from the thresholds in apps/core/overview.py.
+  overview: () => client.get("/farm/overview/"),
   create: (payload) => client.post("/farm/create/", payload),
   reset: (password) => client.post("/farm/reset/", { password }),
   // Unauthenticated two-step reset reachable from /login (no session): verify admin

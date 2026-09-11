@@ -1,0 +1,47 @@
+/* Cross-section shortcuts. Scrolls sideways on a phone rather than wrapping into a block
+   that pushes the page content off the first screen. */
+.quick-links {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 20px;
+  padding-bottom: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.quick-links::-webkit-scrollbar {
+  display: none;
+}
+
+.quick-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  /* 40px tall: a comfortable tap target on a phone. */
+  min-height: 40px;
+  padding: 9px 14px;
+  border: 1px solid rgba(13, 49, 41, .12);
+  border-radius: 999px;
+  background: #fff;
+  color: #3d5257;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: border-color .18s ease, color .18s ease, background .18s ease;
+}
+
+.quick-link:hover {
+  border-color: #1f9d76;
+  color: #0b5137;
+  background: #f2fbf8;
+}
+
+.quick-link--current {
+  background: #d7f5ec;
+  border-color: transparent;
+  color: #0b5137;
+  cursor: default;
+}

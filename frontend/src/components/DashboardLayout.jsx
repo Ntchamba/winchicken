@@ -1,4 +1,4 @@
-import { Calendar, ClipboardCheck, FileClock, Home, Wallet, Package, Users, Wallet2, Plus, Settings, LogOut, Bird, Egg, Menu, X, HelpCircle, Truck, ChevronDown } from "lucide-react";
+import { Calendar, ClipboardCheck, FileClock, Home, Wallet, Package, Users, Wallet2, Plus, Settings, LogOut, Bird, Egg, Menu, X, HelpCircle, Truck, ChevronDown, LayoutGrid } from "lucide-react";
 import { useState } from "react";
 import "../styles/house-protocol-theme-light.css";
 import "../styles/dashboard-theme.css";
@@ -131,6 +131,15 @@ export default function DashboardLayout({
         <button className="sidebar-link active" style={{ marginBottom: 4 }} onClick={() => go("/dashboard")}>
           <Home size={16} strokeWidth={1.8} />
           Vue d'ensemble
+        </button>
+
+        <button
+          className={`sidebar-link ${isActive("/dashboard/overview") ? "active" : ""}`}
+          style={{ marginBottom: 4 }}
+          onClick={() => go("/dashboard/overview")}
+        >
+          <LayoutGrid size={16} strokeWidth={1.8} />
+          Bilan global
         </button>
 
         <p className="sidebar-section-label">Bâtiments</p>

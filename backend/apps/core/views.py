@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from apps.core.models import AuditLogEntry, ContactMessage, Farm, NewsletterSubscriber, User
+from apps.core.overview import farm_overview
 from apps.core.permissions import IsAdmin, IsAdminOrFarmManager, IsAdminOrSecondaryAdmin
 from apps.core.serializers import (
     AuditLogEntrySerializer,
@@ -216,6 +217,18 @@ class MeView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class FarmOverviewView(APIView):
+    """GET /api/farm/overview/ — the "Bilan global" tree: one core status plus the santé /
+    finances / stock branches. Rules and thresholds live in `apps.core.overview`."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.farm_id:
+            return Response({'detail': "Aucune ferme associée à ce compte."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(farm_overview(request.user.farm))
 
 
 class EmployeeListCreateView(generics.ListCreateAPIView):
