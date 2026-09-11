@@ -8,6 +8,7 @@ import StockParametersModal from "../../components/StockParametersModal";
 import { stockApi } from "../../api/endpoints";
 import { useAuth } from "../../context/AuthContext";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
+import QuickLinksBar from "../../components/QuickLinksBar";
 
 /**
  * /dashboard/stock — a batch-view-style dashboard: stock evolution charts + a "Fournisseurs"
@@ -46,6 +47,7 @@ export default function StockPage() {
 
   return (
     <div className="page-wrap">
+      <QuickLinksBar />
       <div className="brand-row">
         <div>
           <p className="eyebrow">WINCHICKEN</p>

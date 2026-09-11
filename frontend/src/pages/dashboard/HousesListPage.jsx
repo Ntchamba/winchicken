@@ -1,13 +1,17 @@
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { Bird } from "lucide-react";
+import useDocumentTitle from "../../hooks/useDocumentTitle";
 import "../../styles/dashboard-theme.css";
+import QuickLinksBar from "../../components/QuickLinksBar";
 
 export default function HousesListPage() {
+  useDocumentTitle("Bâtiments");
   const { houses } = useOutletContext();
   const navigate = useNavigate();
 
   return (
     <div className="page-wrap">
+      <QuickLinksBar />
       <div className="breadcrumb">Tableau de bord / <strong>Bâtiments</strong></div>
       {houses.length === 0 ? (
         <p className="empty-state">Aucun bâtiment configuré pour le moment.</p>
