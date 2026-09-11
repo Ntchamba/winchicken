@@ -25,6 +25,26 @@
   margin-top: 0;
 }
 
+.batch-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 15px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #53696d;
+  background: none;
+  border: 1px solid rgba(13, 49, 41, .12);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: border-color .2s, color .2s;
+}
+
+.batch-back-button:hover {
+  border-color: rgba(11, 143, 104, .4);
+  color: #10242c;
+}
+
 /* Choice + import cards. `auto-fit` collapses to one column on its own once the columns
    can no longer hold their min width, which is what keeps this usable under 400px. */
 .batch-card-grid {
