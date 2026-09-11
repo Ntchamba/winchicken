@@ -24,19 +24,12 @@ from io import BytesIO
 
 from openpyxl import Workbook, load_workbook
 
-# Exact French headers the template ships with.
-HEADERS = ['Catégorie', 'De', 'À', 'Action', 'Détails', 'Consommation', 'Unité', 'Quantité/jour', 'Créneaux']
-_HEADER_KEYS = {
-    'catégorie': 'category',
-    'de': 'from_value',
-    'à': 'to_value',
-    'action': 'what',
-    'détails': 'details',
-    'consommation': 'consumption',
-    'unité': 'unit', 'unite': 'unit',
-    'quantité/jour': 'quantity_per_day', 'quantite/jour': 'quantity_per_day',
-    'créneaux': 'time_slots', 'creneaux': 'time_slots',
-}
+from apps.core.column_matching import match_columns
+from apps.protocols.import_columns import COLUMNS
+
+# Exact French headers the template ships with. Accepted spellings beyond these live in
+# apps/protocols/import_columns.py.
+HEADERS = [c.label for c in COLUMNS]
 
 EXAMPLE_ROWS = [
     # a resource + unit + daily quantity, AND two time windows in one cell
@@ -114,7 +107,7 @@ class ImportError(Exception):
     """Raised for a file that cannot be used at all (unreadable, no recognisable headers)."""
 
 
-def parse_protocol_rows(file_obj) -> dict:
+def parse_protocol_rows(file_obj, strict=True) -> dict:
     """Parse an uploaded .xlsx into
     `{'rows': [...], 'imported': int, 'skipped': [...], 'warnings': [...]}`.
 
@@ -122,6 +115,10 @@ def parse_protocol_rows(file_obj) -> dict:
                   consumption|None, unit, quantityPerDay|None, timeSlots:[{startTime,endTime}]}.
     `skipped` / `warnings`: [{line, reason}] — `line` is the 1-based spreadsheet row number
     (header is line 1). `warnings` rows were imported (a bad Créneaux segment was dropped).
+    `columns` is the header-mapping report (apps.core.column_matching) for the preview screen.
+
+    `strict=False` returns that report with no rows instead of raising when a required column
+    can't be resolved — the preview screen needs to say *which* column needs attention.
     """
     try:
         wb = load_workbook(file_obj, read_only=True, data_only=True)
@@ -135,17 +132,22 @@ def parse_protocol_rows(file_obj) -> dict:
     except StopIteration:
         raise ImportError('Le fichier est vide.')
 
-    col_index = {}
-    for idx, cell in enumerate(header_row):
-        key = _HEADER_KEYS.get(_clean(cell).lower())
-        if key and key not in col_index:
-            col_index[key] = idx
+    # Headers are resolved by the shared matcher (synonyms + edit distance) rather than an
+    # exact lookup, so a file whose headers differ from the template still imports. The report
+    # travels back to the UI so the user can see and confirm what was understood.
+    report = match_columns(header_row, COLUMNS)
+    col_index = report.index
 
-    missing = [h for h, k in (('Catégorie', 'category'), ('De', 'from_value'), ('Action', 'what'))
-               if k not in col_index]
-    if missing:
+    if report.unresolved and not strict:
+        # Preview mode: hand the mapping back so the screen can point at the column that needs
+        # attention, instead of failing with a message the user can't act on column-by-column.
+        wb.close()
+        return {'rows': [], 'imported': 0, 'skipped': [], 'warnings': [], 'columns': report.as_dict()}
+
+    if report.unresolved:
         raise ImportError(
-            'En-têtes de colonnes introuvables : ' + ', '.join(f'« {h} »' for h in missing)
+            'En-têtes de colonnes introuvables : '
+            + ', '.join(f'« {m.label} »' for m in report.unresolved)
             + '. Téléchargez le modèle et conservez la première ligne.'
         )
 
@@ -209,4 +211,7 @@ def parse_protocol_rows(file_obj) -> dict:
         })
 
     wb.close()
-    return {'rows': rows, 'imported': len(rows), 'skipped': skipped, 'warnings': warnings}
+    return {
+        'rows': rows, 'imported': len(rows), 'skipped': skipped, 'warnings': warnings,
+        'columns': report.as_dict(),
+    }

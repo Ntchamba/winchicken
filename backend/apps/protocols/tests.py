@@ -330,3 +330,138 @@ class ProtocolXlsxImportTests(APITestCase):
         self.assertEqual(resp.data['rows'][0]['unit'], 'flacon')
         self.assertEqual(resp.data['rows'][0]['consumption'], 'Sérum X')
         self.assertEqual(resp.data['rows'][0]['quantityPerDay'], 2.0)
+
+
+class ColumnMatchingUnitTests(APITestCase):
+    """The matcher itself — pure functions, no file, no database (apps/core/column_matching.py)."""
+
+    def test_normalize_folds_accents_case_punctuation_and_spacing(self):
+        from apps.core.column_matching import normalize
+        self.assertEqual(normalize('  Qté / Jour '), 'qte jour')
+        self.assertEqual(normalize("Seuil d'alerte"), 'seuil d alerte')
+        self.assertEqual(normalize('CATÉGORIE'), 'categorie')
+        self.assertEqual(normalize(None), '')
+
+    def test_exact_match_wins_and_reports_full_confidence(self):
+        from apps.core.column_matching import match_columns
+        from apps.protocols.import_columns import COLUMNS
+        report = match_columns(['Catégorie', 'De', 'Action'], COLUMNS)
+        by_key = {m.key: m for m in report.matches}
+        self.assertEqual(by_key['category'].method, 'exact')
+        self.assertEqual(by_key['category'].confidence, 1.0)
+        self.assertEqual(report.index['category'], 0)
+
+    def test_accent_and_case_variants_are_exact_not_fuzzy(self):
+        from apps.core.column_matching import match_columns
+        from apps.protocols.import_columns import COLUMNS
+        report = match_columns(['  CATEGORIE  ', 'de', 'ACTION'], COLUMNS)
+        self.assertEqual({m.key: m.method for m in report.matches}['category'], 'exact')
+
+    def test_listed_synonyms_resolve_to_the_canonical_column(self):
+        from apps.core.column_matching import match_columns
+        from apps.protocols.import_columns import COLUMNS
+        report = match_columns(['Rubrique', 'Jour début', 'Jour fin', 'Tâche', 'Horaires'], COLUMNS)
+        by_key = {m.key: m for m in report.matches}
+        self.assertEqual(by_key['category'].header, 'Rubrique')
+        self.assertEqual(by_key['from_value'].header, 'Jour début')
+        self.assertEqual(by_key['to_value'].header, 'Jour fin')
+        self.assertEqual(by_key['what'].header, 'Tâche')
+        self.assertEqual(by_key['time_slots'].header, 'Horaires')
+
+    def test_a_typo_is_recovered_by_edit_distance_and_flagged_as_approximate(self):
+        from apps.core.column_matching import match_columns
+        from apps.protocols.import_columns import COLUMNS
+        report = match_columns(['Catgorie', 'De', 'Acton', 'Consomation'], COLUMNS)
+        by_key = {m.key: m for m in report.matches}
+        self.assertEqual(by_key['category'].header, 'Catgorie')
+        self.assertEqual(by_key['category'].method, 'fuzzy')
+        self.assertLess(by_key['category'].confidence, 1.0)
+        self.assertEqual(by_key['what'].header, 'Acton')
+        self.assertEqual(by_key['consumption'].header, 'Consomation')
+
+    def test_an_unrelated_column_is_left_unknown_rather_than_force_matched(self):
+        from apps.core.column_matching import match_columns
+        from apps.protocols.import_columns import COLUMNS
+        report = match_columns(['Catégorie', 'De', 'Action', 'Numéro de facture'], COLUMNS)
+        self.assertIn('Numéro de facture', report.unknown_headers)
+        self.assertNotIn('Numéro de facture', [m.header for m in report.matches])
+
+    def test_one_file_column_is_never_claimed_by_two_canonical_columns(self):
+        from apps.core.column_matching import match_columns
+        from apps.protocols.import_columns import COLUMNS
+        report = match_columns(['Catégorie', 'De', 'À', 'Action'], COLUMNS)
+        used = [m.index for m in report.matches if m.index is not None]
+        self.assertEqual(len(used), len(set(used)))
+
+    def test_absent_optional_column_reports_its_existing_default(self):
+        from apps.core.column_matching import match_columns
+        from apps.protocols.import_columns import COLUMNS
+        report = match_columns(['Catégorie', 'De', 'Action'], COLUMNS)
+        by_key = {m.key: m for m in report.matches}
+        self.assertEqual(by_key['unit'].method, 'default')
+        self.assertIn('kg', by_key['unit'].note)
+        self.assertEqual(by_key['details'].method, 'default')
+
+    def test_absent_required_column_is_unresolved_and_blocks(self):
+        from apps.core.column_matching import match_columns
+        from apps.protocols.import_columns import COLUMNS
+        report = match_columns(['De', 'Action'], COLUMNS)
+        self.assertEqual([m.label for m in report.unresolved], ['Catégorie'])
+
+    def test_short_headers_must_match_exactly_no_fuzzy_guessing(self):
+        # "De"/"À" are too short for edit distance to mean anything — a 2-letter header must
+        # not be pulled onto some other column by a single edit.
+        from apps.core.column_matching import match_columns
+        from apps.protocols.import_columns import COLUMNS
+        report = match_columns(['Catégorie', 'De', 'Action', 'Xy'], COLUMNS)
+        self.assertIn('Xy', report.unknown_headers)
+
+    def test_matching_is_deterministic_same_input_same_output(self):
+        from apps.core.column_matching import match_columns
+        from apps.protocols.import_columns import COLUMNS
+        headers = ['Rubrique', 'Jour début', 'Jour fin', 'Tâche', 'Conso', 'Qté/jour']
+        first = match_columns(headers, COLUMNS).as_dict()
+        for _ in range(5):
+            self.assertEqual(match_columns(headers, COLUMNS).as_dict(), first)
+
+
+class ProtocolImportRemappingTests(ProtocolXlsxImportTests):
+    """End-to-end: a file whose headers don't match the template still imports (Prompt 2)."""
+
+    def test_file_with_completely_different_wording_imports_correctly(self):
+        buf = self._xlsx(
+            [['Alimentation', 1, 15, 'Aliment démarrage', '3000 kcal', 'Provende', 40]],
+            headers=['Rubrique', 'Jour début', 'Jour fin', 'Tâche', 'Commentaire', 'Ressource', 'Ration journalière'],
+        )
+        resp = self._upload(buf)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['imported'], 1)
+        row = resp.data['rows'][0]
+        self.assertEqual(row['category'], 'Alimentation')
+        self.assertEqual(row['fromValue'], 1.0)
+        self.assertEqual(row['toValue'], 15.0)
+        self.assertEqual(row['what'], 'Aliment démarrage')
+        self.assertEqual(row['details'], '3000 kcal')
+        self.assertEqual(row['consumption'], 'Provende')
+        self.assertEqual(row['quantityPerDay'], 40.0)
+
+    def test_response_carries_the_mapping_report_for_the_preview_screen(self):
+        buf = self._xlsx(
+            [['Alimentation', 1, 15, 'Aliment démarrage', '', 'Provende', 40]],
+            headers=['Rubrique', 'Jour début', 'Jour fin', 'Tâche', 'Commentaire', 'Ressource', 'Ration journalière'],
+        )
+        resp = self._upload(buf)
+        by_key = {m['key']: m for m in resp.data['columns']['matches']}
+        self.assertEqual(by_key['category']['header'], 'Rubrique')
+        self.assertEqual(by_key['category']['method'], 'exact')  # 'rubrique' is a listed synonym
+        self.assertEqual(by_key['unit']['method'], 'default')    # absent from this file
+        self.assertEqual(resp.data['columns']['unresolved'], [])
+
+    def test_unmatched_required_column_still_returns_a_clear_400(self):
+        buf = self._xlsx(
+            [['x', 1, 'Action']],
+            headers=['Numéro de facture', 'Montant', 'Référence'],
+        )
+        resp = self._upload(buf)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('Catégorie', str(resp.data))

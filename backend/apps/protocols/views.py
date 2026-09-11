@@ -264,8 +264,13 @@ class ProtocolImportView(APIView):
                 {'detail': 'Format non pris en charge. Importez un fichier .xlsx (Excel).'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # `preview=1` (the batch-creation Excel screen) wants the column mapping back even when
+        # a required column couldn't be resolved, so it can show which one needs attention and
+        # keep the confirm button disabled. Without the flag a file like that is still a 400,
+        # which is what the protocol form's own import button has always done.
+        preview = str(request.data.get('preview', '')).lower() in ('1', 'true', 'oui')
         try:
-            result = parse_protocol_rows(upload)
+            result = parse_protocol_rows(upload, strict=not preview)
         except XlsxImportError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(result)

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import ExcelImportCard from "./ExcelImportCard";
+import ImportColumnPreview from "./ImportColumnPreview";
 import { protocolImportApi, stockApi } from "../../api/endpoints";
 import { getServerErrorMessage } from "../../api/errors";
 import { DEFAULT_CATEGORIES } from "../../utils/protocolRows";
@@ -33,6 +34,7 @@ export default function BatchExcelImportScreen({ farmId, onProtocolImported, onC
   const [stockItemList, setStockItemList] = useState([]);
 
   const [protocolBusy, setProtocolBusy] = useState(false);
+  const [protocolPreview, setProtocolPreview] = useState(null); // parsed file awaiting confirmation
   const [protocolResult, setProtocolResult] = useState(null);
   const [protocolError, setProtocolError] = useState("");
   const [protocolDone, setProtocolDone] = useState(false);
@@ -48,10 +50,32 @@ export default function BatchExcelImportScreen({ farmId, onProtocolImported, onC
     }).catch(() => {});
   }, [farmId]);
 
+  // Step 1 of the protocol import: parse + column remapping only. Nothing reaches the form
+  // until the user has seen the mapping and confirmed it.
   const importProtocol = async (file) => {
     setProtocolBusy(true);
     setProtocolError("");
     setProtocolResult(null);
+    setProtocolPreview(null);
+    try {
+      const { data } = await protocolImportApi.parse(file, { preview: true });
+      setProtocolPreview(data);
+    } catch (err) {
+      setProtocolError(
+        err?.isAxiosError
+          ? getServerErrorMessage(err, "Échec de l'import du fichier Excel.")
+          : err?.message || "Échec de l'import du fichier Excel.",
+      );
+    } finally {
+      setProtocolBusy(false);
+    }
+  };
+
+  // Step 2: the user confirmed the mapping — now resolve the rows into the form's shape.
+  const confirmProtocol = async () => {
+    const data = protocolPreview;
+    setProtocolBusy(true);
+    setProtocolError("");
 
     // The categories a file names are collected here rather than read back from state: the
     // parent needs the complete list (defaults + everything this file added) in one piece,
@@ -74,7 +98,7 @@ export default function BatchExcelImportScreen({ farmId, onProtocolImported, onC
     };
 
     try {
-      const { data } = await protocolImportApi.parse(file);
+      // The file was already parsed for the preview — resolve those rows, don't re-upload.
       const { schedules } = await resolveProtocolImportRows(data, {
         categories, stockItemList, farmId, createCategory, createStockItem,
       });
@@ -89,6 +113,7 @@ export default function BatchExcelImportScreen({ farmId, onProtocolImported, onC
 
       setProtocolResult({ imported: data.imported, skipped: data.skipped || [], warnings: data.warnings || [] });
       setProtocolDone(true);
+      setProtocolPreview(null);
       onProtocolImported(nextCategories, schedules);
     } catch (err) {
       setProtocolError(
@@ -122,6 +147,17 @@ export default function BatchExcelImportScreen({ farmId, onProtocolImported, onC
         Importez au moins le protocole pour continuer. Vous pourrez tout relire et ajuster
         avant d'enregistrer la bande.
       </p>
+
+      {protocolPreview && (
+        <ImportColumnPreview
+          columns={protocolPreview.columns}
+          rowCount={protocolPreview.rows?.length || 0}
+          skipped={protocolPreview.skipped || []}
+          busy={protocolBusy}
+          onConfirm={confirmProtocol}
+          onCancel={() => setProtocolPreview(null)}
+        />
+      )}
 
       <div className="batch-card-grid">
         <ExcelImportCard

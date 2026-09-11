@@ -20,6 +20,25 @@ const xlsx = (name) => new File(["x"], name, { type: "application/vnd.ms-excel" 
 const cardFor = (title) => screen.getByText(title).closest(".batch-import-card");
 const uploadTo = (title, file) =>
   userEvent.upload(cardFor(title).querySelector('input[type="file"]'), file);
+const confirmImport = () => userEvent.click(screen.getByRole("button", { name: /Confirmer l'import/i }));
+
+// The server's column-mapping report (apps/core/column_matching.py). Shaped exactly like the
+// real payload so the preview is exercised, not stubbed around.
+const columnsReport = (overrides = {}) => ({
+  matches: [
+    { key: "category", label: "Catégorie", header: "Rubrique", index: 0, method: "exact", confidence: 1, note: "", required: true },
+    { key: "from_value", label: "De", header: "Jour début", index: 1, method: "exact", confidence: 1, note: "", required: true },
+    { key: "what", label: "Action", header: "Tache", index: 2, method: "fuzzy", confidence: 0.889, note: "Correspondance approximative — vérifiez que la colonne est la bonne.", required: true },
+    { key: "unit", label: "Unité", header: "", index: null, method: "default", confidence: 0, note: "Sans colonne d'unité, une ressource créée par l'import prend « kg ».", required: false },
+  ],
+  unknownHeaders: [],
+  unresolved: [],
+  ...overrides,
+});
+
+const parsed = (rows, extra = {}) => ({
+  data: { imported: rows.length, skipped: [], warnings: [], columns: columnsReport(), rows, ...extra },
+});
 
 function renderScreen(props = {}) {
   return render(
@@ -38,22 +57,21 @@ describe("BatchExcelImportScreen", () => {
     stockApi.items.mockResolvedValue({ data: { items: [] } });
   });
 
-  test("imports a protocol file and hands the resolved rows up, categories included", async () => {
-    protocolImportApi.parse.mockResolvedValue({
-      data: {
-        imported: 2,
-        skipped: [],
-        warnings: [],
-        rows: [
-          { category: "Alimentation", fromValue: 1, toValue: 10, untilEnd: false, what: "Démarrage", details: "", consumption: null, timeSlots: [{ startTime: "07:00", endTime: "09:00" }] },
-          { category: "Biosécurité", fromValue: 1, toValue: 5, untilEnd: false, what: "Pédiluve", details: "", consumption: null, timeSlots: [] },
-        ],
-      },
-    });
+  test("imports a protocol file and hands the resolved rows up once confirmed", async () => {
+    protocolImportApi.parse.mockResolvedValue(parsed([
+      { category: "Alimentation", fromValue: 1, toValue: 10, untilEnd: false, what: "Démarrage", details: "", consumption: null, timeSlots: [{ startTime: "07:00", endTime: "09:00" }] },
+      { category: "Biosécurité", fromValue: 1, toValue: 5, untilEnd: false, what: "Pédiluve", details: "", consumption: null, timeSlots: [] },
+    ]));
     const onProtocolImported = vi.fn();
     renderScreen({ onProtocolImported });
 
     await uploadTo("Protocole", xlsx("protocole.xlsx"));
+
+    // Nothing is handed up until the user has seen the mapping and confirmed it.
+    expect(await screen.findByText(/Vérifiez les colonnes reconnues/i)).toBeInTheDocument();
+    expect(onProtocolImported).not.toHaveBeenCalled();
+
+    await confirmImport();
 
     await waitFor(() => expect(onProtocolImported).toHaveBeenCalledTimes(1));
     const [categories, schedules] = onProtocolImported.mock.calls[0];
@@ -65,19 +83,80 @@ describe("BatchExcelImportScreen", () => {
     ]);
     expect(categories[5]).toMatchObject({ label: "Biosécurité" });
 
-    // Both rows landed, under their own category, and the time slot survived.
     const allRows = Object.values(schedules).flat();
     expect(allRows).toHaveLength(2);
     expect(schedules["default-0"][0]).toMatchObject({ what: "Démarrage" });
     expect(schedules["default-0"][0].timeSlots[0]).toMatchObject({ startTime: "07:00", endTime: "09:00" });
     expect(schedules[categories[5].id][0]).toMatchObject({ what: "Pédiluve" });
+  });
 
-    expect(await screen.findByText(/2 lignes importées/i)).toBeInTheDocument();
+  test("the preview names the file's header for each column and how it was matched", async () => {
+    protocolImportApi.parse.mockResolvedValue(parsed([
+      { category: "Alimentation", fromValue: 1, toValue: 3, untilEnd: false, what: "Miettes", details: "", consumption: null, timeSlots: [] },
+    ]));
+    renderScreen();
+
+    await uploadTo("Protocole", xlsx("protocole.xlsx"));
+
+    const preview = (await screen.findByText(/Vérifiez les colonnes reconnues/i)).closest(".import-preview");
+    // Synonym match: the file said "Rubrique", the app understood "Catégorie".
+    expect(within(preview).getByText("Rubrique")).toBeInTheDocument();
+    expect(within(preview).getByText("Catégorie")).toBeInTheDocument();
+    // Fuzzy matches are called out with their confidence, so a close-but-wrong header is visible.
+    expect(within(preview).getByText(/Approximative · 89 %/)).toBeInTheDocument();
+    // An absent optional column reports the default it will fall back to.
+    expect(within(preview).getByText(/Valeur par défaut/)).toBeInTheDocument();
+    expect(within(preview).getByText(/prend « kg »/)).toBeInTheDocument();
+  });
+
+  test("an unresolved required column blocks confirmation and says which one", async () => {
+    protocolImportApi.parse.mockResolvedValue({
+      data: {
+        imported: 0, skipped: [], warnings: [], rows: [],
+        columns: columnsReport({
+          unresolved: ["Catégorie"],
+          matches: [
+            { key: "category", label: "Catégorie", header: "", index: null, method: "missing", confidence: 0, note: "", required: true },
+          ],
+          unknownHeaders: ["Numéro de facture"],
+        }),
+      },
+    });
+    const onProtocolImported = vi.fn();
+    renderScreen({ onProtocolImported });
+
+    await uploadTo("Protocole", xlsx("mauvaises-colonnes.xlsx"));
+
+    expect(await screen.findByText(/Colonne obligatoire introuvable/i)).toBeInTheDocument();
+    expect(screen.getByText(/« Catégorie »/)).toBeInTheDocument();
+    expect(screen.getByText(/Numéro de facture/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Confirmer l'import/i })).toBeDisabled();
+    expect(onProtocolImported).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Continuer" })).toBeDisabled();
+  });
+
+  test("cancelling the preview imports nothing and returns to the cards", async () => {
+    protocolImportApi.parse.mockResolvedValue(parsed([
+      { category: "Alimentation", fromValue: 1, toValue: 3, untilEnd: false, what: "Miettes", details: "", consumption: null, timeSlots: [] },
+    ]));
+    const onProtocolImported = vi.fn();
+    renderScreen({ onProtocolImported });
+
+    await uploadTo("Protocole", xlsx("protocole.xlsx"));
+    await screen.findByText(/Vérifiez les colonnes reconnues/i);
+    await userEvent.click(screen.getByRole("button", { name: /Annuler/i }));
+
+    expect(screen.queryByText(/Vérifiez les colonnes reconnues/i)).not.toBeInTheDocument();
+    expect(onProtocolImported).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Continuer" })).toBeDisabled();
   });
 
   test("a protocol file with no usable row reports the skips and does not unlock 'Continuer'", async () => {
     protocolImportApi.parse.mockResolvedValue({
-      data: { imported: 0, skipped: [{ line: 2, reason: "Catégorie inconnue" }], warnings: [], rows: [] },
+      data: {
+        imported: 0, skipped: [{ line: 2, reason: "Catégorie inconnue" }], warnings: [], rows: [],
+        columns: columnsReport(),
+      },
     });
     const onProtocolImported = vi.fn();
     renderScreen({ onProtocolImported });
@@ -116,8 +195,6 @@ describe("BatchExcelImportScreen", () => {
   // visible but inert — and must not block the rest of the flow.
   test("the Finances card is present but inert", async () => {
     renderScreen();
-    // Let the on-mount stock fetch settle before asserting, so its setState isn't left
-    // dangling outside act().
     await waitFor(() => expect(stockApi.items).toHaveBeenCalled());
     const finances = cardFor("Finances");
 
@@ -126,13 +203,10 @@ describe("BatchExcelImportScreen", () => {
     expect(finances.querySelector('input[type="file"]')).toBeNull();
   });
 
-  test("'Continuer' only unlocks after a successful protocol import", async () => {
-    protocolImportApi.parse.mockResolvedValue({
-      data: {
-        imported: 1, skipped: [], warnings: [],
-        rows: [{ category: "Alimentation", fromValue: 1, toValue: 3, untilEnd: false, what: "Miettes", details: "", consumption: null, timeSlots: [] }],
-      },
-    });
+  test("'Continuer' only unlocks after a confirmed protocol import", async () => {
+    protocolImportApi.parse.mockResolvedValue(parsed([
+      { category: "Alimentation", fromValue: 1, toValue: 3, untilEnd: false, what: "Miettes", details: "", consumption: null, timeSlots: [] },
+    ]));
     const onContinue = vi.fn();
     renderScreen({ onContinue });
 
@@ -140,6 +214,10 @@ describe("BatchExcelImportScreen", () => {
     expect(button).toBeDisabled();
 
     await uploadTo("Protocole", xlsx("protocole.xlsx"));
+    await screen.findByText(/Vérifiez les colonnes reconnues/i);
+    expect(button).toBeDisabled(); // still gated until confirmation
+
+    await confirmImport();
     await waitFor(() => expect(button).toBeEnabled());
 
     await userEvent.click(button);

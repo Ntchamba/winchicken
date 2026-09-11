@@ -4,9 +4,13 @@ import client, { API_URL } from "./client";
 // the parsed rows + per-row skip report — the frontend merges them into HouseProtocolForm.
 // `templateUrl` is a plain link target (the endpoint is AllowAny, static content).
 export const protocolImportApi = {
-  parse: (file) => {
+  // `preview` asks the server to return the column-mapping report even when a required column
+  // couldn't be resolved, instead of a 400 — the batch-creation screen shows which column needs
+  // attention and keeps its confirm button disabled.
+  parse: (file, { preview = false } = {}) => {
     const fd = new FormData();
     fd.append("file", file);
+    if (preview) fd.append("preview", "1");
     return client.post("/protocols/import-xlsx/", fd);
   },
   templateUrl: `${API_URL}/protocols/import-template.xlsx`,
