@@ -1,26 +1,79 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import HouseProtocolForm from "../../components/HouseProtocolForm";
+import BatchHeaderStep from "../../components/onboarding/BatchHeaderStep";
+import BatchMethodChoice from "../../components/onboarding/BatchMethodChoice";
+import BatchExcelImportScreen from "../../components/onboarding/BatchExcelImportScreen";
 import { onboardingApi } from "../../api/endpoints";
 import { useAuth } from "../../context/AuthContext";
 import { useOnboarding } from "../../context/OnboardingContext";
 
+function buildOnboardingRequest(payload, productionType) {
+  return {
+    house: {
+      name: payload.house.buildingName,
+      maxCapacity: payload.house.chicksPlaced,
+    },
+    batch: {
+      name: payload.batchName,
+      // Picked in the header step since 2026-09-11 (BatchHeaderStep) — this used to be
+      // hardcoded "BROILER" because no screen ever asked.
+      productionType: productionType || "BROILER",
+      initialCount: payload.house.chicksPlaced,
+      startDate: new Date().toISOString().slice(0, 10),
+      growthCycleValue: payload.house.growthCycle,
+      growthCycleUnit: payload.house.growthCycleUnit.toUpperCase(),
+      weighingFrequency: payload.weighingFrequency,
+    },
+    // Only the categories beyond the 5 auto-seeded defaults need to be sent —
+    // apps.houses.signals seeds those from apps.protocols.models.DEFAULT_PROTOCOL_CATEGORIES.
+    customCategories: payload.categories.slice(5).map(({ label, icon }) => ({ label, icon })),
+    protocolLines: payload.protocolLines,
+  };
+}
+
+/**
+ * Batch creation, as a four-step sequence (2026-09-11):
+ *
+ *   header → choice → manual | excel
+ *
+ * The header step asks the handful of fields that identify the batch, then the user picks how
+ * to fill the protocol. "Configurer manuellement" opens `HouseProtocolForm` exactly as this
+ * page always did — same props, same save path, no behavior change. The Excel branch imports
+ * the file and then hands off into that same form, pre-filled, so the user reviews what was
+ * imported and saves through the identical code path rather than a parallel one.
+ *
+ * Reached by both entry points: first-time onboarding, and "+ Nouvelle bande" on a farm that
+ * is already configured (`isAddingHouse` below).
+ */
 export default function OnboardingProtocolPage() {
   const { houseHeader, setHouseHeader, categories, setCategories, schedules, setSchedules } = useOnboarding();
   const [saving, setSaving] = useState(false);
+  // Multi-batch first-time onboarding (2026-08-27) — houses already created via "Ajouter ce
+  // bâtiment et en configurer un autre" this session, shown as a running list so the user has
+  // feedback on what's already saved; `formKey` forces HouseProtocolForm to remount (fresh
+  // internal state) after each addition, since changing its initial* props alone wouldn't
+  // reset its own useState-held form data.
+  const [addedHouses, setAddedHouses] = useState([]);
+  const [formKey, setFormKey] = useState(0);
+  const [step, setStep] = useState("header");
+  // Lifted here rather than left in the header step, so stepping back and forth through the
+  // sequence never loses what was typed.
+  const [pendingHeader, setPendingHeader] = useState(houseHeader || {});
   const navigate = useNavigate();
   const { user, refreshMe } = useAuth();
   // Farm already configured (stock/employees already exist) -> this is the
-  // "+ New house" flow, not first-time onboarding. Skip straight to the
+  // "+ Nouvelle bande" flow, not first-time onboarding. Skip straight to the
   // dashboard instead of forcing the stock/employees steps again, which
   // would otherwise let the stock step's full-replace PUT wipe out the
-  // farm's existing stock items.
+  // farm's existing stock items. Also: exactly one house/batch per invocation
+  // (matches the button's own singular name) — no multi-batch loop here.
   const isAddingHouse = user?.is_configured;
 
   const handleSave = async (payload) => {
     setSaving(true);
     try {
-      setHouseHeader({ ...payload.house, batchName: payload.batchName });
+      setHouseHeader({ ...payload.house, batchName: payload.batchName, weighingFrequency: payload.weighingFrequency });
       setCategories(payload.categories);
       const scheduleMap = {};
       for (const cat of payload.categories) scheduleMap[cat.id] = [];
@@ -30,24 +83,7 @@ export default function OnboardingProtocolPage() {
       }
       setSchedules(scheduleMap);
 
-      await onboardingApi.submit({
-        house: {
-          name: payload.house.buildingName,
-          maxCapacity: payload.house.chicksPlaced,
-        },
-        batch: {
-          name: payload.batchName,
-          productionType: "BROILER",
-          initialCount: payload.house.chicksPlaced,
-          startDate: new Date().toISOString().slice(0, 10),
-          growthCycleValue: payload.house.growthCycle,
-          growthCycleUnit: payload.house.growthCycleUnit.toUpperCase(),
-        },
-        // Only the categories beyond the 5 auto-seeded defaults need to be sent —
-        // apps.houses.signals seeds those from apps.protocols.models.DEFAULT_PROTOCOL_CATEGORIES.
-        customCategories: payload.categories.slice(5).map(({ label, icon }) => ({ label, icon })),
-        protocolLines: payload.protocolLines,
-      });
+      await onboardingApi.submit(buildOnboardingRequest(payload, pendingHeader.productionType));
       if (isAddingHouse) {
         await refreshMe();
         navigate("/dashboard", { replace: true });
@@ -59,14 +95,116 @@ export default function OnboardingProtocolPage() {
     }
   };
 
+  const handleAddAnother = async (payload) => {
+    setSaving(true);
+    try {
+      const { data } = await onboardingApi.submit(buildOnboardingRequest(payload, pendingHeader.productionType));
+      setAddedHouses((prev) => [...prev, { name: data.house.name }]);
+      // Reset to the same empty state the page starts with on first load — the 5 default
+      // categories, no lines — so the next house starts from scratch, not from what was just
+      // submitted. `formKey` bump remounts HouseProtocolForm so this actually takes effect
+      // (its category/schedule state lives in its own useState, initialized once from props).
+      setHouseHeader({});
+      setCategories(null);
+      setSchedules({});
+      setPendingHeader({});
+      setFormKey((k) => k + 1);
+      // Next batch starts at the top of the sequence again, same as the first one did.
+      setStep("header");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Excel branch: the imported rows become the form's initial data, then the user finishes in
+  // the manual form — same save path, and a chance to review the file's content before it is
+  // committed.
+  const handleProtocolImported = (importedCategories, importedSchedules) => {
+    setCategories(importedCategories);
+    setSchedules(importedSchedules);
+    setFormKey((k) => k + 1);
+  };
+
+  // Stays visible through the whole sequence, not just on the form: after "Ajouter ce bâtiment
+  // et en configurer un autre" the next batch restarts at the header step, and the running list
+  // (and the way out of the loop) has to still be reachable from there.
+  const addedHousesPanel = addedHouses.length > 0 && (
+    <div className="card schedule-card" style={{ marginBottom: 18 }}>
+      <p className="schedule-note" style={{ marginBottom: 8 }}>
+        {addedHouses.length} bâtiment{addedHouses.length > 1 ? "s" : ""} déjà configuré
+        {addedHouses.length > 1 ? "s" : ""} :
+      </p>
+      <ul style={{ margin: "0 0 12px", paddingLeft: 18, fontSize: 13.5, color: "#374548" }}>
+        {addedHouses.map((h, i) => <li key={i}>{h.name || "Bâtiment sans nom"}</li>)}
+      </ul>
+      <button className="add-button" style={{ marginTop: 0 }} onClick={() => navigate("/onboarding/stock")}>
+        Continuer sans ajouter d'autre bâtiment
+      </button>
+    </div>
+  );
+
+  if (step === "header") {
+    return (
+      <>
+        {addedHousesPanel}
+        <BatchHeaderStep
+          initial={pendingHeader}
+          onNext={(header) => {
+            setPendingHeader(header);
+            setStep("choice");
+          }}
+        />
+      </>
+    );
+  }
+
+  if (step === "choice") {
+    return (
+      <>
+        {addedHousesPanel}
+        <BatchMethodChoice
+          onSelectManual={() => setStep("manual")}
+          onSelectExcel={() => setStep("excel")}
+          onBack={() => setStep("header")}
+        />
+      </>
+    );
+  }
+
+  if (step === "excel") {
+    return (
+      <>
+        {addedHousesPanel}
+        <BatchExcelImportScreen
+          farmId={user.farm}
+          onProtocolImported={handleProtocolImported}
+          onContinue={() => setStep("manual")}
+          onBack={() => setStep("choice")}
+        />
+      </>
+    );
+  }
+
   return (
-    <HouseProtocolForm
-      initialHeader={houseHeader}
-      initialCategories={categories}
-      initialSchedules={schedules}
-      mode="onboarding"
-      saving={saving}
-      onSave={handleSave}
-    />
+    <>
+      {addedHousesPanel}
+      <div className="batch-step-actions" style={{ marginTop: 0, marginBottom: 14 }}>
+        <button type="button" className="batch-back-button" onClick={() => setStep("choice")}>
+          Retour
+        </button>
+      </div>
+      <HouseProtocolForm
+        key={formKey}
+        initialHeader={{ ...houseHeader, ...pendingHeader }}
+        initialCategories={categories}
+        initialSchedules={schedules}
+        mode="onboarding"
+        saving={saving}
+        farmId={user.farm}
+        onSave={handleSave}
+        onAddAnother={isAddingHouse ? undefined : handleAddAnother}
+        submitLabel={isAddingHouse ? "Créer la bande" : undefined}
+      />
+    </>
   );
 }

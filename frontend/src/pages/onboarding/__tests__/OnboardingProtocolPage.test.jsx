@@ -35,6 +35,20 @@ function mockOnboardingContext() {
   });
 }
 
+// Batch creation opens on the header step and the method choice (2026-09-11) before the
+// protocol form itself. Everything below that used to start at the form now walks through
+// them first — the batch name comes from this step now, not from the form's own field.
+async function goToManualForm({ productionType } = {}) {
+  await userEvent.type(screen.getByRole("textbox", { name: /nom de la bande/i }), "Bande test");
+  await userEvent.type(screen.getByRole("spinbutton", { name: /poussins mis en place/i }), "500");
+  await userEvent.type(screen.getByRole("textbox", { name: /nom du bâtiment/i }), "Bâtiment A");
+  if (productionType) {
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /type de protocole/i }), productionType);
+  }
+  await userEvent.click(screen.getByRole("button", { name: "Suivant" }));
+  await userEvent.click(screen.getByRole("button", { name: /Configurer manuellement/i }));
+}
+
 describe("OnboardingProtocolPage — true first-time onboarding (is_configured: false)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -42,8 +56,9 @@ describe("OnboardingProtocolPage — true first-time onboarding (is_configured: 
     mockOnboardingContext();
   });
 
-  test("shows the multi-batch 'add another' button, not the add-house 'Créer la bande' label", () => {
+  test("shows the multi-batch 'add another' button, not the add-house 'Créer la bande' label", async () => {
     render(<OnboardingProtocolPage />);
+    await goToManualForm();
     expect(screen.getByRole("button", { name: "Ajouter ce bâtiment et en configurer un autre" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Suivant" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Créer la bande" })).not.toBeInTheDocument();
@@ -52,10 +67,9 @@ describe("OnboardingProtocolPage — true first-time onboarding (is_configured: 
   test("adding a house via 'Ajouter ce bâtiment...' submits it, lists it, and resets the form for another", async () => {
     onboardingApi.submit.mockResolvedValue({ data: { house: { houseCode: "H-1", name: "Poulailler Nord" } } });
     render(<OnboardingProtocolPage />);
+    await goToManualForm();
 
     await userEvent.click(screen.getByRole("button", { name: /charger le modèle de départ/i }));
-    // Part A: the submit buttons are disabled until the batch has a name.
-    await userEvent.type(screen.getByRole("textbox", { name: /nom de la bande/i }), "Bande test");
     await userEvent.click(screen.getByRole("button", { name: "Ajouter ce bâtiment et en configurer un autre" }));
 
     await waitFor(() => expect(onboardingApi.submit).toHaveBeenCalledTimes(1));
@@ -72,10 +86,9 @@ describe("OnboardingProtocolPage — true first-time onboarding (is_configured: 
   test("'Continuer sans ajouter d'autre bâtiment' navigates to the Stock step without submitting again", async () => {
     onboardingApi.submit.mockResolvedValue({ data: { house: { houseCode: "H-1", name: "Bâtiment A" } } });
     render(<OnboardingProtocolPage />);
+    await goToManualForm();
 
     await userEvent.click(screen.getByRole("button", { name: /charger le modèle de départ/i }));
-    // Part A: the submit buttons are disabled until the batch has a name.
-    await userEvent.type(screen.getByRole("textbox", { name: /nom de la bande/i }), "Bande test");
     await userEvent.click(screen.getByRole("button", { name: "Ajouter ce bâtiment et en configurer un autre" }));
     await screen.findByText("Bâtiment A");
 
@@ -93,8 +106,9 @@ describe("OnboardingProtocolPage — '+ Nouvelle bande' add-house flow (is_confi
     mockOnboardingContext();
   });
 
-  test("shows 'Créer la bande', not the multi-batch 'add another' button", () => {
+  test("shows 'Créer la bande', not the multi-batch 'add another' button", async () => {
     render(<OnboardingProtocolPage />);
+    await goToManualForm();
     expect(screen.getByRole("button", { name: "Créer la bande" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ajouter ce bâtiment et en configurer un autre" })).not.toBeInTheDocument();
   });
@@ -102,13 +116,46 @@ describe("OnboardingProtocolPage — '+ Nouvelle bande' add-house flow (is_confi
   test("'Créer la bande' submits and returns to the dashboard, not the wizard's next step", async () => {
     onboardingApi.submit.mockResolvedValue({ data: { house: { houseCode: "H-1", name: "Bâtiment A" } } });
     render(<OnboardingProtocolPage />);
+    await goToManualForm({ productionType: "LAYER" });
 
     await userEvent.click(screen.getByRole("button", { name: /charger le modèle de départ/i }));
-    // Part A: the submit buttons are disabled until the batch has a name.
-    await userEvent.type(screen.getByRole("textbox", { name: /nom de la bande/i }), "Bande test");
     await userEvent.click(screen.getByRole("button", { name: "Créer la bande" }));
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/dashboard", { replace: true }));
     expect(navigateMock).not.toHaveBeenCalledWith("/onboarding/stock");
+  });
+
+  // production_type had no UI at all before the header step — onboarding always sent
+  // "BROILER". What the user picks must actually reach the submitted payload.
+  test("submits the protocol type picked in the header step, and the header's own fields", async () => {
+    onboardingApi.submit.mockResolvedValue({ data: { house: { houseCode: "H-1", name: "Bâtiment A" } } });
+    render(<OnboardingProtocolPage />);
+    await goToManualForm({ productionType: "LAYER" });
+
+    await userEvent.click(screen.getByRole("button", { name: /charger le modèle de départ/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Créer la bande" }));
+
+    await waitFor(() => expect(onboardingApi.submit).toHaveBeenCalledTimes(1));
+    expect(onboardingApi.submit.mock.calls[0][0]).toMatchObject({
+      house: { name: "Bâtiment A", maxCapacity: 500 },
+      batch: { name: "Bande test", productionType: "LAYER", initialCount: 500 },
+    });
+  });
+
+  test("stepping back from the choice keeps what was typed in the header step", async () => {
+    render(<OnboardingProtocolPage />);
+
+    await userEvent.type(screen.getByRole("textbox", { name: /nom de la bande/i }), "Bande test");
+    await userEvent.type(screen.getByRole("spinbutton", { name: /poussins mis en place/i }), "500");
+    await userEvent.type(screen.getByRole("textbox", { name: /nom du bâtiment/i }), "Bâtiment A");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /type de protocole/i }), "LAYER");
+    await userEvent.click(screen.getByRole("button", { name: "Suivant" }));
+
+    await userEvent.click(screen.getByRole("button", { name: /Retour/i }));
+
+    expect(screen.getByRole("textbox", { name: /nom de la bande/i })).toHaveValue("Bande test");
+    expect(screen.getByRole("spinbutton", { name: /poussins mis en place/i })).toHaveValue(500);
+    expect(screen.getByRole("textbox", { name: /nom du bâtiment/i })).toHaveValue("Bâtiment A");
+    expect(screen.getByRole("combobox", { name: /type de protocole/i })).toHaveValue("LAYER");
   });
 });
