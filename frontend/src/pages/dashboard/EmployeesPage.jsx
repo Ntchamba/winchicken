@@ -3,6 +3,7 @@ import { Pencil, Trash2, UserPlus, Loader2, FileSpreadsheet, Download } from "lu
 import { employeesApi } from "../../api/endpoints";
 import { getServerErrorMessage } from "../../api/errors";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
+import QuickLinksBar from "../../components/QuickLinksBar";
 
 const ROLES = [
   { value: "FARMER", label: "Fermier" },
@@ -108,6 +109,7 @@ export default function EmployeesPage() {
 
   return (
     <div className="page-wrap">
+      <QuickLinksBar />
       <div className="intro">
         <p>Employés</p>
         <span>Chaque compte créé ici peut se connecter directement avec le mot de passe que vous définissez — sans invitation par email.</span>

@@ -5,13 +5,22 @@ deterministic and computed from data the app already stores — no scoring model
 call. The tiers are the same three the rest of the app already uses: `good` / `watch` /
 `critical`.
 
-ALL TUNABLE THRESHOLDS LIVE IN THIS FILE, in the block below. Change them here and both the
-API and the tree view follow; nothing else hardcodes a number.
+The finance and stock thresholds all live in the block below — change them here and both the
+API and the tree view follow. The santé thresholds are the one exception (see next paragraph).
 
 The santé branch deliberately delegates to `apps.batches.calculations.farm_health_score`
 rather than re-deriving mortality rules: that function is already the documented farm health
 badge (mortality trend, FCR trend, open alerts), and a second, slightly-different health rule
 in a second place is how two screens start disagreeing about the same farm.
+
+So the santé thresholds are NOT in the block below — they live with that function, in
+`apps/batches/calculations.py`:
+
+    MORTALITY_REFERENCE_RANGE = (3, 5)      # mortality trend breach, pro-rata per week
+    FCR_REFERENCE_RANGE       = (2.10, 2.30)  # feed-conversion breach
+
+Tune them there. They are deliberately not copied here — two copies of the same threshold is
+exactly the divergence this delegation avoids.
 """
 from apps.batches.calculations import farm_health_score
 from apps.finance.calculations import cash_on_hand, monthly_summary
@@ -30,9 +39,12 @@ STOCK_EMPTY_QUANTITY = 0
 
 #: Finances. `critical` when the cash position is negative — the farm is spending money it
 #: does not have. `watch` when it is positive but under this floor, or when the most recent
-#: complete month recorded expenses without a single sale. The floor is expressed in the app's
-#: own bare money unit (the UI prints amounts with no currency symbol).
-CASH_WATCH_FLOOR = 100_000
+#: complete month recorded expenses without a single sale.
+#:
+#: The floor is in FCFA. 2 000 000 FCFA is roughly one feed order plus a payroll cycle for a
+#: farm this size — low enough to mean "watch this", high enough that hitting it is a warning
+#: rather than an emergency already in progress.
+CASH_WATCH_FLOOR = 2_000_000
 CASH_CRITICAL_BELOW = 0
 
 #: How many months of history the finance branch summarises.

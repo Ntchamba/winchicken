@@ -1,10 +1,20 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
-import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Loader2 } from "lucide-react";
-import { batchesApi } from "../../api/endpoints";
+import GrowthCurves from "../../components/GrowthCurves";
+import WeighingSection from "../../components/WeighingSection";
+import QuickEntryPanel from "../../components/QuickEntryPanel";
+import ProtocolEditModal from "../../components/ProtocolEditModal";
+import ConfirmDialog from "../../components/ConfirmDialog";
+import TasksNowPanel from "../../components/TasksNowPanel";
+import WeeklyKpiCharts from "../../components/WeeklyKpiCharts";
+import UnusualCaseReportForm from "../../components/UnusualCaseReportForm";
+import CycleTimeline from "../../components/CycleTimeline";
+import IncidentsPanel from "../../components/IncidentsPanel";
+import { batchesApi, housesApi } from "../../api/endpoints";
+import useDocumentTitle from "../../hooks/useDocumentTitle";
 import "../../styles/house-protocol-theme-light.css";
 import "../../styles/dashboard-theme.css";
+import QuickLinksBar from "../../components/QuickLinksBar";
 
 // batch.status is the raw BatchStatus backend enum (ACTIVE/CLOSED) — displayed only
 // through this French label map, never shown raw.
@@ -12,27 +22,45 @@ const BATCH_STATUS_LABELS = { ACTIVE: "En cours", CLOSED: "Clôturée" };
 
 export default function HouseDetailPage() {
   const { houseCode } = useParams();
-  const { houses } = useOutletContext();
+  const { houses, refreshHouses } = useOutletContext();
   const navigate = useNavigate();
   const house = houses.find((h) => h.houseCode === houseCode);
+  useDocumentTitle(house?.name || "Bâtiment");
 
   const [batch, setBatch] = useState(null);
-  const [dailyLogs, setDailyLogs] = useState([]);
   const [weeklyKpi, setWeeklyKpi] = useState(null);
+  const [growthSeries, setGrowthSeries] = useState([]);
+  const [tasksNow, setTasksNow] = useState({ dayOfCycle: null, tasks: [] });
   const [closing, setClosing] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editingProtocol, setEditingProtocol] = useState(false);
 
-  useEffect(() => {
+  const loadBatch = useCallback(() => {
     batchesApi.list(houseCode).then(({ data }) => {
       const results = data.results || data;
       const active = results.find((b) => b.status === "ACTIVE") || results[0];
       setBatch(active || null);
       if (active) {
-        batchesApi.dailyLogs(active.batch_code).then((res) => setDailyLogs(res.data.results || res.data));
         batchesApi.weeklyKpi(active.batch_code).then((res) => setWeeklyKpi(res.data));
       }
     });
   }, [houseCode]);
+
+  const loadGrowthCurve = useCallback(() => {
+    batchesApi.growthCurves({ house_code: houseCode }).then(({ data }) => setGrowthSeries(data));
+  }, [houseCode]);
+
+  const loadTasksNow = useCallback(() => {
+    housesApi.tasksNow(houseCode).then(({ data }) => setTasksNow(data));
+  }, [houseCode]);
+
+  useEffect(() => {
+    loadBatch();
+    loadGrowthCurve();
+    loadTasksNow();
+  }, [loadBatch, loadGrowthCurve, loadTasksNow]);
 
   const handleClose = async () => {
     if (!batch) return;
@@ -46,12 +74,22 @@ export default function HouseDetailPage() {
     }
   };
 
-  const growthData = dailyLogs
-    .filter((log) => log.avg_sample_weight)
-    .map((log) => ({ date: log.log_date, weightKg: log.avg_sample_weight }));
+  const handleDelete = async () => {
+    if (!batch) return;
+    setDeleting(true);
+    try {
+      await batchesApi.remove(batch.batch_code);
+      setConfirmDelete(false);
+      refreshHouses();
+      navigate(0);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="page-wrap">
+      <QuickLinksBar />
       <div className="breadcrumb">
         Tableau de bord / <strong>{house?.name || houseCode}</strong>
         {houses.length > 1 && (
@@ -79,11 +117,20 @@ export default function HouseDetailPage() {
               </p>
             )}
           </div>
+          {/* Three-way severity scale — see .batch-action* in house-protocol-theme-light.css.
+              Neutral (mint outline) / caution (amber) / destructive (solid red). */}
           <div style={{ display: "flex", gap: 10 }}>
-            <button className="add-button" onClick={() => navigate(`/dashboard/houses/${houseCode}/protocol`)}>Modifier le protocole</button>
+            <button className="batch-action batch-action--edit" onClick={() => setEditingProtocol(true)}>
+              Modifier le protocole
+            </button>
             {batch?.status === "ACTIVE" && (
-              <button className="delete-button" style={{ width: "auto", padding: "0 16px" }} onClick={() => setConfirmClose(true)}>
+              <button className="batch-action batch-action--close" onClick={() => setConfirmClose(true)}>
                 Clôturer la bande
+              </button>
+            )}
+            {batch && (
+              <button className="batch-action batch-action--delete" onClick={() => setConfirmDelete(true)}>
+                Supprimer la bande
               </button>
             )}
           </div>
@@ -91,72 +138,61 @@ export default function HouseDetailPage() {
       </div>
 
       {confirmClose && (
-        <div className="card schedule-card" style={{ marginBottom: 18, borderColor: "var(--danger)" }}>
-          <p style={{ margin: "0 0 12px", fontSize: 14 }}>
-            Clôturer cette bande est définitif et génère le rapport financier de clôture. Continuer ?
-          </p>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button className="save-button" onClick={handleClose} disabled={closing}>
-              {closing ? <Loader2 size={16} className="spin" /> : "Confirmer la clôture"}
-            </button>
-            <button className="add-button" onClick={() => setConfirmClose(false)}>Annuler</button>
-          </div>
-        </div>
+        <ConfirmDialog
+          message="Clôturer cette bande est définitif et génère le rapport financier de clôture. Continuer ?"
+          confirmLabel="Confirmer la clôture"
+          onConfirm={handleClose}
+          onCancel={() => setConfirmClose(false)}
+          busy={closing}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          message="Supprimer cette bande est définitif et supprime aussi tout son historique lié : journaux quotidiens, alertes, cas signalés, vaccinations, mouvements de stock, dépenses et ventes. Continuer ?"
+          confirmLabel="Supprimer définitivement"
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDelete(false)}
+          busy={deleting}
+        />
       )}
 
       {!batch && <p className="empty-state">Ce bâtiment n'a pas encore de bande.</p>}
 
+      <IncidentsPanel houseCode={houseCode} />
+
       {batch && (
         <>
-          <div className="section-row"><h2>Courbe de croissance</h2></div>
-          <div className="card schedule-card" style={{ marginBottom: 18, height: 260 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={growthData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
-                <XAxis dataKey="date" fontSize={11} stroke="var(--muted)" />
-                <YAxis fontSize={11} stroke="var(--muted)" />
-                <Tooltip />
-                <Line type="monotone" dataKey="weightKg" stroke="var(--mint-fill)" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+          <CycleTimeline houseCode={houseCode} />
+
+          <GrowthCurves series={growthSeries} scope="single" />
+
+          <div className="section-row"><h2>Pesée</h2></div>
+          <WeighingSection batches={[{ batchCode: batch.batch_code, name: batch.name }]} onLogged={loadGrowthCurve} />
+
+          <div className="section-row"><h2>Tâches à effectuer maintenant</h2></div>
+          <TasksNowPanel tasksNow={tasksNow} houseCode={houseCode} onAssigned={loadTasksNow} />
+
+          <div className="section-row"><h2>Saisie rapide du jour</h2></div>
+          <QuickEntryPanel batches={[{ batch_code: batch.batch_code, name: batch.name }]} onLogged={loadGrowthCurve} />
+          <div style={{ marginBottom: 18 }}>
+            <UnusualCaseReportForm batchCode={batch.batch_code} />
           </div>
 
-          {weeklyKpi && (
-            <>
-              <div className="section-row"><h2>Tendance de l'indice de consommation</h2></div>
-              <div className="card schedule-card" style={{ marginBottom: 18, height: 240 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weeklyKpi.weeks}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
-                    <XAxis dataKey="week" fontSize={11} stroke="var(--muted)" />
-                    <YAxis fontSize={11} stroke="var(--muted)" domain={[1.5, 2.8]} />
-                    <ReferenceArea y1={weeklyKpi.referenceRange.feedConversionRatio[0]} y2={weeklyKpi.referenceRange.feedConversionRatio[1]} fill="var(--mint-soft)" fillOpacity={0.5} />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="feedConversionRatio" stroke="var(--mint)" strokeWidth={2} dot />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="section-row"><h2>Mortalité hebdomadaire</h2></div>
-              <div className="card schedule-card" style={{ marginBottom: 18, height: 220 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={weeklyKpi.weeks}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
-                    <XAxis dataKey="week" fontSize={11} stroke="var(--muted)" />
-                    <YAxis fontSize={11} stroke="var(--muted)" />
-                    <Tooltip />
-                    <Bar dataKey="mortalityPct" radius={[4, 4, 0, 0]}>
-                      {weeklyKpi.weeks.map((w, i) => (
-                        <Cell key={i} fill={w.mortalityPct > 5 / (weeklyKpi.weeks.length || 1) ? "var(--danger)" : "var(--mint-fill)"} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </>
-          )}
+          {weeklyKpi && <WeeklyKpiCharts weeklyKpi={weeklyKpi} />}
         </>
       )}
+
+      <ProtocolEditModal
+        houseCode={editingProtocol ? houseCode : null}
+        onClose={() => setEditingProtocol(false)}
+        onSaved={() => {
+          loadBatch();
+          loadTasksNow();
+          loadGrowthCurve();
+          refreshHouses();
+        }}
+      />
     </div>
   );
 }

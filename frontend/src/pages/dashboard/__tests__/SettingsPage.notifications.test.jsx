@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import SettingsPage from "../SettingsPage";
 import useWebPush from "../../../hooks/useWebPush";
@@ -28,14 +29,14 @@ describe("SettingsPage — notifications bureau", () => {
   test("does not request permission on mount", () => {
     const enable = vi.fn();
     useWebPush.mockReturnValue({ ...base, enable });
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     expect(enable).not.toHaveBeenCalled();
   });
 
   test("'default' shows an actionable button that calls enable() on click", async () => {
     const enable = vi.fn();
     useWebPush.mockReturnValue({ ...base, permission: "default", enable });
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     const btn = screen.getByRole("button", { name: "Activer les notifications" });
     await userEvent.click(btn);
     expect(enable).toHaveBeenCalledTimes(1);
@@ -43,14 +44,14 @@ describe("SettingsPage — notifications bureau", () => {
 
   test("'granted' shows the success state and no opt-in button", () => {
     useWebPush.mockReturnValue({ ...base, permission: "granted" });
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     expect(screen.getByText(/Notifications activées/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Activer les notifications" })).toBeNull();
   });
 
   test("'denied' explains how to unblock via browser settings", () => {
     useWebPush.mockReturnValue({ ...base, permission: "denied" });
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     expect(screen.getByText("Notifications bloquées par le navigateur")).toBeInTheDocument();
     expect(screen.getByText(/l'icône du site à gauche de la barre d'adresse/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Activer les notifications" })).toBeNull();

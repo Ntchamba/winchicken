@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import EmployeesPage from "../EmployeesPage";
 import { employeesApi } from "../../../api/endpoints";
@@ -36,7 +37,7 @@ describe("EmployeesPage — Excel import", () => {
       },
     });
 
-    const { container } = render(<EmployeesPage />);
+    const { container } = render(<MemoryRouter><EmployeesPage /></MemoryRouter>);
     await waitFor(() => expect(employeesApi.list).toHaveBeenCalled());
 
     await userEvent.upload(container.querySelector('input[type="file"]'), new File(["x"], "employes.xlsx"));
@@ -56,7 +57,7 @@ describe("EmployeesPage — Excel import", () => {
       isAxiosError: true,
       response: { data: { detail: "En-têtes de colonnes introuvables : « Email »." } },
     });
-    const { container } = render(<EmployeesPage />);
+    const { container } = render(<MemoryRouter><EmployeesPage /></MemoryRouter>);
     await waitFor(() => expect(employeesApi.list).toHaveBeenCalled());
     await userEvent.upload(container.querySelector('input[type="file"]'), new File(["x"], "bad.xlsx"));
     expect(await screen.findByText(/En-têtes de colonnes introuvables/)).toBeInTheDocument();

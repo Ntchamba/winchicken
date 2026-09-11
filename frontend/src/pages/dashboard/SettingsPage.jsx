@@ -5,6 +5,7 @@ import useDocumentTitle from "../../hooks/useDocumentTitle";
 import useWebPush from "../../hooks/useWebPush";
 import FactoryResetModal from "../../components/FactoryResetModal";
 import "../../styles/dashboard-theme.css";
+import QuickLinksBar from "../../components/QuickLinksBar";
 
 // user.role from GET /api/auth/me/ is the raw backend enum — displayed only through
 // this French label map, never shown raw.
@@ -21,6 +22,7 @@ export default function SettingsPage() {
 
   return (
     <div className="page-wrap">
+      <QuickLinksBar />
       <div className="brand-row">
         <span className="brand-mark"><Settings size={20} strokeWidth={1.8} /></span>
         <div>

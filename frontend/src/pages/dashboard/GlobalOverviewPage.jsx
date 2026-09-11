@@ -4,6 +4,7 @@ import { Coins, HeartPulse, Package } from "lucide-react";
 import { farmApi } from "../../api/endpoints";
 import QuickLinksBar from "../../components/QuickLinksBar";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
+import { formatMoney } from "../../utils/money";
 import "./global-overview.css";
 
 // Each branch: where it goes, and how it is labelled. The *status* never comes from here —
@@ -17,7 +18,7 @@ const BRANCHES = [
 const TIER_WORD = { good: "Bon", watch: "À surveiller", critical: "Critique" };
 
 function formatValue(branch) {
-  if (branch.key === "finance") return Number(branch.value || 0).toLocaleString();
+  if (branch.key === "finance") return formatMoney(branch.value);
   return String(branch.value ?? "");
 }
 
@@ -41,21 +42,30 @@ export default function GlobalOverviewPage() {
       .catch(() => setError("Impossible de charger le bilan global."));
   }, []);
 
-  if (error) return <p className="empty-state">{error}</p>;
-  if (!overview) return <p className="empty-state">Chargement du bilan…</p>;
-
-  const { core, branches } = overview;
-
-  return (
-    <div className="overview-page">
+  // The heading and the shortcuts render before the data does, on purpose: leaving the user
+  // on a bare "Chargement…" with no way to navigate is worse than an empty tree for a moment.
+  const header = (
+    <>
       <div className="section-heading">
         <div>
           <p className="section-kicker">VUE D'ENSEMBLE</p>
           <h1>Bilan global</h1>
         </div>
       </div>
-
       <QuickLinksBar />
+    </>
+  );
+
+  if (error) return <div className="overview-page">{header}<p className="empty-state">{error}</p></div>;
+  if (!overview) {
+    return <div className="overview-page">{header}<p className="empty-state">Chargement du bilan…</p></div>;
+  }
+
+  const { core, branches } = overview;
+
+  return (
+    <div className="overview-page">
+      {header}
 
       <div className="tree">
         <div className={`tree-core tree-core--${core.tier}`} role="status">
