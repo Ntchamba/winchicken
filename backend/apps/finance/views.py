@@ -1,7 +1,6 @@
-from datetime import date
-
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import generics, serializers, status
 from rest_framework.permissions import IsAuthenticated
@@ -343,7 +342,7 @@ class SalaryCalculateView(APIView):
     permission_classes = [IsAdminOrFarmManager]
 
     def post(self, request):
-        today = date.today()
+        today = timezone.localdate()
         try:
             month = int(request.data.get('month', today.month))
             year = int(request.data.get('year', today.year))
@@ -370,7 +369,7 @@ class SalaryPaymentPayView(APIView):
 
         with transaction.atomic():
             payment.status = SalaryPaymentStatus.PAID
-            payment.paid_date = date.today()
+            payment.paid_date = timezone.localdate()
             payment.save(update_fields=['status', 'paid_date'])
             Expense.objects.create(
                 farm=request.user.farm, category=ExpenseCategory.LABOR, amount=payment.amount,

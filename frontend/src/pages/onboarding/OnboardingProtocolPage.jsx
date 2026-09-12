@@ -7,6 +7,7 @@ import BatchExcelImportScreen from "../../components/onboarding/BatchExcelImport
 import { onboardingApi } from "../../api/endpoints";
 import { useAuth } from "../../context/AuthContext";
 import { useOnboarding } from "../../context/OnboardingContext";
+import { todayISO } from "../../utils/localDate";
 
 function buildOnboardingRequest(payload, productionType) {
   return {
@@ -20,7 +21,7 @@ function buildOnboardingRequest(payload, productionType) {
       // hardcoded "BROILER" because no screen ever asked.
       productionType: productionType || "BROILER",
       initialCount: payload.house.chicksPlaced,
-      startDate: new Date().toISOString().slice(0, 10),
+      startDate: todayISO(),
       growthCycleValue: payload.house.growthCycle,
       growthCycleUnit: payload.house.growthCycleUnit.toUpperCase(),
       weighingFrequency: payload.weighingFrequency,

@@ -214,7 +214,7 @@ def compute_cycle_milestones(house):
     if not batch:
         return None, None, []
 
-    day_of_cycle = (timezone.now().date() - batch.start_date).days
+    day_of_cycle = (timezone.localdate() - batch.start_date).days
     milestones = []
     for line in ProtocolTemplate.objects.filter(house=house).select_related('category'):
         from_day = to_days(line.from_value, line.from_unit)

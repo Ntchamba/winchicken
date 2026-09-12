@@ -100,7 +100,7 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
                     item=instance.item,
                     movement_type=MovementType.IN,
                     quantity=instance.quantity,
-                    movement_date=timezone.now().date(),  # actual receiving date, not order_date
+                    movement_date=timezone.localdate(),  # actual receiving date, not order_date
                     supplier=instance.supplier,
                     supplier_batch_number=supplier_batch_number,
                 )

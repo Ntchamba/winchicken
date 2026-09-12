@@ -4,9 +4,10 @@ import { stockApi } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 import { compositionByOutput } from "../utils/compositions";
 import UnitField from "./UnitField";
+import { todayISO } from "../utils/localDate";
 
 const CAN_MANAGE = new Set(["ADMIN", "FARM_MANAGER", "FARMER"]);
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayISO();
 const emptyDraft = () => ({ quantity: "", unit: "", date: today(), note: "", totalPrice: "", priceTouched: false, deductIngredients: true });
 
 /**

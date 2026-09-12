@@ -5,12 +5,13 @@ import StockParametersForm from "./StockParametersForm";
 import { stockApi } from "../api/endpoints";
 import { getServerErrorMessage } from "../api/errors";
 import "../styles/protocol-edit-modal.css";
+import { todayISO as localTodayISO } from "../utils/localDate";
 
 const EASE_EXPO = [0.16, 1, 0.3, 1];
 const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
 let localRowId = 5000;
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => localTodayISO();
 
 // Flat StockItemSerializer list -> `{ [categoryId]: [row] }` in the shape StockParametersForm
 // wants. Rows for a category with no items still get an entry so the tab renders empty.

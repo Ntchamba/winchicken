@@ -5,6 +5,7 @@ import ReceiptModal from "../../components/ReceiptModal";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import { formatMoney } from "../../utils/money";
 import QuickLinksBar from "../../components/QuickLinksBar";
+import { todayISO } from "../../utils/localDate";
 
 const PRODUCT_TYPES = [
   { value: "BIRD", label: "Volaille" },
@@ -43,7 +44,7 @@ export default function CashierPage() {
 
   const total = (Number(form.quantity) || 0) * (Number(form.unitPrice) || 0);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   const todaySales = sales.filter((s) => s.sale_date === today);
   // Every Sale row already recorded today by any cashier (financeApi.sales() is farm-scoped,
   // not filtered by the logged-in cashier) — "Ventes du jour" is deliberately farm-wide, not

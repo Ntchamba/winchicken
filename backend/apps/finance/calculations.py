@@ -7,6 +7,7 @@ from collections import OrderedDict
 from datetime import date, timedelta
 
 from dateutil.relativedelta import relativedelta
+from django.utils import timezone
 
 from apps.finance.models import Expense, ExpenseCategory, OrderStatus, ProductType, PurchaseOrder, Sale
 from apps.stock.models import ItemCategory
@@ -16,7 +17,7 @@ def _month_range(range_param):
     """List of month-start `date`s for the requested window: 6 months for '6m' (default,
     anything other than '1y'), 12 months for '1y' — always ending with the current month."""
     months_count = 12 if range_param == '1y' else 6
-    today = date.today()
+    today = timezone.localdate()
     start_month = today.replace(day=1) - relativedelta(months=months_count - 1)
     return [start_month + relativedelta(months=i) for i in range(months_count)]
 
@@ -28,7 +29,7 @@ def _month_range(range_param):
 def _bucket_starts(period):
     """`([bucket_start_date, ...], unit)` for the requested period — 8 weeks, 12 months (default)
     or 5 years, always ending with the current bucket."""
-    today = date.today()
+    today = timezone.localdate()
     if period == 'week':
         this_week_start = today - timedelta(days=today.weekday())
         start = this_week_start - timedelta(weeks=7)

@@ -159,7 +159,7 @@ class OnboardingView(APIView):
                 from django.utils.dateparse import parse_date
                 from django.utils import timezone
 
-                start_date = parse_date(batch_data.get('startDate', '')) or timezone.now().date()
+                start_date = parse_date(batch_data.get('startDate', '')) or timezone.localdate()
                 cycle_value = int(batch_data.get('growthCycleValue', 0) or 0)
                 cycle_unit = batch_data.get('growthCycleUnit', 'DAY')
                 planned_end_date = (
@@ -216,7 +216,7 @@ class ScheduleView(APIView):
             if month_param:
                 year, month = (int(part) for part in month_param.split('-', 1))
             else:
-                today = date.today()
+                today = timezone.localdate()
                 year, month = today.year, today.month
             start = date(year, month, 1)
         except ValueError:

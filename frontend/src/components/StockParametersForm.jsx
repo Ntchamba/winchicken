@@ -8,6 +8,7 @@ import { getServerErrorMessage } from "../api/errors";
 import UnitField from "./UnitField";
 import { compositionByOutput } from "../utils/compositions";
 import "../styles/house-protocol-theme-light.css";
+import { todayISO as localTodayISO } from "../utils/localDate";
 
 // Curated icon picker for custom stock categories — kept in sync by hand with the backend's
 // STOCK_CATEGORY_ICON_CHOICES (apps/stock/models.py). The four defaults' icons are a subset.
@@ -34,7 +35,7 @@ const FEED_STAGE_OPTIONS = [
 ];
 
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => localTodayISO();
 
 // Suggested article types for the free-text "Détail" combobox on non-feed/non-vet categories.
 // The user may type anything; these just prime the datalist. They also steer which finance

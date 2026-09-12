@@ -124,7 +124,7 @@ def execute_composition(composition, ingredient_rows, output_quantity, *, force=
     if shortfalls and not force:
         return {'status': 'insufficient_stock', 'shortfalls': shortfalls, 'http_status': 200}
 
-    today = timezone.now().date()
+    today = timezone.localdate()
     created = []
     with transaction.atomic():
         for ing in composition.ingredients.select_related('item'):
