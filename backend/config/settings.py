@@ -86,18 +86,22 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = 'fr'
-TIME_ZONE = 'UTC'
+
+# Wall-clock timezone the farm physically operates in — and, since 2026-09-12, the timezone the
+# whole app runs on. Default Africa/Douala (WAT, UTC+1): this deployment's default currency is
+# XAF (Central/West Africa). Override per deployment with the FARM_TIME_ZONE env var if the farm
+# is elsewhere — a wrong value here silently mis-dates every entry and sends reminders an hour
+# or more off.
+#
+# `TIME_ZONE` follows it instead of being set independently, so the app has exactly one timezone
+# concept. It was hardcoded 'UTC' until 2026-09-12, which mis-dated everything recorded between
+# local midnight and 01:00 (UTC was still on the previous day) and held a fresh batch at
+# "Jour 0" for that hour. `USE_TZ` stays True: instants are still stored in UTC, they are just
+# rendered — and bucketed into days — in farm-local time.
+FARM_TIME_ZONE = config('FARM_TIME_ZONE', default='Africa/Douala')
+TIME_ZONE = FARM_TIME_ZONE
 USE_I18N = True
 USE_TZ = True
-
-# Wall-clock timezone the farm physically operates in. `TIME_ZONE` above stays 'UTC' (all
-# timestamps are stored/served in UTC); this is used ONLY to interpret user-entered wall-clock
-# values — currently `AlertRule.trigger_time` — against "now" when firing scheduled task
-# reminders (apps.alerts.services.fire_scheduled_alerts). Default Africa/Douala (WAT, UTC+1):
-# this deployment's default currency is XAF (Central/West Africa). Override per deployment with
-# the FARM_TIME_ZONE env var if the farm is elsewhere — a wrong value here silently sends
-# reminders an hour or more off.
-FARM_TIME_ZONE = config('FARM_TIME_ZONE', default='Africa/Douala')
 
 STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -188,6 +192,10 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TASK_TRACK_STARTED = True
+# Beat resolves crontab schedules in this timezone. The only current entry is `crontab()` (every
+# minute), which is timezone-insensitive — this is here so the first hour-specific schedule
+# someone adds is not silently an hour off. Instants stay UTC on the wire (`enable_utc` default).
+CELERY_TIMEZONE = FARM_TIME_ZONE
 
 # SMS provider — never hardcoded, always from env
 SMS_PROVIDER = config('SMS_PROVIDER', default='console')
