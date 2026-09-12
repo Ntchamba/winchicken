@@ -1,5 +1,7 @@
-/* "Marquer comme fait" — the control a worker taps on a phone all day, so every target here
-   is at least 44px, matching the app-wide standard. */
+/* "Marquer comme fait" — the control a worker taps on a phone all day, so every *tap target*
+   here is at least 44px, matching the app-wide standard. `.task-done-badge` is the one
+   exception at 36px: it is a status indicator, not something you tap, and padding it out to
+   44px would bloat every completed row in the list. */
 
 .task-complete {
   display: flex;

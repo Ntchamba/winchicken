@@ -26,11 +26,22 @@ export default function TaskCompleteButton({ houseCode, taskId, done, completedB
   const [error, setError] = useState("");
   const [shortfall, setShortfall] = useState(null);
 
+  /**
+   * Runs one action with the busy/error bookkeeping. `fn` may return `{ halted: true }` for an
+   * outcome that is neither success nor failure — today only the shortfall confirmation, which
+   * has just opened its own panel and must keep it.
+   *
+   * A halt must never reach the catch. `getServerErrorMessage` reads a missing `err.response`
+   * as "the request never got to the server", so signalling the shortfall by throwing made a
+   * 200 render as "Le serveur est inaccessible" underneath the panel — the exact ambiguity
+   * api/errors.js exists to remove, and the one that hid the Part B outage.
+   */
   const run = async (fn) => {
     setBusy(true);
     setError("");
     try {
-      await fn();
+      const result = await fn();
+      if (result?.halted) return;
       setShortfall(null);
       onChanged?.();
     } catch (err) {
@@ -44,11 +55,19 @@ export default function TaskCompleteButton({ houseCode, taskId, done, completedB
     const { data } = await tasksApi.complete(houseCode, taskId, { force });
     if (data.status === "insufficient_stock") {
       setShortfall(data.shortfall);
-      throw new Error("__shortfall__");  // keeps the catch from clearing it
+      return { halted: true };
     }
-  }).catch(() => {});
+    return null;
+  });
 
   const undo = () => run(() => tasksApi.uncomplete(houseCode, taskId));
+
+  // Clears the error as well as the panel: whatever it said belonged to the attempt the user
+  // is walking away from, and a stale line under a dismissed panel reads as a fresh failure.
+  const dismissShortfall = () => {
+    setShortfall(null);
+    setError("");
+  };
 
   if (done) {
     return (
@@ -80,7 +99,7 @@ export default function TaskCompleteButton({ houseCode, taskId, done, completedB
             {shortfall.needed} {shortfall.unit}, il en reste {shortfall.onHand} {shortfall.unit}.
           </p>
           <div className="task-shortfall-actions">
-            <button type="button" className="task-undo-button" onClick={() => setShortfall(null)} disabled={busy}>
+            <button type="button" className="task-undo-button" onClick={dismissShortfall} disabled={busy}>
               Annuler
             </button>
             <button type="button" className="task-done-button" onClick={() => complete(true)} disabled={busy}>
