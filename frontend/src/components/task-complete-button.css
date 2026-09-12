@@ -1,0 +1,102 @@
+/* "Marquer comme fait" — the control a worker taps on a phone all day, so every target here
+   is at least 44px, matching the app-wide standard. */
+
+.task-complete {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.task-done-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 11px 18px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--mint-fill, #17b892);
+  color: #082019;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter .18s ease, transform .18s ease;
+}
+
+.task-done-button:hover:not(:disabled) {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+
+.task-done-button:disabled { opacity: .65; cursor: wait; }
+
+.task-undo-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 11px 16px;
+  border: 1px solid rgba(13, 49, 41, .14);
+  border-radius: 12px;
+  background: #fff;
+  color: #53696d;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.task-undo-button:hover:not(:disabled) { border-color: #9bb0ad; color: #10242c; }
+.task-undo-button:disabled { opacity: .65; cursor: wait; }
+
+/* Done state: the row stays in the list and reads as finished. */
+.task-done-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: #d7f5ec;
+  color: #0b5137;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.task-shortfall {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(185, 121, 12, .35);
+  border-radius: 12px;
+  background: #fdf3d7;
+  color: #7a5a10;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.task-shortfall p { margin: 0 0 10px; }
+
+.task-shortfall-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.task-complete-error { margin: 0; font-size: 12.5px; }
+
+/* A completed row is de-emphasised without being hidden — the worker still needs to see
+   what they finished today. */
+.task-row--done .alert-text p:first-child,
+.task-row--done .task-title {
+  text-decoration: line-through;
+  text-decoration-color: rgba(13, 49, 41, .35);
+}
+
+.task-row--done { opacity: .78; }
+
+@media (max-width: 480px) {
+  .task-done-button,
+  .task-undo-button { width: 100%; }
+  .task-shortfall-actions > * { flex: 1; }
+}

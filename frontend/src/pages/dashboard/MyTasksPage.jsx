@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ClipboardCheck } from "lucide-react";
 import { iconFor } from "../../components/HouseProtocolForm";
 import { tasksApi } from "../../api/endpoints";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import "../../styles/dashboard-theme.css";
 import QuickLinksBar from "../../components/QuickLinksBar";
+import TaskCompleteButton from "../../components/TaskCompleteButton";
 
 /**
  * "Mes tâches" (2026-08-26, docs/deviations.md Part 15, Part E) — every task assigned to the
@@ -13,14 +14,20 @@ import QuickLinksBar from "../../components/QuickLinksBar";
  * computation `TasksNowPanel` shows per-house, never a separate copy). Read-only: reassigning
  * happens from the per-house panel (`TasksNowPanel`), which is where the role check for who
  * *can* assign already lives.
+ *
+ * Completing, however, belongs here: this is the screen a worker actually has open while
+ * doing the round. A finished task stays in the list, struck through and marked "Fait", so
+ * they can see what is already done today rather than watching rows disappear.
  */
 export default function MyTasksPage() {
   useDocumentTitle("Mes tâches");
   const [tasks, setTasks] = useState(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     tasksApi.mine().then(({ data }) => setTasks(data));
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   return (
     <div className="page-wrap">
@@ -43,7 +50,10 @@ export default function MyTasksPage() {
             {tasks.map((task) => {
               const Icon = iconFor(task.icon);
               return (
-                <div key={`${task.houseCode}-${task.id}`} className="alert-item info">
+                <div
+                  key={`${task.houseCode}-${task.id}`}
+                  className={`alert-item info${task.done ? " task-row--done" : ""}`}
+                >
                   <span className="alert-icon info"><Icon size={15} strokeWidth={1.8} /></span>
                   <div className="alert-text">
                     <p style={{ fontWeight: 600 }}>{task.category} — {task.what}</p>
@@ -56,6 +66,17 @@ export default function MyTasksPage() {
                           ? `Jour ${task.periodDay} sur ${task.periodLength}`
                           : `Jour ${task.periodDay} (jusqu'à la fin du cycle)`}
                     </span>
+                    {task.completable && (
+                      <div style={{ marginTop: 10 }}>
+                        <TaskCompleteButton
+                          houseCode={task.houseCode}
+                          taskId={task.id}
+                          done={task.done}
+                          completedByName={task.completedByName}
+                          onChanged={load}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               );

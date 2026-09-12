@@ -72,6 +72,14 @@ export const tasksApi = {
   mine: () => client.get("/tasks/mine/"),
   upcoming: () => client.get("/tasks/upcoming/"),
   assignableUsers: () => client.get("/tasks/assignable-users/"),
+  // "Marquer comme fait" — records the completion and, when the protocol line links a
+  // resource, deducts it. Without `force`, an insufficient stock level comes back as
+  // {status: 'insufficient_stock', shortfall} and nothing is written; the caller confirms and
+  // re-posts with force. See apps/stock/consumption.py.
+  complete: (houseCode, taskId, { force = false } = {}) =>
+    client.post(`/houses/${houseCode}/tasks-now/${taskId}/complete/`, force ? { force: true } : {}),
+  uncomplete: (houseCode, taskId) =>
+    client.post(`/houses/${houseCode}/tasks-now/${taskId}/uncomplete/`, {}),
 };
 
 export const auditLogApi = {
