@@ -76,3 +76,39 @@ def complete_task_occurrence(line, batch, *, when=None, time_slot=None, user=Non
             completion.save(update_fields=['stock_movement'])
 
     return {'completion': completion, 'movement': movement, 'already_done': False}
+
+
+def uncomplete_task_occurrence(line, batch, *, when=None, time_slot=None):
+    """Undo one validated occurrence — for the worker who tapped the wrong row.
+
+    Deletes the `TaskCompletion` and the `OUT` `StockMovement` it created, which puts the
+    quantity back (`current_quantity` is `sum(IN) - sum(OUT)`, computed at read time). The
+    movement is deleted rather than offset with a compensating `IN`: this retracts an entry
+    that should never have existed, and a mis-tap followed by an undo should not leave two
+    rows in the article's movement history for every correction.
+
+    Returns `{'undone': bool, 'restored': <quantity or None>}`. Undoing something that was
+    never completed is a no-op, not an error — the two clients can race on a double-tap.
+    """
+    from apps.protocols.models import TaskCompletion
+
+    now = when or timezone.now()
+    day = now.date()
+
+    with transaction.atomic():
+        # No select_related on `stock_movement` here: it is a nullable FK, so it joins as a
+        # LEFT OUTER JOIN and Postgres refuses FOR UPDATE across one. The movement is fetched
+        # on access instead — one extra query on an action that happens once per undo.
+        completion = TaskCompletion.objects.select_for_update().filter(
+            protocol_template=line, batch=batch, date=day, time_slot=time_slot,
+        ).first()
+        if completion is None:
+            return {'undone': False, 'restored': None}
+
+        movement = completion.stock_movement
+        restored = movement.quantity if movement else None
+        completion.delete()
+        if movement is not None:
+            movement.delete()
+
+    return {'undone': True, 'restored': restored}
