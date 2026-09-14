@@ -1,10 +1,16 @@
 from django.contrib.auth.password_validation import validate_password
+from django.core import signing
 from django.db import transaction
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from apps.core.models import ContactMessage, Farm, User, UserRole, create_role_profile
+from apps.core.models import AuditLogEntry, Civility, ContactMessage, Farm, User, UserRole, create_role_profile
 from apps.core.services import is_farm_configured
+
+# Namespaced salt + short TTL for the pre-login reset step-up token (see PreLoginResetRequestSerializer).
+# `django.core.signing` is HMAC-SHA256 over SECRET_KEY — no DB row, no session, self-expiring.
+PRELOGIN_RESET_SALT = 'apps.core.prelogin-farm-reset'
+PRELOGIN_RESET_MAX_AGE = 300  # seconds — the visitor must get through both steps inside 5 minutes
 
 
 class FarmCreateSerializer(serializers.Serializer):
@@ -15,6 +21,7 @@ class FarmCreateSerializer(serializers.Serializer):
     """
 
     admin_name = serializers.CharField(max_length=255, help_text='Full name of the administrator account being created.')
+    civility = serializers.ChoiceField(choices=Civility.choices, help_text='Monsieur / Madame — used to personalize task-reminder SMS.')
     email = serializers.EmailField(help_text='Login email for the new administrator; must be unique across all users.')
     password = serializers.CharField(write_only=True, help_text='Minimum 8 characters (Django AUTH_PASSWORD_VALIDATORS).')
     farm_name = serializers.CharField(max_length=255, help_text='Display name for the farm (Farm.name).')
@@ -35,6 +42,7 @@ class FarmCreateSerializer(serializers.Serializer):
                 email=validated_data['email'],
                 password=validated_data['password'],
                 name=validated_data['admin_name'],
+                civility=validated_data['civility'],
                 role=UserRole.ADMIN,
                 farm=farm,
             )
@@ -56,8 +64,12 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'name', 'email', 'phone', 'role', 'password', 'is_active']
-        read_only_fields = ['id']
+        fields = ['id', 'name', 'civility', 'email', 'phone', 'role', 'password', 'is_active', 'hourly_rate']
+        # hourly_rate is read-only here — it's edited through the dedicated
+        # EmployeeHourlyRateView (2026-08-27, Salaires module Part D), not this general-purpose
+        # create/update endpoint, so a PUT here never accidentally clobbers a payroll rate.
+        read_only_fields = ['id', 'hourly_rate']
+        extra_kwargs = {'civility': {'required': True}}
 
     def validate_role(self, value):
         if value == UserRole.ADMIN:
@@ -88,6 +100,18 @@ class EmployeeSerializer(serializers.ModelSerializer):
             instance.set_password(password)
         instance.save()
         return instance
+
+
+class EmployeePayrollSerializer(serializers.ModelSerializer):
+    """GET /api/employees/payroll/ response (2026-08-27, Salaires module Part D) — the narrow
+    id/name/hourly_rate read backing SalairesSection.jsx's rate-editing list for Farm Manager,
+    who has no access to the full EmployeeSerializer-backed /api/employees/ endpoint. Read-only:
+    edits go through EmployeeHourlyRateView's PATCH, not this serializer."""
+
+    class Meta:
+        model = User
+        fields = ['id', 'name', 'hourly_rate']
+        read_only_fields = fields
 
 
 class MeSerializer(serializers.ModelSerializer):
@@ -125,6 +149,96 @@ class WinchickenTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['is_configured'] = is_farm_configured(self.user.farm) if self.user.farm_id else False
         data['role'] = self.user.role
         return data
+
+
+class FarmResetSerializer(serializers.Serializer):
+    """POST /api/farm/reset/ payload — the re-authentication step of the factory-reset flow.
+
+    `password` is checked against the *authenticated* caller's own hash (`request.user`, from
+    `context['request']`, never a user id/email in the payload) — re-entering someone else's
+    password isn't a thing this endpoint could even be tricked into checking.
+    """
+
+    password = serializers.CharField(write_only=True, help_text='The current Administrateur\'s own password, re-entered.')
+
+    def validate_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError('Mot de passe incorrect.')
+        return value
+
+
+class PreLoginResetRequestSerializer(serializers.Serializer):
+    """POST /api/farm/reset/request/ payload — step 1 of the *unauthenticated* factory-reset
+    flow reachable from `/login` (distinct from `FarmResetSerializer`, which needs a live
+    session). Verifies the supplied email + password belong to a real `UserRole.ADMIN` account
+    on the single farm, and hands back a short-lived signed token (not a login session) that
+    step 2 (`PreLoginResetConfirmSerializer`) exchanges for the actual wipe.
+
+    Every failure — unknown email, wrong password, valid credentials for a non-Administrateur —
+    raises the exact same `'invalid'` error, so an unauthenticated visitor learns nothing about
+    which accounts exist or what role they hold. The dummy `set_password` on the unknown-email
+    path keeps response timing from leaking existence either (mirrors Django's own
+    `ModelBackend.authenticate`).
+    """
+
+    email = serializers.EmailField(write_only=True)
+    password = serializers.CharField(write_only=True)
+
+    default_error_messages = {'invalid': 'Identifiants invalides.'}
+
+    def validate(self, attrs):
+        user = User.objects.select_related('farm').filter(email__iexact=attrs['email']).first()
+        if user is not None and user.check_password(attrs['password']) \
+                and user.role == UserRole.ADMIN and user.farm_id is not None:
+            attrs['user'] = user
+            return attrs
+        if user is None:
+            User().set_password(attrs['password'])  # equalize timing for the unknown-email path
+        self.fail('invalid')
+
+    def build_token(self):
+        return signing.dumps({'uid': self.validated_data['user'].id}, salt=PRELOGIN_RESET_SALT)
+
+
+class PreLoginResetConfirmSerializer(serializers.Serializer):
+    """POST /api/farm/reset/confirm/ payload — step 2 of the unauthenticated flow. Re-opens the
+    token from step 1 (rejecting a tampered, foreign-salt, or >5-min-old token), re-checks the
+    account is still an existing `UserRole.ADMIN`, and requires the exact `Farm.name` typed back
+    — the same "prove it, twice" bar as the in-dashboard `FactoryResetModal`, minus the
+    password (already proven in step 1). `validated_data['user']` is then passed straight to
+    `apps.core.services.factory_reset_farm` as the audit actor.
+    """
+
+    token = serializers.CharField(write_only=True)
+    farm_name = serializers.CharField(write_only=True)
+
+    default_error_messages = {
+        'invalid_token': 'Session de réinitialisation expirée. Recommencez depuis la connexion.',
+        'name_mismatch': 'Le nom de la ferme ne correspond pas.',
+    }
+
+    def validate(self, attrs):
+        try:
+            payload = signing.loads(attrs['token'], salt=PRELOGIN_RESET_SALT, max_age=PRELOGIN_RESET_MAX_AGE)
+        except signing.BadSignature:  # covers SignatureExpired too
+            self.fail('invalid_token')
+        user = User.objects.select_related('farm').filter(id=payload.get('uid'), role=UserRole.ADMIN).first()
+        if user is None or user.farm is None:
+            self.fail('invalid_token')
+        if attrs['farm_name'] != user.farm.name:
+            self.fail('name_mismatch')
+        attrs['user'] = user
+        return attrs
+
+
+class AuditLogEntrySerializer(serializers.ModelSerializer):
+    """GET /api/audit-log/ response row — read-only, see `apps.core.views.AuditLogListView`."""
+
+    class Meta:
+        model = AuditLogEntry
+        fields = ['id', 'user_name_snapshot', 'action', 'target_description', 'timestamp']
+        read_only_fields = fields
 
 
 class ContactMessageSerializer(serializers.ModelSerializer):

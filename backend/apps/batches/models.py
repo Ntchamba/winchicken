@@ -27,8 +27,19 @@ class PoultryBatch(models.Model):
     principle: a house must be fully vacated and closed before a new batch can start there).
     `batch_code` is server-generated (`BATCH-{year}-{seq}`, see
     apps.batches.serializers.generate_batch_code) — no form collects it manually.
-    `current_count` starts equal to `initial_count` and is decremented by
-    `DailyLogListCreateView.perform_create` each time a DailyLog with mortality > 0 is logged.
+
+    `current_count` (2026-08-25) is a computed property, not a stored column — see the property
+    below. It used to be a `PositiveIntegerField`, set to `initial_count` at creation and
+    decremented by hand in `DailyLogListCreateView.perform_create` / `apps.batches.services.
+    record_quick_entry` each time mortality was logged. That worked for both of this project's
+    own write paths (including the delta-correction case — editing an already-logged day's
+    mortality up or down) but had one real gap: the Django admin (`/admin/batches/dailylog/`)
+    edits `DailyLog` rows directly, calling `.save()` with no knowledge of either code path, so
+    a mortality correction made there silently left `current_count` stale. Computing it fresh
+    from `initial_count - SUM(daily_logs.mortality)` on every read eliminates that whole class
+    of drift instead of chasing every possible write path with a signal — see docs/deviations.md
+    for the audit that found this and the fields it's used from (FCR/unit-cost calculations, the
+    quick-entry endpoint's own over-mortality validation, `VaccinationSerializer`'s dose check).
     """
 
     batch_code = models.CharField(max_length=32, primary_key=True)
@@ -46,11 +57,20 @@ class PoultryBatch(models.Model):
     production_type = models.CharField(max_length=16, choices=ProductionType.choices)
     breed = models.CharField(max_length=255, blank=True)
     initial_count = models.PositiveIntegerField()
-    current_count = models.PositiveIntegerField()
     start_date = models.DateField()
     planned_end_date = models.DateField(null=True, blank=True)
     actual_end_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=8, choices=BatchStatus.choices, default=BatchStatus.ACTIVE)
+    weighing_frequency = models.CharField(
+        max_length=8, choices=[('DAY', 'Day'), ('WEEK', 'Week'), ('MONTH', 'Month')], null=True, blank=True,
+        help_text='Optional "Fréquence de pesée" (2026-08-25) — reuses apps.protocols.models.'
+                   'ProtocolUnit\'s three values by string (not a direct FK/import, to avoid a '
+                   'protocols->batches model dependency) rather than defining a near-duplicate '
+                   'enum. Drives a recurring WEIGHING_REMINDER AlertRule '
+                   '(apps.batches.services.sync_weighing_reminder) and the "tâches à effectuer '
+                   'maintenant" panel — never restricts when a weight can actually be logged '
+                   'through the quick-entry panel, which accepts a weight on any date regardless.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -66,6 +86,16 @@ class PoultryBatch(models.Model):
     def __str__(self):
         return self.batch_code
 
+    @property
+    def current_count(self):
+        """`initial_count` minus the sum of every logged `DailyLog.mortality` for this batch —
+        computed fresh on every access rather than stored (see class docstring). Clamped at 0,
+        matching the old stored field's `max(0, ...)` guard in its write paths, even though a
+        correctly-behaving app should never actually reach a negative raw total."""
+        from django.db.models import Sum
+        total_mortality = self.daily_logs.aggregate(total=Sum('mortality'))['total'] or 0
+        return max(0, self.initial_count - total_mortality)
+
 
 class DailyLog(models.Model):
     """One record per day and per batch (unique together, see `one_daily_log_per_batch_per_day`
@@ -79,6 +109,13 @@ class DailyLog(models.Model):
     feed_consumed_kg = models.FloatField(default=0)
     water_consumed_l = models.FloatField(default=0)
     avg_sample_weight = models.FloatField(null=True, blank=True)
+    eggs_collected = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text='Eggs collected that day, farm-wide quick-entry field (2026-08-25). Nullable '
+                   'since most batches are broilers with no laying to record; a dedicated '
+                   'laying-rate chart is deferred to a later iteration — this field only '
+                   'captures the raw data point for now.',
+    )
     notes = models.CharField(max_length=1000, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

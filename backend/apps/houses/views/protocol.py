@@ -6,43 +6,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.permissions import CanEditHouseProtocol, IsAdminOrFarmManager
+from apps.batches.models import BatchStatus, PoultryBatch
+from apps.core.permissions import CanEditHouseProtocol
+from apps.core.services import record_audit_log
 from apps.houses.models import PoultryHouse
-from apps.houses.serializers import PoultryHouseSerializer
-from apps.protocols.models import ProtocolCategory, ProtocolTemplate
+from apps.protocols.models import ProtocolCategory, ProtocolTemplate, ProtocolTimeSlot
 from apps.protocols.serializers import ProtocolCategorySerializer, ProtocolTemplateSerializer
-
-
-class HouseListCreateView(generics.ListCreateAPIView):
-    """GET/POST /api/houses/ — list the farm's houses, or create a new one.
-    House creation reserved to Admin / Farm Manager (section 8); listing is open to any
-    authenticated user of the farm."""
-
-    serializer_class = PoultryHouseSerializer
-
-    def get_permissions(self):
-        if self.request.method == 'POST':
-            return [IsAdminOrFarmManager()]
-        return [IsAuthenticated()]
-
-    def get_queryset(self):
-        return PoultryHouse.objects.filter(farm=self.request.user.farm)
-
-
-class HouseDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """GET/PATCH/DELETE /api/houses/{houseCode}/ — view, edit or delete one house.
-    PATCH/DELETE reserved to Admin / Farm Manager (section 8)."""
-
-    serializer_class = PoultryHouseSerializer
-    lookup_field = 'house_code'
-
-    def get_permissions(self):
-        if self.request.method in ('PATCH', 'PUT', 'DELETE'):
-            return [IsAdminOrFarmManager()]
-        return [IsAuthenticated()]
-
-    def get_queryset(self):
-        return PoultryHouse.objects.filter(farm=self.request.user.farm)
+from apps.protocols.services import expand_protocol_to_alert_rules
 
 
 class HouseProtocolView(APIView):
@@ -62,7 +32,7 @@ class HouseProtocolView(APIView):
     @extend_schema(responses=ProtocolTemplateSerializer(many=True))
     def get(self, request, house_code):
         house = self.get_house(house_code, request.user.farm)
-        lines = ProtocolTemplate.objects.filter(house=house)
+        lines = ProtocolTemplate.objects.filter(house=house).prefetch_related('time_slots')
         return Response(ProtocolTemplateSerializer(lines, many=True).data)
 
     @extend_schema(
@@ -90,8 +60,30 @@ class HouseProtocolView(APIView):
 
         with transaction.atomic():
             ProtocolTemplate.objects.filter(house=house).delete()
-            ProtocolTemplate.objects.bulk_create([ProtocolTemplate(house=house, **line) for line in serializer.validated_data])
-        return Response(ProtocolTemplateSerializer(ProtocolTemplate.objects.filter(house=house), many=True).data)
+            # `time_slots` isn't a real ProtocolTemplate field/constructor kwarg (it's the
+            # reverse FK to ProtocolTimeSlot) — popped per line before bulk_create, then created
+            # against the real pks bulk_create returns (Bug 1 fix, 2026-08-27, docs/deviations.md).
+            lines_data = list(serializer.validated_data)
+            time_slots_per_line = [line.pop('time_slots', []) for line in lines_data]
+            created_lines = ProtocolTemplate.objects.bulk_create([ProtocolTemplate(house=house, **line) for line in lines_data])
+            ProtocolTimeSlot.objects.bulk_create([
+                ProtocolTimeSlot(protocol_line=line_obj, **slot)
+                for line_obj, slots in zip(created_lines, time_slots_per_line)
+                for slot in slots
+            ])
+
+            # Regenerate this house's active batch's scheduled PROTOCOL_TASK AlertRule rows from
+            # the protocol just saved — otherwise they'd keep pointing at the schedule that
+            # existed before this edit (2026-08-25, Part C of the live-propagation task). No-op
+            # if the house has no active batch yet (nothing to regenerate).
+            active_batch = PoultryBatch.objects.filter(house=house, status=BatchStatus.ACTIVE).first()
+            if active_batch:
+                expand_protocol_to_alert_rules(active_batch)
+
+        record_audit_log(request.user, 'protocol.updated', f'Protocole de {house.name}')
+        return Response(ProtocolTemplateSerializer(
+            ProtocolTemplate.objects.filter(house=house).prefetch_related('time_slots'), many=True
+        ).data)
 
 
 class ProtocolCategoryListCreateView(generics.ListCreateAPIView):

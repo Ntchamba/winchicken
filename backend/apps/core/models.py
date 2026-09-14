@@ -64,6 +64,13 @@ class UserManager(BaseUserManager):
         return self._create_user(email, password, **extra_fields)
 
 
+class Civility(models.TextChoices):
+    """Used to personalize task-reminder SMS (apps.alerts.templates.render_task_reminder)."""
+
+    M = 'M', 'Monsieur'
+    MME = 'MME', 'Madame'
+
+
 class User(AbstractBaseUser, PermissionsMixin):
     """Login account, whatever the role.
 
@@ -72,13 +79,27 @@ class User(AbstractBaseUser, PermissionsMixin):
     always gets a farm — there is no code path that leaves it null in normal use.
     Every User is expected to have exactly one matching role-subtype row (Admin, Farmer, ...,
     see ROLE_PROFILE_MODELS / create_role_profile below) selected by `role`.
+
+    `civility` (2026-08-27) defaults to `M` so the migration backfills every pre-existing row to
+    a concrete, non-null value instead of leaving old accounts unable to render a task-reminder
+    SMS — see docs/deviations.md for why a default was chosen over a nullable field + login
+    prompt. Both account-creation forms (FarmCreateSerializer, EmployeeSerializer) require it
+    explicitly for every new account regardless of this model-level default.
     """
 
     farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='users', null=True, blank=True)
     name = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=32, blank=True)
+    civility = models.CharField(max_length=4, choices=Civility.choices, default=Civility.M)
     role = models.CharField(max_length=32, choices=UserRole.choices)
+    hourly_rate = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text='Payroll rate (2026-08-27, Salaires module) — nullable: not every role is paid '
+                   'hourly (e.g. Admin/Farm Manager), so no value is forced. Set from '
+                   '/dashboard/employees by Admin/Farm Manager. A user with no rate set is '
+                   'skipped by monthly salary calculation, not treated as a 0-rate employee.',
+    )
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True)
@@ -130,8 +151,8 @@ class Farmer(models.Model):
 
 
 class Worker(models.Model):
-    """Subtype row for role=WORKER — can log DailyLog entries alongside Farmer (see
-    `apps.core.permissions.IsFarmerOrWorker`)."""
+    """Subtype row for role=WORKER — can log DailyLog entries alongside Farmer/Admin/Farm
+    Manager (see `apps.core.permissions.IsAdminOrFarmManagerOrFarmerOrWorker`)."""
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True, related_name='worker_profile')
 
@@ -182,3 +203,33 @@ class NewsletterSubscriber(models.Model):
 
     email = models.EmailField(unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class AuditLogEntry(models.Model):
+    """Internal, in-database record of every consequential write action (2026-08-26,
+    docs/deviations.md Part 15) — always written through `apps.core.services.record_audit_log`,
+    never inline in a view. Deliberately farm-scoped and `on_delete=CASCADE`, so a factory reset
+    wipes this table right along with everything else: this log covers "while the data still
+    exists," not "after" — `apps.core.services.factory_reset_farm`'s plain-text external log
+    file (outside the database) is what's left once this table itself is gone, and it's the one
+    written for the reset event specifically for that reason.
+
+    `user` is nullable (`SET_NULL`) purely so an entry survives its actor being deleted later
+    (an employee removed after they took the logged action) — `user_name_snapshot` is what keeps
+    the row readable once that happens, since `user.name` is no longer reachable through the FK.
+    """
+
+    farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='audit_log_entries')
+    user = models.ForeignKey(
+        'core.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='audit_log_entries',
+    )
+    user_name_snapshot = models.CharField(max_length=255)
+    action = models.CharField(max_length=64, help_text='e.g. "batch.created", "protocol.updated", "farm.reset".')
+    target_description = models.CharField(max_length=255, help_text='Human-readable, e.g. "Bande Printemps 2026".')
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f'{self.action} · {self.target_description}'
