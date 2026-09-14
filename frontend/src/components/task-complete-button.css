@@ -102,3 +102,18 @@
   .task-undo-button { width: 100%; }
   .task-shortfall-actions > * { flex: 1; }
 }
+
+/* The time window of one occurrence of a multi-slot line — a twice-daily feeding line renders
+   one row per slot, and the window is what tells the morning row from the evening one. Sits
+   inline before the "Jour N" text, so it has to carry its own trailing separator. */
+.task-slot-window {
+  font-weight: 600;
+  color: var(--deep);
+}
+
+.task-slot-window::after {
+  content: " · ";
+  font-weight: 400;
+  color: inherit;
+  opacity: .55;
+}

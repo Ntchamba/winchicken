@@ -51,7 +51,7 @@ export default function MyTasksPage() {
               const Icon = iconFor(task.icon);
               return (
                 <div
-                  key={`${task.houseCode}-${task.id}`}
+                  key={`${task.houseCode}-${task.id}-${task.timeSlotId ?? "all-day"}`}
                   className={`alert-item info${task.done ? " task-row--done" : ""}`}
                 >
                   <span className="alert-icon info"><Icon size={15} strokeWidth={1.8} /></span>
@@ -60,6 +60,9 @@ export default function MyTasksPage() {
                     {task.details && <p style={{ margin: "2px 0" }}>{task.details}</p>}
                     <span>
                       {task.houseName} ·{" "}
+                      {task.startTime && (
+                        <strong className="task-slot-window">{task.startTime} – {task.endTime}</strong>
+                      )}
                       {task.recurrence
                         ? `Récurrent — ${task.recurrence.toLowerCase()}`
                         : task.periodLength
@@ -71,6 +74,7 @@ export default function MyTasksPage() {
                         <TaskCompleteButton
                           houseCode={task.houseCode}
                           taskId={task.id}
+                          timeSlotId={task.timeSlotId}
                           done={task.done}
                           completedByName={task.completedByName}
                           onChanged={load}

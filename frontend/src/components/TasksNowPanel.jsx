@@ -66,7 +66,7 @@ export default function TasksNowPanel({ tasksNow, houseCode, onAssigned }) {
             const isMine = task.assignedTo === user.id;
             return (
               <div
-                key={task.id}
+                key={`${task.id}-${task.timeSlotId ?? "all-day"}`}
                 className={`alert-item info${isMine ? " task-assigned-mine" : ""}${task.done ? " task-row--done" : ""}`}
                 style={{ borderLeftColor: isMine ? "var(--mint-fill)" : "var(--mint)" }}
               >
@@ -75,12 +75,17 @@ export default function TasksNowPanel({ tasksNow, houseCode, onAssigned }) {
                   <p style={{ fontWeight: 600 }}>{task.category} — {task.what}</p>
                   {task.details && <p style={{ margin: "2px 0" }}>{task.details}</p>}
                   <span>
+                    {task.startTime && (
+                      <strong className="task-slot-window">{task.startTime} – {task.endTime}</strong>
+                    )}
                     {task.recurrence
                       ? `Récurrent — ${task.recurrence.toLowerCase()}`
                       : task.periodLength
                         ? `Jour ${task.periodDay} sur ${task.periodLength}`
                         : `Jour ${task.periodDay} (jusqu'à la fin du cycle)`}
                   </span>
+                  {/* Assignment lives on the ProtocolTemplate, not the occurrence, so every
+                      slot of a line shows — and changes — the same assignee. */}
                   <div style={{ marginTop: 6 }}>
                     {canAssign ? (
                       <select
@@ -105,6 +110,7 @@ export default function TasksNowPanel({ tasksNow, houseCode, onAssigned }) {
                       <TaskCompleteButton
                         houseCode={houseCode}
                         taskId={task.id}
+                        timeSlotId={task.timeSlotId}
                         done={task.done}
                         completedByName={task.completedByName}
                         onChanged={onAssigned}

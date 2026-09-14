@@ -17,11 +17,14 @@ import "./task-complete-button.css";
  *
  * @param {string} houseCode
  * @param {string} taskId - the ProtocolTemplate id, as `compute_tasks_now` emits it.
+ * @param {?number} timeSlotId - which occurrence of a multi-slot line this row is (a
+ *   twice-daily feeding line renders two rows, each completable and deductible on its own).
+ *   Null for a line with no time slots.
  * @param {boolean} done
  * @param {?string} completedByName
  * @param {() => void} onChanged - called after a successful complete/undo so the caller refetches.
  */
-export default function TaskCompleteButton({ houseCode, taskId, done, completedByName, onChanged }) {
+export default function TaskCompleteButton({ houseCode, taskId, timeSlotId = null, done, completedByName, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [shortfall, setShortfall] = useState(null);
@@ -52,7 +55,7 @@ export default function TaskCompleteButton({ houseCode, taskId, done, completedB
   };
 
   const complete = (force = false) => run(async () => {
-    const { data } = await tasksApi.complete(houseCode, taskId, { force });
+    const { data } = await tasksApi.complete(houseCode, taskId, { force, timeSlotId });
     if (data.status === "insufficient_stock") {
       setShortfall(data.shortfall);
       return { halted: true };
@@ -60,7 +63,7 @@ export default function TaskCompleteButton({ houseCode, taskId, done, completedB
     return null;
   });
 
-  const undo = () => run(() => tasksApi.uncomplete(houseCode, taskId));
+  const undo = () => run(() => tasksApi.uncomplete(houseCode, taskId, { timeSlotId }));
 
   // Clears the error as well as the panel: whatever it said belonged to the attempt the user
   // is walking away from, and a stale line under a dismissed panel reads as a fresh failure.

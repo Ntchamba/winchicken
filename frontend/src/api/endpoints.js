@@ -76,10 +76,17 @@ export const tasksApi = {
   // resource, deducts it. Without `force`, an insufficient stock level comes back as
   // {status: 'insufficient_stock', shortfall} and nothing is written; the caller confirms and
   // re-posts with force. See apps/stock/consumption.py.
-  complete: (houseCode, taskId, { force = false } = {}) =>
-    client.post(`/houses/${houseCode}/tasks-now/${taskId}/complete/`, force ? { force: true } : {}),
-  uncomplete: (houseCode, taskId) =>
-    client.post(`/houses/${houseCode}/tasks-now/${taskId}/uncomplete/`, {}),
+  // `timeSlotId` identifies which occurrence of a multi-slot line this is (a twice-daily
+  // feeding line is two tasks a day). Null/undefined for an untimed line, which is what the
+  // endpoints already treat as "the one occurrence of the day".
+  complete: (houseCode, taskId, { force = false, timeSlotId = null } = {}) =>
+    client.post(`/houses/${houseCode}/tasks-now/${taskId}/complete/`, {
+      ...(force ? { force: true } : {}),
+      ...(timeSlotId ? { time_slot_id: timeSlotId } : {}),
+    }),
+  uncomplete: (houseCode, taskId, { timeSlotId = null } = {}) =>
+    client.post(`/houses/${houseCode}/tasks-now/${taskId}/uncomplete/`,
+      timeSlotId ? { time_slot_id: timeSlotId } : {}),
 };
 
 export const auditLogApi = {
