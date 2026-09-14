@@ -112,3 +112,60 @@ class PurchaseOrder(models.Model):
 
     def __str__(self):
         return self.order_code
+
+
+class WorkHoursEntry(models.Model):
+    """One day's worked hours for one employee (Salaires module, 2026-08-27). Self-reported by
+    the employee (`user` == the logged-in requester) or entered/corrected on their behalf by
+    Admin/Farm Manager (see apps.finance.views.WorkHoursEntryListCreateView) — no farm FK here
+    directly, `user.farm` is the scoping (matches how `PurchaseOrder.cashier`/`Sale.cashier`
+    don't duplicate farm scoping through the user either)."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='work_hours_entries')
+    date = models.DateField()
+    hours_worked = models.DecimalField(max_digits=5, decimal_places=2)
+    note = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date']
+
+    def __str__(self):
+        return f'{self.user_id} · {self.date} · {self.hours_worked}h'
+
+
+class SalaryPaymentStatus(models.TextChoices):
+    PENDING = 'PENDING', 'Pending'
+    PAID = 'PAID', 'Paid'
+
+
+class SalaryPayment(models.Model):
+    """One employee's computed pay for one calendar month (Salaires module, 2026-08-27).
+    `total_hours`/`hourly_rate_snapshot` are snapshots taken at calculation time — a later change
+    to `User.hourly_rate`, or to the underlying `WorkHoursEntry` rows after this payment is
+    marked PAID, never retroactively changes an already-PAID `amount` (recalculating only ever
+    touches a still-PENDING row for that period, see apps.finance.services.calculate_salaries).
+    Marking PAID also creates a matching `Expense` (category=LABOR, batch=null) in the same
+    transaction — see apps.finance.views.SalaryPaymentPayView — which is what feeds "Main-d'œuvre"
+    into the Achats/Globale expense breakdowns.
+    """
+
+    farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='salary_payments')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='salary_payments')
+    period_month = models.PositiveSmallIntegerField()
+    period_year = models.PositiveSmallIntegerField()
+    total_hours = models.DecimalField(max_digits=7, decimal_places=2)
+    hourly_rate_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    status = models.CharField(max_length=16, choices=SalaryPaymentStatus.choices, default=SalaryPaymentStatus.PENDING)
+    paid_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-period_year', '-period_month']
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'period_month', 'period_year'], name='one_salary_payment_per_user_per_period'),
+        ]
+
+    def __str__(self):
+        return f'{self.user_id} · {self.period_month}/{self.period_year} · {self.amount}'
