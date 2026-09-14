@@ -37,6 +37,17 @@ def compute_tasks_now(house):
     from `ProtocolTemplate.assigned_to` for a protocol-line task, or from the batch's
     `WEIGHING_REMINDER` `AlertRule.assigned_to` for the recurring weighing task (see those
     fields' docstrings for why assignment lives on two different models).
+
+    `timeSlotId`/`startTime`/`endTime` (2026-09-14 bugfix): a line with one or more
+    `ProtocolTimeSlot` rows is one task *per slot*, each completable on its own; a line with
+    none is a single untimed task with all three `None`, exactly as before. This mirrors
+    `compute_month_schedule`, which has expanded slots since 2026-08-27 — "maintenant" was the
+    one path still collapsing them, so a twice-daily 55 kg feeding line offered one checkbox and
+    deducted 55 kg instead of 110. Stock then depleted half as fast in the app as in the barn,
+    threshold alerts fired late, feed cost was understated by half, and the evening worker had
+    nothing to mark done. `TaskCompletion` has always keyed occurrences on
+    `(protocol_template, batch, date, time_slot)` and the complete/uncomplete endpoints have
+    always accepted `time_slot_id`; this is the producer catching up with them.
     """
     from apps.alerts.models import AlertRule, AlertRuleType
     from apps.batches.models import BatchStatus, PoultryBatch
@@ -54,23 +65,32 @@ def compute_tasks_now(house):
 
     # Today's completions for this batch, fetched once rather than per line — the panel and
     # "Mes tâches" both render every task, so a per-task query would be N+1 on every poll.
-    # Keyed by line id; `time_slot` is null for these panel-level occurrences (see
-    # TaskCompletion's uniqueness rule).
-    done_by_line = {
-        c.protocol_template_id: c
+    # Keyed by `(line id, time_slot id)`, the same identity TaskCompletion's unique constraint
+    # uses; `time_slot_id` is None for an untimed line. The old `time_slot__isnull=True` filter
+    # is gone: it hid every per-slot completion from the panel, so a slot marked done would have
+    # kept reading as outstanding.
+    done_by_occurrence = {
+        (c.protocol_template_id, c.time_slot_id): c
         for c in TaskCompletion.objects.filter(
-            batch=batch, date=today, time_slot__isnull=True,
+            batch=batch, date=today,
         ).select_related('completed_by')
     }
 
     tasks = []
-    for line in ProtocolTemplate.objects.filter(house=house).select_related('category', 'assigned_to'):
+    lines = (
+        ProtocolTemplate.objects.filter(house=house)
+        .select_related('category', 'assigned_to')
+        .prefetch_related('time_slots')
+    )
+    for line in lines:
         occurrence = _protocol_line_occurrence(line, day_of_cycle)
         if occurrence is None:
             continue
         period_day, period_length = occurrence
-        completion = done_by_line.get(line.id)
-        tasks.append({
+        base = {
+            # Stays the ProtocolTemplate pk: it is the {taskId} path segment of the
+            # complete/uncomplete/assign routes. The slot travels beside it in `timeSlotId`,
+            # which the two completion endpoints already read as `time_slot_id`.
             'id': str(line.id),
             'category': line.category.label,
             'icon': line.category.icon,
@@ -81,16 +101,27 @@ def compute_tasks_now(house):
             'recurrence': None,
             'assignedTo': line.assigned_to_id,
             'assignedToName': line.assigned_to.name if line.assigned_to_id else None,
-            # Completion state, so a finished task reads as done instead of vanishing.
             # `completable` is False for the weighing reminder below: it is not a
             # ProtocolTemplate row, so the complete endpoint has nothing to record against.
             'completable': True,
-            'done': completion is not None,
-            'completedAt': completion.completed_at if completion else None,
-            'completedByName': (
-                completion.completed_by.name if completion and completion.completed_by_id else None
-            ),
-        })
+        }
+        # `%Hh%M` matches compute_month_schedule and apps.alerts.templates.render_task_reminder,
+        # so the same window reads identically in the panel, the calendar and the SMS.
+        slots = list(line.time_slots.all()) or [None]
+        for slot in slots:
+            completion = done_by_occurrence.get((line.id, slot.id if slot else None))
+            tasks.append({
+                **base,
+                'timeSlotId': slot.id if slot else None,
+                'startTime': slot.start_time.strftime('%Hh%M') if slot else None,
+                'endTime': slot.end_time.strftime('%Hh%M') if slot else None,
+                # Completion state, so a finished task reads as done instead of vanishing.
+                'done': completion is not None,
+                'completedAt': completion.completed_at if completion else None,
+                'completedByName': (
+                    completion.completed_by.name if completion and completion.completed_by_id else None
+                ),
+            })
 
     weighing_task = weighing_reminder_task(batch, day_of_cycle)
     if weighing_task:
@@ -105,6 +136,10 @@ def compute_tasks_now(house):
         weighing_task['done'] = False
         weighing_task['completedAt'] = None
         weighing_task['completedByName'] = None
+        # Same keys as a protocol-line task so consumers never branch on which kind they hold.
+        weighing_task['timeSlotId'] = None
+        weighing_task['startTime'] = None
+        weighing_task['endTime'] = None
         tasks.append(weighing_task)
 
     return day_of_cycle, tasks

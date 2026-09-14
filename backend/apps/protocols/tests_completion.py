@@ -14,7 +14,9 @@ from apps.batches.models import BatchStatus, PoultryBatch, ProductionType
 from apps.core.models import Farm, User, UserRole, create_role_profile
 from apps.houses.models import PoultryHouse
 from apps.houses.services import compute_tasks_now
-from apps.protocols.models import ProtocolCategory, ProtocolTemplate, TaskCompletion
+from apps.protocols.models import (
+    ProtocolCategory, ProtocolTemplate, ProtocolTimeSlot, TaskCompletion,
+)
 from apps.stock.calculations import current_quantity
 from apps.stock.models import MovementType, StockCategory, StockItem, StockMovement
 
@@ -196,3 +198,116 @@ class TaskCompletionTests(APITestCase):
             f'/api/houses/{self.house.house_code}/tasks-now/{self.line.id}/uncomplete/', {}, format='json',
         )
         self.assertEqual(resp.status_code, 401)
+
+
+class TwiceDailyTaskTests(APITestCase):
+    """A protocol line with `ProtocolTimeSlot` rows is one task *per slot per day*, not one task
+    per day.
+
+    Feeding twice a day is the norm on a poultry farm, not an edge case. `compute_tasks_now` used
+    to emit a single occurrence per line with `time_slot=null`, so a 55 kg morning + evening line
+    deducted 55 kg instead of 110: stock read as depleting half as fast as it really did,
+    threshold alerts fired late, feed cost was understated by half, and the evening worker had no
+    task to complete. The slot expansion these pin already existed in `compute_month_schedule`
+    (the Calendrier path) — this is the same rule applied to "maintenant".
+    """
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Slots')
+        self.worker = User.objects.create_user(
+            email='worker@slots.local', password='x', name='Ouvrier',
+            role=UserRole.WORKER, farm=self.farm,
+        )
+        create_role_profile(self.worker)
+        self.house = PoultryHouse.objects.create(
+            house_code=f'H-{self.farm.id}-001', farm=self.farm, name='Poulailler', max_capacity=500,
+        )
+        self.batch = PoultryBatch.objects.create(
+            batch_code='BATCH-S-1', house=self.house, name='Bande', production_type=ProductionType.BROILER,
+            initial_count=500, start_date=dt.date.today() - dt.timedelta(days=1),
+            planned_end_date=dt.date.today() + dt.timedelta(days=55), status=BatchStatus.ACTIVE,
+        )
+        feed = StockCategory.objects.get(farm=self.farm, kind='FEED')
+        self.item = StockItem.objects.create(
+            item_code=f'FEE-{self.farm.id}-001', farm=self.farm, category=feed, name='Provende',
+            unit='kg', alert_threshold=10, unit_price=Decimal('450.00'),
+        )
+        StockMovement.objects.create(
+            item=self.item, movement_type=MovementType.IN, quantity=1000, movement_date=dt.date.today(),
+        )
+        category = ProtocolCategory.objects.filter(house=self.house, label='Alimentation').first()
+        self.line = ProtocolTemplate.objects.create(
+            house=self.house, category=category, from_value=1, until_end=True,
+            what='Aliment croissance', details='', stock_item=self.item, quantity_per_day=55,
+        )
+        self.morning = ProtocolTimeSlot.objects.create(
+            protocol_line=self.line, start_time=dt.time(7, 0), end_time=dt.time(9, 0),
+        )
+        self.evening = ProtocolTimeSlot.objects.create(
+            protocol_line=self.line, start_time=dt.time(18, 0), end_time=dt.time(20, 0),
+        )
+
+    def _tasks_for_line(self):
+        _, tasks = compute_tasks_now(self.house)
+        return [t for t in tasks if t['id'] == str(self.line.id)]
+
+    def _complete(self, slot, force=True):
+        self.client.force_authenticate(user=self.worker)
+        return self.client.post(
+            f'/api/houses/{self.house.house_code}/tasks-now/{self.line.id}/complete/',
+            {'time_slot_id': slot.id, 'force': force}, format='json',
+        )
+
+    def _uncomplete(self, slot):
+        self.client.force_authenticate(user=self.worker)
+        return self.client.post(
+            f'/api/houses/{self.house.house_code}/tasks-now/{self.line.id}/uncomplete/',
+            {'time_slot_id': slot.id}, format='json',
+        )
+
+    def test_a_twice_daily_line_is_two_occurrences_carrying_their_own_window(self):
+        tasks = self._tasks_for_line()
+        self.assertEqual(len(tasks), 2)
+        self.assertEqual(
+            [(t['timeSlotId'], t['startTime'], t['endTime']) for t in tasks],
+            [(self.morning.id, '07h00', '09h00'), (self.evening.id, '18h00', '20h00')],
+        )
+
+    def test_a_line_with_no_slots_is_still_exactly_one_untimed_occurrence(self):
+        ProtocolTimeSlot.objects.filter(protocol_line=self.line).delete()
+        tasks = self._tasks_for_line()
+        self.assertEqual(len(tasks), 1)
+        self.assertIsNone(tasks[0]['timeSlotId'])
+        self.assertIsNone(tasks[0]['startTime'])
+        self.assertIsNone(tasks[0]['endTime'])
+
+    def test_completing_both_slots_deducts_the_quantity_twice(self):
+        self.assertEqual(current_quantity(self.item), 1000)
+        self.assertEqual(self._complete(self.morning).status_code, 201)
+        self.assertEqual(current_quantity(self.item), 945)
+        self.assertEqual(self._complete(self.evening).status_code, 201)
+        self.assertEqual(current_quantity(self.item), 890)
+        self.assertEqual(TaskCompletion.objects.filter(protocol_template=self.line).count(), 2)
+
+    def test_completing_one_slot_leaves_the_other_outstanding(self):
+        self._complete(self.morning)
+        by_slot = {t['timeSlotId']: t for t in self._tasks_for_line()}
+        self.assertTrue(by_slot[self.morning.id]['done'])
+        self.assertFalse(by_slot[self.evening.id]['done'])
+        self.assertEqual(by_slot[self.morning.id]['completedByName'], 'Ouvrier')
+
+    def test_completing_the_same_slot_twice_deducts_once(self):
+        self.assertEqual(self._complete(self.morning).status_code, 201)
+        self.assertEqual(self._complete(self.morning).status_code, 200)
+        self.assertEqual(current_quantity(self.item), 945)
+        self.assertEqual(TaskCompletion.objects.filter(protocol_template=self.line).count(), 1)
+
+    def test_undoing_one_slot_restores_only_that_slots_quantity(self):
+        self._complete(self.morning)
+        self._complete(self.evening)
+        self.assertEqual(current_quantity(self.item), 890)
+        self.assertEqual(self._uncomplete(self.morning).status_code, 200)
+        self.assertEqual(current_quantity(self.item), 945)
+        by_slot = {t['timeSlotId']: t for t in self._tasks_for_line()}
+        self.assertFalse(by_slot[self.morning.id]['done'])
+        self.assertTrue(by_slot[self.evening.id]['done'])
