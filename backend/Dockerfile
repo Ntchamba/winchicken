@@ -25,6 +25,13 @@ ENV PATH="/venv/bin:$PATH" \
 
 COPY --chown=appuser:appuser . .
 
+# /app/logs (factory-reset audit trail, config/settings.py LOGGING) is a named volume in
+# docker-compose.yml, not part of the source tree — created+owned here so that when Docker
+# first mounts a fresh empty named volume over this path, it seeds the volume from this
+# image layer's content *and ownership* (documented Docker behavior), giving appuser write
+# access from the start instead of the volume defaulting to root:root.
+RUN mkdir -p /app/logs && chown appuser:appuser /app/logs
+
 USER appuser
 EXPOSE 8000
 

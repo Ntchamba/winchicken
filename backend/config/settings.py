@@ -2,6 +2,7 @@
 Django settings for the Winchicken backend.
 """
 
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -157,11 +158,59 @@ CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:
 
 # Factory reset audit trail (2026-08-26) — plain-text, on the filesystem, deliberately *not* a DB
 # table: POST /api/farm/reset/ wipes every farm-scoped row in one transaction, so a DB-backed log
-# would be wiped right along with everything else it was supposed to be evidence of. `logs/` is
-# inside the `./backend:/app` bind mount (docker-compose.yml), so the file survives container
-# restarts/rebuilds without needing its own named volume.
+# would be wiped right along with everything else it was supposed to be evidence of. `logs/` is a
+# named volume in docker-compose.yml (`winchicken_backend_logs`), not part of the bind-mounted
+# source tree — Docker owns it, so the container's non-root `appuser` can always write to it
+# whatever uid owns ./backend on the host.
 LOGS_DIR = BASE_DIR / 'logs'
-LOGS_DIR.mkdir(exist_ok=True)
+FACTORY_RESET_LOG = LOGS_DIR / 'factory_reset.log'
+
+
+def _factory_reset_log_path() -> Path | None:
+    """The audit-log path if it is genuinely writable, otherwise None.
+
+    This module is imported before Django is configured, so anything raising here is an
+    unrecoverable crash-loop: no server, no error page, just a restarting container. That is
+    exactly what used to happen under rootless Docker, where host uid 1000 maps to uid 0 and the
+    bind-mounted `/app` therefore arrives root-owned, so `appuser` cannot create `logs/` (see
+    docs/deviations.md). An unwritable audit trail is worth shouting about; it is not worth
+    taking the whole API down for, so we degrade to stderr instead.
+
+    `mkdir` succeeding is not sufficient evidence — the directory can already exist and still be
+    unwritable, which is the rootless case — so the probe is a real append-mode open.
+    """
+    try:
+        LOGS_DIR.mkdir(exist_ok=True)
+        with open(FACTORY_RESET_LOG, 'a', encoding='utf-8'):
+            pass
+    except OSError as exc:
+        print(
+            f'WARNING: factory-reset audit log unavailable at {FACTORY_RESET_LOG} ({exc}). '
+            'Falling back to stderr — the trail will only survive in the container logs. '
+            'Fix the mount/ownership before relying on it as evidence.',
+            file=sys.stderr,
+            flush=True,
+        )
+        return None
+    return FACTORY_RESET_LOG
+
+
+_FACTORY_RESET_LOG_PATH = _factory_reset_log_path()
+
+# Same logger name either way, so apps.core.services never has to know which one it got.
+_FACTORY_RESET_HANDLER = (
+    {
+        'class': 'logging.FileHandler',
+        'filename': _FACTORY_RESET_LOG_PATH,
+        'formatter': 'plain',
+    }
+    if _FACTORY_RESET_LOG_PATH is not None
+    else {
+        'class': 'logging.StreamHandler',
+        'stream': 'ext://sys.stderr',
+        'formatter': 'plain',
+    }
+)
 
 LOGGING = {
     'version': 1,
@@ -170,11 +219,7 @@ LOGGING = {
         'plain': {'format': '%(asctime)s %(message)s'},
     },
     'handlers': {
-        'factory_reset_file': {
-            'class': 'logging.FileHandler',
-            'filename': LOGS_DIR / 'factory_reset.log',
-            'formatter': 'plain',
-        },
+        'factory_reset_file': _FACTORY_RESET_HANDLER,
     },
     'loggers': {
         'factory_reset': {

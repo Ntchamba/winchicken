@@ -32,6 +32,13 @@ services:
     restart: unless-stopped
     volumes:
       - ./backend:/app
+      # Docker-managed, not host-bind-mounted: the factory-reset audit log
+      # (backend/config/settings.py LOGGING -> /app/logs/factory_reset.log) lives here.
+      # A named volume sidesteps host/container uid mismatches entirely — Docker owns it,
+      # so the container's non-root `appuser` (Dockerfile) can always write to it regardless
+      # of what uid owns the bind-mounted ./backend tree on any given host. See
+      # docs/deviations.md for the incident this fixes.
+      - winchicken_backend_logs:/app/logs
     ports:
       - "8000:8000"
     environment:
@@ -64,6 +71,7 @@ services:
       retries: 5
     volumes:
       - ./backend:/app
+      - winchicken_backend_logs:/app/logs
     environment:
       SECRET_KEY: dev-secret-key-change-in-production
       DEBUG: "True"
@@ -97,3 +105,4 @@ services:
 volumes:
   winchicken_pgdata:
   winchicken_frontend_node_modules:
+  winchicken_backend_logs:
