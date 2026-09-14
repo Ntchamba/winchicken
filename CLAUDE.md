@@ -1,59 +1,90 @@
-# SMS Gateway Project
-> Claude Code Config — Senior Full-Stack & DevOps Expert
+# Winchicken
+> Claude Code config — poultry farm management, single farm, local deployment
 
 ## Role
-- Senior Full-Stack & DevOps Expert. Ultra-concise, direct answers, zero fluff, immediate code.
+- Senior full-stack & DevOps. Ultra-concise, direct answers, zero fluff, code first.
+
+## What this is
+Farm management software for **one** poultry farm in Cameroon, run on the farm's own machine.
+Not SaaS, not multi-tenant: `apps.core.models.Farm` is a DB-enforced singleton
+(`singleton_lock` unique constant), there is no signup, and the first account is created
+through the landing page's "Créer la ferme" flow. No seed data or demo credentials exist.
+
+Day-to-day use is a worker on a phone recording what happened in a poultry house: daily logs
+(mortality, feed, water, eggs), weighings, protocol tasks marked done, incidents, stock,
+sales and expenses.
+
+## Architecture decisions it is built on
+- **Single farm, local deployment.** Every query is farm-scoped through `request.user.farm`;
+  there is no tenant dimension to design for.
+- **French UI, always.** Every user-facing string, label, error and button is French. Code,
+  comments, commits and docs are English.
+- **FCFA (XAF).** `frontend/src/utils/money.js` — whole numbers, space-grouped thousands, unit
+  always shown. Bare numbers are counts ("954 volailles"), never money.
+- **Farm-local time (`Africa/Douala`).** `FARM_TIME_ZONE` drives `TIME_ZONE` and
+  `CELERY_TIMEZONE`; `USE_TZ` stays True and containers set `TZ` to match. Always
+  `timezone.localdate()` on the backend and `todayISO()` from `utils/localDate.js` on the
+  frontend — never `timezone.now().date()` or `toISOString().slice(0, 10)`, which are UTC and
+  mis-date every entry made in the first hour after local midnight.
+- **Stock moves only on an explicit user action.** Completing a protocol task occurrence
+  ("Marquer comme fait") or executing a composition. There is deliberately no automatic
+  deduction in `beat_schedule` — the 2026-08-28 daily task was removed on 2026-08-31.
+- **Task occurrences are `(protocol line, batch, date, time_slot)`.** A line with
+  `ProtocolTimeSlot` rows is one task *per slot* — twice-daily feeding deducts twice.
+- **7 roles** (`UserRole`): ADMIN, SECONDARY_ADMIN, FARM_MANAGER, FARMER, WORKER, TECHNICIAN,
+  CASHIER. Each `User` gets a class-table-inheritance profile row; permissions go through
+  `apps.core.permissions`.
 
 ## Stack
-- **Backend**: Django + DRF
-- **Frontend**: React
-- **Infra**: Docker / Docker Compose
-- **OS**: Linux Ubuntu (prod & dev)
-- **Async**: Celery + Redis (broker/queue)
-- **DB**: PostgreSQL
-
-## Business Specifics
-- 100% asynchronous SMS sending (never blocking in a view/HTTP request)
-- Pipeline: API request → validation → Celery task → SMS provider → status webhook → DB update
-- Strict idempotency required for all sending (unique key per message)
-- Retry with exponential backoff on provider failure
-- Rate limiting per account/provider
+- **Backend**: Django + DRF, JWT (SimpleJWT), drf-spectacular
+- **Frontend**: React + Vite (`npm run lint` is oxlint, `npm run test` is vitest)
+- **DB**: PostgreSQL · **Async**: Celery + Redis · **Infra**: Docker Compose, Linux
+- Docker on the dev machine is **rootless**: host uid 1000 maps to container uid 0, so a
+  bind-mounted path is root-owned inside the container. Anything the app must write goes in a
+  named volume (see `winchicken_backend_logs`).
+- SMS/alerts: `apps/alerts/providers/` — `console` by default, `twilio` available.
 
 ## Structure
-- `apps/` - Django apps (sms, users, core...)
-- `apps/sms/tasks.py` - Celery sending tasks
-- `apps/sms/providers/` - Provider integrations (Twilio, etc.)
-- `frontend/` - React app (Vite)
-- `docker/` - Dockerfiles, compose, Nginx configs
-- `config/` - Django settings, Celery config, urls
+- `backend/apps/` — core, houses, protocols, batches, stock, maintenance, finance, alerts,
+  search
+- `backend/apps/<app>/services.py` — business logic; views stay thin
+- `backend/apps/stock/consumption.py` — the only protocol-driven stock deduction path
+- `backend/config/` — settings, urls, celery
+- `frontend/src/` — api/, components/, context/, hooks/, pages/, routes/, styles/, utils/
+- `docs/architecture.md` — the codebase as it actually is
+- `docs/deviations.md` — every point where the build diverges from the two `.docx` specs, with
+  the incident that caused it. Read it before assuming a surprising choice was an accident.
 
-## Critical Rules
-- Every SMS sending route returns immediately (202) + task_id, never synchronous calls to the provider
-- Celery tasks: serializable arguments only (IDs, no instances)
-- Log every single step: queued / sent / delivered / failed
-- Provider webhooks → dedicated view, verified signature, DB status update
-- Secrets (provider API keys) → env variables / Docker secrets, never hardcoded
-- Docker: multi-stage images, non-root user, mandatory healthchecks
+## Critical rules
+- No business logic in views or in JSX; it lives in `services.py` / hooks.
+- Celery tasks take serializable arguments only (IDs, never model instances).
+- Two paths computing the same thing is how this codebase has broken before (sidebar
+  staleness, the calendar, task slots). Reuse the existing helper; never write a second copy.
+- Secrets via env / Docker secrets, never hardcoded.
+- Docker: multi-stage images, non-root user, healthchecks.
+- Nothing that runs at settings-import time may raise — it crash-loops the container with no
+  server and no error page.
 
-## Code Style
-- Python: type hints, early return, no business logic in views
-- React: functional components, hooks, no business logic in JSX
-- Commits: Conventional Commits (`feat:`, `fix:`, `chore:`...)
+## Code style
+- Python: type hints, early return, docstrings that say *why*, not *what*.
+- React: function components and hooks.
+- Commits: Conventional Commits (`feat:`, `fix:`, `chore:`…), one concern per commit.
 
-## Key Commands
+## Key commands
 ```bash
 docker compose up -d --build
 docker compose exec web python manage.py migrate
 docker compose exec web python manage.py test
-docker compose exec worker celery -A config worker -l info
-docker compose exec worker celery -A config beat -l info
 docker compose logs -f worker
+
+# isolated verification stack — DB winchicken_test, API :8010, UI :5180
+docker compose -p winchicken-test -f docker-compose.yml -f docker-compose.test.yml up -d
+docker compose -p winchicken-test -f docker-compose.yml -f docker-compose.test.yml \
+  exec -T web python manage.py seed_test_farm   # refuses any DB not ending in _test
 ```
 
-## Expected Response Format
-- Code first, explanation after (1-2 lines max if necessary)
-- No reframing of the request
-- No useless disclaimers
+## Expected response format
+- Code first, explanation after (1-2 lines if needed). No reframing, no filler disclaimers.
 
 ## Verification gate for UI / behavioral fixes
 
