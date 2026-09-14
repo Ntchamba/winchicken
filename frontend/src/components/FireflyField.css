@@ -1,0 +1,46 @@
+/* ~200-point firefly field. One class + one @keyframes; every per-element difference comes
+   from the inline CSS custom properties set in FireflyField.jsx. No per-element filter — the
+   soft glow is a radial-gradient background, painted once per layer. */
+.firefly-field{
+  position:absolute;
+  inset:0;
+  overflow:hidden;
+  pointer-events:none;
+  /* one compositor hint on the container, not on the 200 children */
+  will-change:transform,opacity;
+}
+
+.firefly{
+  position:absolute;
+  top:var(--y);
+  left:var(--x);
+  width:var(--size);
+  height:var(--size);
+  border-radius:50%;
+  /* Solid bright core out to 15%, then a short fade to 55% = a distinct glowing point, not a
+     centre-out haze. The gradient is the only softening — there is no container-level
+     filter:blur() on .firefly-field, by design. */
+  background:radial-gradient(circle, rgba(46,230,184,1) 0%, rgba(46,230,184,1) 15%, rgba(46,230,184,0) 55%);
+  opacity:0;
+  /* GPU-only: the keyframes animate transform + opacity exclusively. */
+  animation:firefly-drift var(--dur) ease-in-out var(--delay) infinite;
+}
+
+@keyframes firefly-drift{
+  0%   { transform:translate3d(0,0,0) scale(.9); opacity:0; }
+  20%  { opacity:calc(var(--op) * var(--op-scale, 1)); }
+  50%  { transform:translate3d(var(--tx), var(--ty), 0) scale(1.12); opacity:calc(var(--op) * var(--op-scale, 1) * .65); }
+  80%  { opacity:calc(var(--op) * var(--op-scale, 1)); }
+  100% { transform:translate3d(calc(var(--tx) * -.35), calc(var(--ty) * -.35), 0) scale(.9); opacity:0; }
+}
+
+/* Deliberate per-surface reduction. On /login and /create-farm the field sits behind a
+   blurred backdrop under a sharp card; at the welcome/sidebar peak opacity the bigger,
+   brighter dots start pulling attention from the card, so they're dimmed ~40% here only.
+   Welcome screen and sidebar keep full brightness (--op-scale defaults to 1). */
+.auth-fireflies{ --op-scale:.6; }
+
+/* Defence in depth — FireflyField.jsx already renders nothing under reduced motion. */
+@media (prefers-reduced-motion: reduce){
+  .firefly-field{ display:none; }
+}

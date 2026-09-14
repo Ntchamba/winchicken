@@ -1,0 +1,13 @@
+/* ReceiptModal (2026-08-26) — print output isolation: everything except .receipt-print-area
+   is hidden when printing, so the modal backdrop/close button/sidebar never end up on paper. */
+.receipt-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.receipt-row span{color:var(--muted)}
+.receipt-total{border-bottom:0;border-top:2px solid #10242c;margin-top:4px;padding-top:14px;font-size:16px}
+.receipt-total strong{font-family:'Space Grotesk',sans-serif}
+
+@media print{
+  body *{visibility:hidden}
+  .receipt-print-area,.receipt-print-area *{visibility:visible}
+  .receipt-print-area{position:absolute;top:0;left:0;width:100%;padding:20px!important}
+  .receipt-no-print{display:none!important}
+}
