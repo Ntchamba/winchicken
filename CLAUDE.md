@@ -60,6 +60,15 @@ sales and expenses.
 - Celery tasks take serializable arguments only (IDs, never model instances).
 - Two paths computing the same thing is how this codebase has broken before (sidebar
   staleness, the calendar, task slots). Reuse the existing helper; never write a second copy.
+- **When a delete-and-recreate becomes an upsert, the code that was compensating for the
+  deletion becomes a bug.** FIX 3.5 turned the stock PUT into an upsert and the stock instantly
+  doubled: `api/stockSave.js` had been re-posting each row's whole quantity to rebuild a level
+  the `delete()` kept wiping. Before changing how a collection is persisted, find every caller
+  that was working around the old behaviour.
+- Before replacing a collection, check `on_delete` on **everything** pointing at it — via
+  `model._meta.related_objects`, not grep, which misses multi-line FK definitions. A CASCADE two
+  hops away (`ProtocolTimeSlot` -> `TaskCompletion`) is still a silent deletion, and re-creating
+  a row with the same primary key does **not** restore a FK that `SET_NULL` already cleared.
 - Secrets via env / Docker secrets, never hardcoded.
 - Docker: multi-stage images, non-root user, healthchecks.
 - Nothing that runs at settings-import time may raise — it crash-loops the container with no
