@@ -7,6 +7,7 @@ an undo puts it back.
 """
 import datetime as dt
 from decimal import Decimal
+from unittest import mock
 
 from rest_framework.test import APITestCase
 
@@ -311,3 +312,96 @@ class TwiceDailyTaskTests(APITestCase):
         by_slot = {t['timeSlotId']: t for t in self._tasks_for_line()}
         self.assertFalse(by_slot[self.morning.id]['done'])
         self.assertTrue(by_slot[self.evening.id]['done'])
+
+
+class MidnightHourTests(APITestCase):
+    """Completing a task in the first hour after farm-local midnight.
+
+    `apps.stock.consumption` took the day from `timezone.now().date()` — the *UTC* date — while
+    `compute_tasks_now` takes it from `timezone.localdate()`. Between 00:00 and 01:00
+    Africa/Douala the two disagree, which is exactly when the night check happens on a farm.
+    """
+
+    # 23:30 UTC on the 14th == 00:30 on the 15th in Africa/Douala (UTC+1).
+    FROZEN_UTC = dt.datetime(2026, 9, 14, 23, 30, tzinfo=dt.timezone.utc)
+    LOCAL_DAY = dt.date(2026, 9, 15)
+    UTC_DAY = dt.date(2026, 9, 14)
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Minuit')
+        self.worker = User.objects.create_user(
+            email='worker@minuit.local', password='x', name='Ouvrier',
+            role=UserRole.WORKER, farm=self.farm,
+        )
+        create_role_profile(self.worker)
+        self.house = PoultryHouse.objects.create(
+            house_code=f'H-{self.farm.id}-001', farm=self.farm, name='Poulailler', max_capacity=500,
+        )
+        self.batch = PoultryBatch.objects.create(
+            batch_code='BATCH-M-1', house=self.house, name='Bande', production_type=ProductionType.BROILER,
+            initial_count=500, start_date=self.LOCAL_DAY - dt.timedelta(days=10),
+            planned_end_date=self.LOCAL_DAY + dt.timedelta(days=46), status=BatchStatus.ACTIVE,
+        )
+        feed = StockCategory.objects.get(farm=self.farm, kind='FEED')
+        self.item = StockItem.objects.create(
+            item_code=f'FEE-{self.farm.id}-001', farm=self.farm, category=feed, name='Provende',
+            unit='kg', alert_threshold=10, unit_price=Decimal('450.00'),
+        )
+        StockMovement.objects.create(
+            item=self.item, movement_type=MovementType.IN, quantity=500,
+            movement_date=self.UTC_DAY - dt.timedelta(days=1),
+        )
+        category = ProtocolCategory.objects.filter(house=self.house, label='Alimentation').first()
+        self.line = ProtocolTemplate.objects.create(
+            house=self.house, category=category, from_value=1, until_end=True,
+            what='Aliment nuit', details='', stock_item=self.item, quantity_per_day=40,
+        )
+
+    def _at_midnight_thirty(self):
+        """Freeze `timezone.now` so both the consumption path and `compute_tasks_now` see the
+        same instant — 00:30 Africa/Douala, where the local and UTC dates differ."""
+        return mock.patch('django.utils.timezone.now', return_value=self.FROZEN_UTC)
+
+    def test_the_completion_is_filed_against_the_local_day_not_the_utc_one(self):
+        from apps.stock.consumption import complete_task_occurrence
+
+        with self._at_midnight_thirty():
+            complete_task_occurrence(self.line, self.batch, user=self.worker, force=True)
+        completion = TaskCompletion.objects.get(protocol_template=self.line)
+        self.assertEqual(completion.date, self.LOCAL_DAY)
+        self.assertEqual(completion.stock_movement.movement_date, self.LOCAL_DAY)
+
+    def test_the_task_reads_as_done_immediately_after_being_completed(self):
+        from apps.stock.consumption import complete_task_occurrence
+
+        with self._at_midnight_thirty():
+            complete_task_occurrence(self.line, self.batch, user=self.worker, force=True)
+            _, tasks = compute_tasks_now(self.house)
+        task = next(t for t in tasks if t['id'] == str(self.line.id))
+        self.assertTrue(task['done'])
+        self.assertEqual(task['completedByName'], 'Ouvrier')
+
+    def test_an_occurrence_already_done_yesterday_does_not_swallow_tonights(self):
+        """The nastier half: filed against the UTC day, tonight's completion collided with
+        yesterday's own completion, so `get_or_create` returned it as `already_done` and
+        tonight's work deducted nothing at all."""
+        from apps.stock.consumption import complete_task_occurrence
+
+        TaskCompletion.objects.create(
+            protocol_template=self.line, batch=self.batch, date=self.UTC_DAY, time_slot=None,
+        )
+        with self._at_midnight_thirty():
+            result = complete_task_occurrence(self.line, self.batch, user=self.worker, force=True)
+        self.assertFalse(result['already_done'])
+        self.assertIsNotNone(result['movement'])
+        self.assertEqual(current_quantity(self.item), 460)
+
+    def test_undo_finds_the_occurrence_it_just_created(self):
+        from apps.stock.consumption import complete_task_occurrence, uncomplete_task_occurrence
+
+        with self._at_midnight_thirty():
+            complete_task_occurrence(self.line, self.batch, user=self.worker, force=True)
+            self.assertEqual(current_quantity(self.item), 460)
+            result = uncomplete_task_occurrence(self.line, self.batch)
+        self.assertTrue(result['undone'])
+        self.assertEqual(current_quantity(self.item), 500)

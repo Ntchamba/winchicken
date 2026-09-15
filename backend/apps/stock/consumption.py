@@ -46,8 +46,13 @@ def complete_task_occurrence(line, batch, *, when=None, time_slot=None, user=Non
     from apps.protocols.models import TaskCompletion
     from apps.stock.models import MovementType, StockMovement
 
-    now = when or timezone.now()
-    day = now.date()
+    # `localdate`, not `now.date()`: the latter is the UTC date, and between 00:00 and 01:00
+    # Africa/Douala that is yesterday. A night check filed the completion and its movement
+    # against the previous day, so `compute_tasks_now` (which reads `timezone.localdate()`)
+    # never saw it and the row kept reading as outstanding — and if the previous day's
+    # occurrence was already done, `get_or_create` matched it and tonight's work deducted
+    # nothing at all. See config/settings.py FARM_TIME_ZONE.
+    day = timezone.localdate(when) if when else timezone.localdate()
 
     shortfall = stock_shortfall(line, batch)
     if shortfall and not force:
@@ -92,8 +97,9 @@ def uncomplete_task_occurrence(line, batch, *, when=None, time_slot=None):
     """
     from apps.protocols.models import TaskCompletion
 
-    now = when or timezone.now()
-    day = now.date()
+    # Same farm-local day as `complete_task_occurrence`, or undo would look for an occurrence
+    # on a different date than the one completion just wrote.
+    day = timezone.localdate(when) if when else timezone.localdate()
 
     with transaction.atomic():
         # No select_related on `stock_movement` here: it is a nullable FK, so it joins as a
