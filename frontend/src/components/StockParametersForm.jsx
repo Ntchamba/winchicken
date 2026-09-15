@@ -87,7 +87,10 @@ const makeRow = (overrides = {}) => ({
  * @param {Object[]} initialCategories - `[{ id, label, icon, kind }]` in display order.
  * @param {Object[]} [initialSuppliers] - `[{ id, name }]` for the per-row supplier dropdown.
  * @param {number} [farmId] - enables live category/supplier writes; omit for the read-only demo.
- * @param {Object} [warehouse] - display-only header seed `{ name, currency, leadTime, leadTimeUnit }`.
+ * @param {Object} [warehouse] - display-only header seed `{ name, leadTime, leadTimeUnit }`. No
+ *   currency: FCFA (XAF) is an architecture decision of this app, not a per-farm setting — the
+ *   selector that used to sit here was never persisted anywhere and `utils/money.js` prints FCFA
+ *   regardless, so picking EUR changed nothing but lied on every screen (FIX 5).
  * @param {"onboarding"|"management"} [mode]
  * @param {boolean} [saving]
  * @param {(payload) => Promise<void>} [onSave] - payload.items entries match StockItemSerializer
@@ -115,7 +118,6 @@ export default function StockParametersForm({
   const composed = compositionByOutput(compositions);
   const [deductComposed, setDeductComposed] = useState(true);
   const [warehouseName, setWarehouseName] = useState(warehouse.name || "Entrepôt principal");
-  const [currency, setCurrency] = useState(warehouse.currency || "XAF");
   const [leadTime, setLeadTime] = useState(warehouse.leadTime ?? 3);
   const [leadTimeUnit, setLeadTimeUnit] = useState(warehouse.leadTimeUnit || "Days");
 
@@ -260,7 +262,6 @@ export default function StockParametersForm({
 
   const buildPayload = () => ({
     warehouseName,
-    currency,
     leadTime,
     leadTimeUnit,
     items: categories.flatMap((cat) =>
@@ -338,14 +339,6 @@ export default function StockParametersForm({
           <label className="field">
             <span>Nom de l'entrepôt</span>
             <input value={warehouseName} onChange={(e) => setWarehouseName(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>Devise</span>
-            <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-              <option>XAF</option>
-              <option>USD</option>
-              <option>EUR</option>
-            </select>
           </label>
           <label className="field">
             <span>Délai de réapprovisionnement</span>

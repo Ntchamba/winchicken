@@ -12,7 +12,7 @@ export function OnboardingProvider({ children }) {
   const [houseHeader, setHouseHeader] = useState({ buildingName: "", chicksPlaced: "", growthCycle: 56, growthCycleUnit: "Day", batchName: "" });
   const [categories, setCategories] = useState(null);
   const [schedules, setSchedules] = useState({});
-  const [warehouse, setWarehouse] = useState({ name: "Main store", currency: "XAF", leadTime: 3, leadTimeUnit: "Days" });
+  const [warehouse, setWarehouse] = useState({ name: "Entrepôt principal", leadTime: 3, leadTimeUnit: "Days" });
   const [stockData, setStockData] = useState(EMPTY_STOCK);
   const [employees, setEmployees] = useState([]);
 

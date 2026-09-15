@@ -30,7 +30,7 @@ export default function OnboardingStockPage() {
   const handleSave = async (payload) => {
     setSaving(true);
     try {
-      setWarehouse({ name: payload.warehouseName, currency: payload.currency, leadTime: payload.leadTime, leadTimeUnit: payload.leadTimeUnit });
+      setWarehouse({ name: payload.warehouseName, leadTime: payload.leadTime, leadTimeUnit: payload.leadTimeUnit });
       // The Quantité column is the farm's opening stock. It only becomes a real stock level
       // once it is recorded as an IN movement — putItems alone dropped it, so a farm finished
       // onboarding reading 0 of everything it had just declared.
