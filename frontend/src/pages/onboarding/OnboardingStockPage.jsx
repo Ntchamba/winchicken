@@ -2,29 +2,10 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import StockParametersForm from "../../components/StockParametersForm";
 import { stockApi } from "../../api/endpoints";
+import { saveStockItemsWithQuantities } from "../../api/stockSave";
+import { buildStockRows } from "../../utils/stockRows";
 import { useAuth } from "../../context/AuthContext";
 import { useOnboarding } from "../../context/OnboardingContext";
-
-let seedRowId = 3000;
-
-// Flat StockItemSerializer list -> `{ [categoryId]: [row] }` for StockParametersForm.
-function buildData(items, categories) {
-  const map = Object.fromEntries(categories.map((c) => [c.id, []]));
-  for (const item of items) {
-    (map[item.category] ||= []).push({
-      id: seedRowId++,
-      itemCode: item.item_code,
-      item: item.name,
-      feedStage: item.feed_stage || "STARTER",
-      coldChain: !!item.cold_chain_required,
-      threshold: item.alert_threshold,
-      unit: item.unit,
-      price: item.unit_price,
-      supplier: item.supplier ?? null,
-    });
-  }
-  return map;
-}
 
 export default function OnboardingStockPage() {
   const { warehouse, setWarehouse } = useOnboarding();
@@ -40,7 +21,7 @@ export default function OnboardingStockPage() {
         const categories = catRes.data.results || catRes.data;
         setState({
           categories,
-          data: buildData(itemRes.data.items, categories),
+          data: buildStockRows(itemRes.data.items, categories),
           suppliers: supRes.data.results || supRes.data,
         });
       });
@@ -50,7 +31,12 @@ export default function OnboardingStockPage() {
     setSaving(true);
     try {
       setWarehouse({ name: payload.warehouseName, currency: payload.currency, leadTime: payload.leadTime, leadTimeUnit: payload.leadTimeUnit });
-      await stockApi.putItems(user.farm, payload.items);
+      // The Quantité column is the farm's opening stock. It only becomes a real stock level
+      // once it is recorded as an IN movement — putItems alone dropped it, so a farm finished
+      // onboarding reading 0 of everything it had just declared.
+      await saveStockItemsWithQuantities(user.farm, payload.items, {
+        note: "Stock d'ouverture (configuration initiale)",
+      });
       navigate("/onboarding/employees");
     } finally {
       setSaving(false);
@@ -67,6 +53,10 @@ export default function OnboardingStockPage() {
       initialSuppliers={state.suppliers}
       farmId={user.farm}
       mode="onboarding"
+      // A farm being set up almost always already has feed and vaccines in the barn. Without
+      // this the Quantité column existed only in "Mettre à jour le stock", so a farm finished
+      // onboarding reading 0 of everything and had to re-declare its opening stock elsewhere.
+      showStockEntry
       saving={saving}
       onSave={handleSave}
       onBack={() => navigate("/onboarding/protocol")}
