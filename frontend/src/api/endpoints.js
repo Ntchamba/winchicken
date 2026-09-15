@@ -36,8 +36,12 @@ export const authApi = {
 
 export const employeesApi = {
   list: () => client.get("/employees/"),
-  create: (payload) => client.post("/employees/", payload),
-  update: (id, payload) => client.put(`/employees/${id}/`, payload),
+  // A per-request timeout (the client has none globally): on a phone with a dropped
+  // connection the promise would otherwise never settle, leaving the form spinning with
+  // nothing to tell the user (FIX 6). An aborted request has no `err.response`, so
+  // getServerErrorMessage already words it as "serveur inaccessible".
+  create: (payload) => client.post("/employees/", payload, { timeout: 20000 }),
+  update: (id, payload) => client.put(`/employees/${id}/`, payload, { timeout: 20000 }),
   remove: (id) => client.delete(`/employees/${id}/`),
   setHourlyRate: (id, hourlyRate) => client.patch(`/employees/${id}/hourly-rate/`, { hourly_rate: hourlyRate }),
   payrollList: () => client.get("/employees/payroll/"),

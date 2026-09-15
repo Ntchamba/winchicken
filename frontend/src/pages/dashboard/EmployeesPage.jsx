@@ -24,6 +24,8 @@ export default function EmployeesPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState("");
   const [rateEdits, setRateEdits] = useState({});
   const [savingRateId, setSavingRateId] = useState(null);
 
@@ -32,7 +34,13 @@ export default function EmployeesPage() {
   const [importResult, setImportResult] = useState(null); // { updated, created, skipped, newAccounts }
   const [importError, setImportError] = useState("");
 
-  const load = () => employeesApi.list().then(({ data }) => setEmployees(data.results || data));
+  // Caught on purpose: a create can succeed and this refresh still fail, which used to leave
+  // the new account off the list with no message — indistinguishable from a lost submission.
+  const load = () =>
+    employeesApi
+      .list()
+      .then(({ data }) => setEmployees(data.results || data))
+      .catch((err) => setError(getServerErrorMessage(err, "La liste des employés n'a pas pu être rechargée.")));
 
   const handleImportFile = async (e) => {
     const file = e.target.files?.[0];
@@ -54,8 +62,17 @@ export default function EmployeesPage() {
 
   useEffect(() => { load(); }, []);
 
-  const submit = async () => {
+  // `saving` is the in-flight guard: the button carried none, so a second tap during a slow
+  // save sent the request twice and the operator had no way to tell a save was running at all
+  // (FIX 6). The submit also goes through <form onSubmit>, so the phone keyboard's "Go" key
+  // works — it used to do nothing.
+  const submit = async (event) => {
+    event?.preventDefault();
+    if (saving) return;
     setError("");
+    setSaved("");
+    setSaving(true);
+    const wasEditing = editingId;
     try {
       if (editingId) {
         const payload = { ...form };
@@ -64,18 +81,26 @@ export default function EmployeesPage() {
       } else {
         await employeesApi.create(form);
       }
+      setSaved(
+        wasEditing
+          ? `Modifications enregistrées pour ${form.name || form.email}.`
+          : `Compte créé : ${form.name || form.email} (${form.email}).`,
+      );
       setForm(EMPTY_FORM);
       setEditingId(null);
-      load();
+      await load();
     } catch (err) {
       // Was `err.response?.data?.email?.[0] || "..."` — only ever surfaced an *email* field
       // error and silently swallowed every other one (wrong role, weak password, network
       // outage). getServerErrorMessage checks detail/any-field/unreachable, in that order.
       setError(getServerErrorMessage(err, "Impossible d'enregistrer cet employé."));
+    } finally {
+      setSaving(false);
     }
   };
 
   const startEdit = (employee) => {
+    setSaved("");
     setEditingId(employee.id);
     setForm({ name: employee.name, civility: employee.civility, email: employee.email, role: employee.role, password: "" });
   };
@@ -208,7 +233,7 @@ export default function EmployeesPage() {
       ))}
       {employees.length === 0 && <p className="empty-state">Aucun compte employé pour le moment.</p>}
 
-      <div className="card schedule-card" style={{ marginTop: 20 }}>
+      <form className="card schedule-card" style={{ marginTop: 20 }} onSubmit={submit}>
         <p className="schedule-note" style={{ marginBottom: 14 }}>{editingId ? "Modifier l'employé" : "Ajouter un nouvel employé"}</p>
         <div className="detail-grid">
           <label className="field">
@@ -239,17 +264,20 @@ export default function EmployeesPage() {
           <span>{editingId ? "Nouveau mot de passe (laisser vide pour ne pas le changer)" : "Mot de passe"}</span>
           <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
         </label>
-        {error && <p className="field-error" style={{ marginTop: 8 }}>{error}</p>}
+        {error && <p className="field-error" style={{ marginTop: 8 }} role="alert">{error}</p>}
+        {saved && <p className="save-confirmation" role="status">{saved}</p>}
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button className="save-button" onClick={submit}>
-            <UserPlus size={14} strokeWidth={2.2} style={{ marginRight: 6 }} />
-            {editingId ? "Enregistrer les modifications" : "Ajouter un employé"}
+          <button className="save-button" type="submit" disabled={saving}>
+            {saving
+              ? <Loader2 size={14} className="spin" style={{ marginRight: 6 }} />
+              : <UserPlus size={14} strokeWidth={2.2} style={{ marginRight: 6 }} />}
+            {saving ? "Enregistrement…" : editingId ? "Enregistrer les modifications" : "Ajouter un employé"}
           </button>
           {editingId && (
-            <button className="add-button" onClick={() => { setEditingId(null); setForm(EMPTY_FORM); }}>Annuler</button>
+            <button className="add-button" type="button" disabled={saving} onClick={() => { setEditingId(null); setForm(EMPTY_FORM); setSaved(""); }}>Annuler</button>
           )}
         </div>
-      </div>
+      </form>
     </div>
   );
 }
