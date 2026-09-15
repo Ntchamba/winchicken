@@ -448,6 +448,12 @@ export default function HouseProtocolForm({
       weighingFrequency: weighingFrequency || null,
       protocolLines: categories.flatMap((cat) =>
         (schedules[cat.id] || []).map((row) => ({
+          // The line's database id, so the PUT updates it in place rather than deleting and
+          // recreating it — a recreate takes its completion history with it (FIX 3.5, bug A).
+          // Absent on a row the user just added, which is what tells the backend to create it.
+          // `row.id` is a local counter value and must never be sent: it can collide with a
+          // real id and would edit an unrelated line.
+          ...(row.serverId ? { id: row.serverId } : {}),
           category: cat.id,
           from_value: Number(row.fromValue) || 0,
           from_unit: row.fromUnit.toUpperCase(),

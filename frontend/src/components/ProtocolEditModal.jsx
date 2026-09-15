@@ -5,6 +5,7 @@ import HouseProtocolForm from "./HouseProtocolForm";
 import { batchesApi, housesApi, stockApi } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 import { useHousesContext } from "../context/HousesContext";
+import { buildProtocolSchedules } from "../utils/protocolRows";
 import "../styles/protocol-edit-modal.css";
 
 const EASE_EXPO = [0.16, 1, 0.3, 1];
@@ -19,30 +20,6 @@ function daysBetween(startDate, endDate) {
   return Number.isFinite(days) && days > 0 ? days : null;
 }
 
-function buildSchedules(categories, lines) {
-  const map = Object.fromEntries(categories.map((c) => [c.id, []]));
-  for (const line of lines) {
-    map[line.category]?.push({
-      id: line.id,
-      fromValue: line.from_value,
-      fromUnit: line.from_unit.charAt(0) + line.from_unit.slice(1).toLowerCase(),
-      toValue: line.to_value || 1,
-      toUnit: line.to_unit.charAt(0) + line.to_unit.slice(1).toLowerCase(),
-      untilEnd: line.until_end,
-      what: line.what,
-      details: line.details,
-      timeSlots: (line.time_slots || []).map((slot) => ({
-        id: slot.id, startTime: slot.start_time, endTime: slot.end_time,
-      })),
-      stockItemCode: line.stock_item || null,
-      consumptionMode: line.dose_per_bird != null ? "dose" : "fixed",
-      quantityPerDay: line.quantity_per_day ?? "",
-      dosePerBird: line.dose_per_bird ?? "",
-      coverageWarning: "",
-    });
-  }
-  return map;
-}
 
 /**
  * Protocol editor as a centered modal (2026-08-25) — replaces full-page navigation to
@@ -114,7 +91,7 @@ export default function ProtocolEditModal({ houseCode, onClose, onSaved }) {
       const batch = batches.find((b) => b.status === "ACTIVE") || null;
       setCategories(cats);
       setStockItems((stockRes.data.items || []).map((i) => ({ item_code: i.item_code, name: i.name, unit: i.unit })));
-      setSchedules(buildSchedules(cats, protocolRes.data));
+      setSchedules(buildProtocolSchedules(cats, protocolRes.data));
       setActiveBatch(batch);
       setInitialHeader({
         buildingName: houseRes.data.name || "",

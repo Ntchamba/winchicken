@@ -15,13 +15,40 @@ from apps.protocols.serializers import ProtocolCategorySerializer, ProtocolTempl
 from apps.protocols.services import expand_protocol_to_alert_rules
 
 
-class HouseProtocolView(APIView):
-    """GET/PUT /api/houses/{houseCode}/protocol/ — read or fully replace a house's protocol lines.
+def _sync_time_slots(line, slots):
+    """Bring `line`'s time slots in line with `slots` without replacing the untouched ones.
 
-    PUT is a full replace, not a merge: existing ProtocolTemplate rows for the house are deleted
-    and recreated from the submitted `lines` list inside one transaction. Editing reserved to
-    Admin / Farm Manager / the Farmer responsible for the house (`CanEditHouseProtocol`); GET is
-    open to any authenticated user of the farm.
+    Matched on `(start_time, end_time)` — a slot has no other identity, and the client never
+    sends slot ids back. `TaskCompletion.time_slot` is CASCADE, so recreating a slot that did
+    not change would silently delete the completions filed against it.
+    """
+    existing = {(slot.start_time, slot.end_time): slot for slot in line.time_slots.all()}
+    kept_ids = set()
+    for slot in slots:
+        key = (slot['start_time'], slot['end_time'])
+        match = existing.get(key) or ProtocolTimeSlot.objects.create(protocol_line=line, **slot)
+        kept_ids.add(match.id)
+    line.time_slots.exclude(id__in=kept_ids).delete()
+
+
+class HouseProtocolView(APIView):
+    """GET/PUT /api/houses/{houseCode}/protocol/ — read or save a house's protocol lines.
+
+    PUT is an **upsert** keyed on each line's `id`: a line the client sends back with its id is
+    updated in place, a line with no id is created, and only lines the client left out are
+    deleted — all inside one transaction. Its time slots are synced the same way, matched on
+    their start/end times (`_sync_time_slots`).
+
+    It used to delete every line and recreate them, which took `TaskCompletion` with it
+    (CASCADE, on the line *and* on the time slot). Any protocol save — including opening the
+    form and pressing save without changing anything — wiped that house's completion history:
+    today's finished tasks read as outstanding again, and re-tapping "Marquer comme fait"
+    deducted the stock a second time, because `get_or_create` no longer found the completion
+    that had already been filed. The `OUT` movement survived (SET_NULL), so the stock was
+    simply down twice (FIX 3.5, bug A).
+
+    Editing reserved to Admin / Farm Manager / the Farmer responsible for the house
+    (`CanEditHouseProtocol`); GET is open to any authenticated user of the farm.
     """
 
     permission_classes = [IsAuthenticated]
@@ -59,18 +86,24 @@ class HouseProtocolView(APIView):
                 )
 
         with transaction.atomic():
-            ProtocolTemplate.objects.filter(house=house).delete()
+            existing_lines = {line.id: line for line in ProtocolTemplate.objects.filter(house=house)}
+            kept_ids = set()
             # `time_slots` isn't a real ProtocolTemplate field/constructor kwarg (it's the
-            # reverse FK to ProtocolTimeSlot) — popped per line before bulk_create, then created
-            # against the real pks bulk_create returns (Bug 1 fix, 2026-08-27, docs/deviations.md).
-            lines_data = list(serializer.validated_data)
-            time_slots_per_line = [line.pop('time_slots', []) for line in lines_data]
-            created_lines = ProtocolTemplate.objects.bulk_create([ProtocolTemplate(house=house, **line) for line in lines_data])
-            ProtocolTimeSlot.objects.bulk_create([
-                ProtocolTimeSlot(protocol_line=line_obj, **slot)
-                for line_obj, slots in zip(created_lines, time_slots_per_line)
-                for slot in slots
-            ])
+            # reverse FK to ProtocolTimeSlot), so it is popped per line and synced separately
+            # (Bug 1 fix, 2026-08-27, docs/deviations.md).
+            for line_data in serializer.validated_data:
+                slots = line_data.pop('time_slots', [])
+                line = existing_lines.get(line_data.pop('id', None))
+                if line is None:
+                    line = ProtocolTemplate.objects.create(house=house, **line_data)
+                else:
+                    for field, value in line_data.items():
+                        setattr(line, field, value)
+                    line.save()
+                kept_ids.add(line.id)
+                _sync_time_slots(line, slots)
+
+            ProtocolTemplate.objects.filter(house=house).exclude(id__in=kept_ids).delete()
 
             # Regenerate this house's active batch's scheduled PROTOCOL_TASK AlertRule rows from
             # the protocol just saved — otherwise they'd keep pointing at the schedule that

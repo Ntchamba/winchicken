@@ -36,6 +36,47 @@ export const DEFAULT_CATEGORIES = [
 let nextId = 100;
 export const nextRowId = () => nextId++;
 
+/**
+ * `GET /houses/{code}/protocol/` lines -> `{ [categoryId]: [row] }` for `HouseProtocolForm`.
+ *
+ * There is one builder because there used to be two, and they disagreed: the full-page route
+ * (`HouseProtocolPage`) omitted `stockItemCode` / `consumptionMode` / `quantityPerDay` /
+ * `dosePerBird`, so `consumptionFields` read them as undefined and saving from that route
+ * dropped every line's stock consumption config. The modal's copy had them. Same shape of bug
+ * as the two stock-row mappers (see `utils/stockRows.js`).
+ *
+ * `serverId` is the row's database id, and it is deliberately NOT `id`: `id` is the local key
+ * this module hands out from a counter starting at 100, which can collide with a real database
+ * id. `HouseProtocolForm` sends `serverId` back as `id` so the PUT can update the line in place
+ * instead of deleting and recreating it — which used to take its completion history with it
+ * (FIX 3.5, bug A). A row with no `serverId` is new and gets created.
+ */
+export function buildProtocolSchedules(categories, lines) {
+  const map = Object.fromEntries(categories.map((c) => [c.id, []]));
+  for (const line of lines) {
+    map[line.category]?.push({
+      id: nextId++,
+      serverId: line.id,
+      fromValue: line.from_value,
+      fromUnit: line.from_unit.charAt(0) + line.from_unit.slice(1).toLowerCase(),
+      toValue: line.to_value || 1,
+      toUnit: line.to_unit.charAt(0) + line.to_unit.slice(1).toLowerCase(),
+      untilEnd: line.until_end,
+      what: line.what,
+      details: line.details,
+      timeSlots: (line.time_slots || []).map((slot) => ({
+        id: slot.id, startTime: slot.start_time, endTime: slot.end_time,
+      })),
+      stockItemCode: line.stock_item || null,
+      consumptionMode: line.dose_per_bird != null ? "dose" : "fixed",
+      quantityPerDay: line.quantity_per_day ?? "",
+      dosePerBird: line.dose_per_bird ?? "",
+      coverageWarning: "",
+    });
+  }
+  return map;
+}
+
 export const makeRow = (overrides = {}) => ({
   id: nextId++,
   fromValue: 1,

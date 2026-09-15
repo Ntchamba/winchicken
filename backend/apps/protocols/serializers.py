@@ -30,11 +30,14 @@ class ProtocolCategorySerializer(serializers.ModelSerializer):
 
 class ProtocolTimeSlotSerializer(serializers.ModelSerializer):
     """One `ProtocolTimeSlot` — a "07h00-09h00"-style window, nested (read AND write) under
-    `ProtocolTemplateSerializer.time_slots` (Bug 1 fix, 2026-08-27, docs/deviations.md). `id` is
-    read-only/informational only: `HouseProtocolView.put`/`OnboardingView.post` always fully
-    delete-and-recreate a house's protocol lines (and, transitively, their time slots — CASCADE),
-    matching the existing full-replace convention for `ProtocolTemplate` itself; the frontend
-    never sends an existing slot's id back to update it in place."""
+    `ProtocolTemplateSerializer.time_slots` (Bug 1 fix, 2026-08-27, docs/deviations.md).
+
+    `id` stays read-only and the frontend still never sends one back: since FIX 3.5
+    `HouseProtocolView.put` matches a slot on `(start_time, end_time)`, which is what a slot
+    actually *is*. That matters because `TaskCompletion.time_slot` is CASCADE — replacing a
+    line's slots on every save would destroy the completions keyed on them even when the line
+    itself survived. Editing a window's times is still a delete + create, and takes that
+    window's completions with it, which is correct: it is a different occurrence."""
 
     class Meta:
         model = ProtocolTimeSlot
@@ -55,6 +58,12 @@ class ProtocolTemplateSerializer(serializers.ModelSerializer):
     see that model's docstring."""
 
     time_slots = ProtocolTimeSlotSerializer(many=True, required=False)
+    # Writable so `HouseProtocolView.put` can match a submitted line back to the row it edits.
+    # It is the only natural key a protocol line has — every other field is user-editable, so
+    # matching on `what` or the day range would read a renamed line as "delete + create" and
+    # take its completion history with it. Omit it and the line is created; a line the client
+    # omits entirely is the one that gets deleted (FIX 3.5, bug A).
+    id = serializers.IntegerField(required=False)
 
     class Meta:
         model = ProtocolTemplate
@@ -62,7 +71,6 @@ class ProtocolTemplateSerializer(serializers.ModelSerializer):
             'id', 'category', 'from_value', 'from_unit', 'to_value', 'to_unit', 'until_end',
             'what', 'details', 'time_slots', 'stock_item', 'quantity_per_day', 'dose_per_bird',
         ]
-        read_only_fields = ['id']
         extra_kwargs = {
             'from_value': {'help_text': 'Start of the range, in from_unit (e.g. day 1).'},
             'to_value': {'help_text': 'End of the range, in to_unit; ignored/omit if until_end is true.'},

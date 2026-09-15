@@ -145,6 +145,12 @@ class OnboardingView(APIView):
             # against the real pks bulk_create returns (Bug 1 fix, 2026-08-27, docs/deviations.md).
             lines_data = list(line_serializer.validated_data)
             time_slots_per_line = [line.pop('time_slots', []) for line in lines_data]
+            # `id` is writable on the serializer so HouseProtocolView.put can match a line to the
+            # row it edits. Onboarding only ever creates, on a house that has just been made, so
+            # any id in the payload is meaningless here — dropped rather than passed to the
+            # constructor as an explicit primary key.
+            for line in lines_data:
+                line.pop('id', None)
             created_lines = ProtocolTemplate.objects.bulk_create(
                 [ProtocolTemplate(house=house, **line) for line in lines_data]
             )
