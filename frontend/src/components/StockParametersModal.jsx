@@ -3,6 +3,8 @@ import { X, FileSpreadsheet, Download, Loader2 } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import StockParametersForm from "./StockParametersForm";
 import { stockApi } from "../api/endpoints";
+import { saveStockItemsWithQuantities } from "../api/stockSave";
+import { buildStockRows } from "../utils/stockRows";
 import { getServerErrorMessage } from "../api/errors";
 import "../styles/protocol-edit-modal.css";
 import { todayISO as localTodayISO } from "../utils/localDate";
@@ -10,35 +12,8 @@ import { todayISO as localTodayISO } from "../utils/localDate";
 const EASE_EXPO = [0.16, 1, 0.3, 1];
 const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
-let localRowId = 5000;
 const todayISO = () => localTodayISO();
 
-// Flat StockItemSerializer list -> `{ [categoryId]: [row] }` in the shape StockParametersForm
-// wants. Rows for a category with no items still get an entry so the tab renders empty.
-// `quantity` is pre-filled with the item's current on-hand so the Quantité column round-trips
-// safely: the PUT below fully replaces StockItem rows (cascading away their StockMovement
-// history), and handleSave then re-records each row's quantity as a single IN movement.
-function buildData(items, categories) {
-  const map = Object.fromEntries(categories.map((c) => [c.id, []]));
-  for (const item of items) {
-    (map[item.category] ||= []).push({
-      id: localRowId++,
-      itemCode: item.item_code,
-      item: item.name,
-      feedStage: item.feed_stage || "STARTER",
-      coldChain: !!item.cold_chain_required,
-      threshold: item.alert_threshold,
-      unit: item.unit,
-      price: item.unit_price,
-      supplier: item.supplier ?? null,
-      itemType: item.item_type || "",
-      quantity: item.current_quantity ?? "",
-      originalQuantity: item.current_quantity ?? 0,
-      date: todayISO(),
-    });
-  }
-  return map;
-}
 
 /**
  * "Mettre à jour le stock" — the stock parameter form as a centered backdrop-blur modal, same
@@ -77,7 +52,7 @@ export default function StockParametersModal({ open, farmId, compositions = [], 
       .then(([catRes, itemRes, supRes]) => {
         const cats = catRes.data.results || catRes.data;
         setCategories(cats);
-        setData(buildData(itemRes.data.items, cats));
+        setData(buildStockRows(itemRes.data.items, cats));
         setSuppliers(supRes.data.results || supRes.data);
       });
 
@@ -145,37 +120,9 @@ export default function StockParametersModal({ open, farmId, compositions = [], 
     setSaving(true);
     setSaveError("");
     try {
-      // 1. Persist the item definitions (full replace).
-      const { data } = await stockApi.putItems(farmId, payload.items);
-      // 2. Record the Quantité / Date columns as stock IN movements. The PUT above recreated
-      //    every StockItem (and cascaded away prior movements), so re-post each row's quantity
-      //    against the fresh item_code, matched back by name.
-      const byName = {};
-      for (const it of data.items || []) byName[it.name] = it;
-      const movements = (payload.items || [])
-        .filter((it) => it.quantity != null && Number(it.quantity) > 0 && byName[it.name])
-        .map((it) => {
-          // Adding a brand-new article to stock is a purchase: file it in Finances at
-          // quantity × unit price (the backend turns total_price into the Expense, under the
-          // category the article's type implies). Re-saving an existing item's stock level
-          // sends nothing → no double-count.
-          const unitPrice = Number(byName[it.name].unit_price) || 0;
-          const totalPrice = it.is_new_item && unitPrice > 0 ? Number(it.quantity) * unitPrice : null;
-          // Composed item whose level was raised here → treat the increase as a production run:
-          // deduct the recipe ingredients scaled to the delta (backend, via production_quantity).
-          const delta = Number(it.quantity) - (Number(it.original_quantity) || 0);
-          const production = it.deduct_production && delta > 0 ? delta : null;
-          return stockApi.addMovement({
-            item: byName[it.name].item_code,
-            movement_type: "IN",
-            quantity: Number(it.quantity),
-            movement_date: it.movement_date || todayISO(),
-            note: "Saisie via « Mettre à jour le stock »",
-            ...(totalPrice && totalPrice > 0 ? { total_price: totalPrice } : {}),
-            ...(production ? { production_quantity: production } : {}),
-          });
-        });
-      if (movements.length) await Promise.all(movements);
+      await saveStockItemsWithQuantities(farmId, payload.items, {
+        note: "Saisie via « Mettre à jour le stock »",
+      });
 
       dirtyRef.current = false;
       onSaved?.();
