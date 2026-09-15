@@ -12,6 +12,7 @@ urlpatterns = [
     path('houses/<str:house_code>/tasks-now/<str:task_id>/assign/', views.HouseTaskAssignView.as_view(), name='house-task-assign'),
     path('houses/<str:house_code>/tasks-now/<str:task_id>/complete/', views.HouseTaskCompleteView.as_view(), name='house-task-complete'),
     path('houses/<str:house_code>/tasks-now/<str:task_id>/uncomplete/', views.HouseTaskUncompleteView.as_view(), name='house-task-uncomplete'),
+    path('houses/<str:house_code>/assignments/', views.HouseAssignmentsView.as_view(), name='house-assignments'),
     path('tasks/mine/', views.MyTasksView.as_view(), name='tasks-mine'),
     path('tasks/assignable-users/', views.AssignableUsersView.as_view(), name='tasks-assignable-users'),
     path('houses/<str:house_code>/milestones/', views.HouseMilestonesView.as_view(), name='house-milestones'),

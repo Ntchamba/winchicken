@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from apps.alerts.models import AlertRule, AlertRuleType
 from apps.batches.models import PoultryBatch
+from apps.batches.services import WEIGHING_RECURRENCE_LABELS
 from apps.core.models import User
 from apps.core.permissions import CanEditHouseProtocol, IsAdminOrFarmManagerOrFarmerOrWorker
 from apps.houses.models import PoultryHouse
@@ -264,3 +265,78 @@ class MyTasksView(APIView):
                 if task['assignedTo'] == request.user.id:
                     results.append({**task, 'houseCode': house.house_code, 'houseName': house.name})
         return Response(results)
+
+
+_ASSIGNMENT_SERIALIZER = inline_serializer('HouseAssignment', {
+    'id': serializers.CharField(help_text='The same task id the assign endpoint takes.'),
+    'what': serializers.CharField(),
+    'category': serializers.CharField(),
+    'assignedTo': serializers.IntegerField(),
+    'assignedToName': serializers.CharField(),
+    'activeToday': serializers.BooleanField(),
+    'periodLabel': serializers.CharField(allow_null=True),
+}, many=True)
+
+
+@extend_schema(responses=_ASSIGNMENT_SERIALIZER)
+class HouseAssignmentsView(APIView):
+    """GET /api/houses/{houseCode}/assignments/ — every assignment this house currently carries,
+    whether or not the task is due today (2026-09-15, FIX 4).
+
+    `HouseTasksNowView` only ever lists what is due *now*, and assignment display was hung off
+    that list. So the moment a task stopped being due — the day after a weekly weighing, or the
+    day a protocol line's range ended — its assignment disappeared from the panel and from
+    `/api/tasks/mine/` while `assigned_to` sat in the database with no way to see or clear it.
+    The row had not expired: a weekly reminder is due again six days later. The filter was too
+    narrow, so this is the wider read rather than a cleanup that would throw the assignment away.
+
+    `activeToday` comes from `compute_tasks_now` itself, not from a second "is it due" rule —
+    the two must never be able to disagree (see that function's docstring).
+    """
+
+    permission_classes = [CanEditHouseProtocol]
+
+    def get(self, request, house_code):
+        house = get_object_or_404(PoultryHouse, house_code=house_code, farm=request.user.farm)
+        _, tasks = compute_tasks_now(house)
+        due_ids = {str(task['id']) for task in tasks}
+
+        rows = []
+        lines = (
+            ProtocolTemplate.objects
+            .filter(house=house, assigned_to__isnull=False)
+            .select_related('assigned_to', 'category')
+        )
+        for line in lines:
+            if line.until_end:
+                period = f'À partir du jour {line.from_value}'
+            else:
+                period = f'Jours {line.from_value} à {line.to_value}'
+            rows.append({
+                'id': str(line.id),
+                'what': line.what,
+                'category': line.category.label,
+                'assignedTo': line.assigned_to_id,
+                'assignedToName': line.assigned_to.name,
+                'activeToday': str(line.id) in due_ids,
+                'periodLabel': period,
+            })
+
+        rules = (
+            AlertRule.objects
+            .filter(batch__house=house, rule_type=AlertRuleType.WEIGHING_REMINDER, assigned_to__isnull=False)
+            .select_related('assigned_to', 'batch')
+        )
+        for rule in rules:
+            task_id = f'weighing-{rule.batch.batch_code}'
+            rows.append({
+                'id': task_id,
+                'what': 'Peser un échantillon de la bande',
+                'category': 'Pesée',
+                'assignedTo': rule.assigned_to_id,
+                'assignedToName': rule.assigned_to.name,
+                'activeToday': task_id in due_ids,
+                'periodLabel': WEIGHING_RECURRENCE_LABELS.get(rule.batch.weighing_frequency),
+            })
+
+        return Response(rows)

@@ -9,13 +9,14 @@ from apps.houses.views.houses import HouseDetailView, HouseListCreateView
 from apps.houses.views.milestones import HouseMilestonesView, Upcoming48hView
 from apps.houses.views.protocol import HouseProtocolView, ProtocolCategoryDetailView, ProtocolCategoryListCreateView
 from apps.houses.views.tasks import (
-    AssignableUsersView, HouseTaskAssignView, HouseTaskCompleteView, HouseTaskUncompleteView, HouseTasksNowView, MyTasksView,
+    AssignableUsersView, HouseAssignmentsView, HouseTaskAssignView, HouseTaskCompleteView,
+    HouseTaskUncompleteView, HouseTasksNowView, MyTasksView,
 )
 
 __all__ = [
     'HouseListCreateView', 'HouseDetailView',
     'HouseProtocolView', 'ProtocolCategoryListCreateView', 'ProtocolCategoryDetailView',
     'HouseTasksNowView', 'HouseTaskAssignView', 'HouseTaskCompleteView', 'HouseTaskUncompleteView',
-    'MyTasksView', 'AssignableUsersView',
+    'MyTasksView', 'AssignableUsersView', 'HouseAssignmentsView',
     'HouseMilestonesView', 'Upcoming48hView',
 ]
