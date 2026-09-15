@@ -65,6 +65,9 @@ export const housesApi = {
   tasksNow: (houseCode) => client.get(`/houses/${houseCode}/tasks-now/`),
   assignTask: (houseCode, taskId, userId) =>
     client.patch(`/houses/${houseCode}/tasks-now/${taskId}/assign/`, { assigned_to: userId }),
+  // Every assignment the house carries, due today or not (FIX 4) — tasksNow only lists what is
+  // due now, which is what made an assignment invisible the day after its task ran.
+  assignments: (houseCode) => client.get(`/houses/${houseCode}/assignments/`),
   milestones: (houseCode) => client.get(`/houses/${houseCode}/milestones/`),
 };
 

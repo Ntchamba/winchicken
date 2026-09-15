@@ -6,6 +6,7 @@ import QuickEntryPanel from "../../components/QuickEntryPanel";
 import ProtocolEditModal from "../../components/ProtocolEditModal";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import TasksNowPanel from "../../components/TasksNowPanel";
+import AssignmentsPanel from "../../components/AssignmentsPanel";
 import WeeklyKpiCharts from "../../components/WeeklyKpiCharts";
 import UnusualCaseReportForm from "../../components/UnusualCaseReportForm";
 import CycleTimeline from "../../components/CycleTimeline";
@@ -31,6 +32,7 @@ export default function HouseDetailPage() {
   const [weeklyKpi, setWeeklyKpi] = useState(null);
   const [growthSeries, setGrowthSeries] = useState([]);
   const [tasksNow, setTasksNow] = useState({ dayOfCycle: null, tasks: [] });
+  const [assignmentsKey, setAssignmentsKey] = useState(0);
   const [closing, setClosing] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -55,6 +57,13 @@ export default function HouseDetailPage() {
   const loadTasksNow = useCallback(() => {
     housesApi.tasksNow(houseCode).then(({ data }) => setTasksNow(data));
   }, [houseCode]);
+
+  // An assignment changed in the tasks panel must also refresh the assignments card: two views
+  // of the same rows must never be able to disagree.
+  const handleAssigned = useCallback(() => {
+    loadTasksNow();
+    setAssignmentsKey((k) => k + 1);
+  }, [loadTasksNow]);
 
   useEffect(() => {
     loadBatch();
@@ -161,6 +170,10 @@ export default function HouseDetailPage() {
 
       <IncidentsPanel houseCode={houseCode} />
 
+      {/* Outside the `batch &&` block on purpose: a house between two batches still carries its
+          assignments, and they were exactly as invisible as the ones FIX 4 is about. */}
+      <AssignmentsPanel houseCode={houseCode} reloadKey={assignmentsKey} onChanged={loadTasksNow} />
+
       {batch && (
         <>
           <CycleTimeline houseCode={houseCode} />
@@ -171,7 +184,7 @@ export default function HouseDetailPage() {
           <WeighingSection batches={[{ batchCode: batch.batch_code, name: batch.name }]} onLogged={loadGrowthCurve} />
 
           <div className="section-row"><h2>Tâches à effectuer maintenant</h2></div>
-          <TasksNowPanel tasksNow={tasksNow} houseCode={houseCode} onAssigned={loadTasksNow} />
+          <TasksNowPanel tasksNow={tasksNow} houseCode={houseCode} onAssigned={handleAssigned} />
 
           <div className="section-row"><h2>Saisie rapide du jour</h2></div>
           <QuickEntryPanel batches={[{ batch_code: batch.batch_code, name: batch.name }]} onLogged={loadGrowthCurve} />
