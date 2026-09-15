@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Wheat, Stethoscope, Wrench, Layers, Package, Syringe, Droplets, Boxes, ShoppingCart,
   Thermometer, Bug, ClipboardList, Egg, Wind, Plus, Trash2, Loader2, X, Check, RotateCcw,
@@ -9,6 +9,7 @@ import UnitField from "./UnitField";
 import { compositionByOutput } from "../utils/compositions";
 import "../styles/house-protocol-theme-light.css";
 import { todayISO as localTodayISO } from "../utils/localDate";
+import { useTodayISO } from "../hooks/useTodayISO";
 
 // Curated icon picker for custom stock categories — kept in sync by hand with the backend's
 // STOCK_CATEGORY_ICON_CHOICES (apps/stock/models.py). The four defaults' icons are a subset.
@@ -134,6 +135,37 @@ export default function StockParametersForm({
   const [addingSupplierForRow, setAddingSupplierForRow] = useState(null);
   const [newSupplierName, setNewSupplierName] = useState("");
   const [supplierBusy, setSupplierBusy] = useState(false);
+
+  // Each row carries its own "Date" cell, seeded with the local day the rows were built
+  // (`buildStockRows`) or the row was added (`makeRow`). This screen is one a worker leaves
+  // open, so that seed goes stale across local midnight and the opening-stock IN movement gets
+  // filed against yesterday. Roll every cell that still shows the previous today forward, and
+  // leave a date the user picked on purpose alone — `useDateDefaultingToToday`'s rule, applied
+  // across a table of rows instead of a single field.
+  const today = useTodayISO();
+  const previousTodayRef = useRef(today);
+
+  useEffect(() => {
+    // Read the ref into a local *before* scheduling: a functional updater runs during the next
+    // render, so one reading `previousTodayRef.current` would see the line below, never the
+    // previous day. (Keeping it pure also survives StrictMode's double invocation.)
+    const previousToday = previousTodayRef.current;
+    if (previousToday === today) return;
+    previousTodayRef.current = today;
+
+    setData((prev) => {
+      let changed = false;
+      const next = {};
+      for (const [categoryId, categoryRows] of Object.entries(prev)) {
+        next[categoryId] = categoryRows.map((row) => {
+          if (row.date !== previousToday) return row;
+          changed = true;
+          return { ...row, date: today };
+        });
+      }
+      return changed ? next : prev;
+    });
+  }, [today]);
 
   const activeCategory = categories.find((c) => c.id === activeCategoryId) || null;
   const rows = data[activeCategoryId] || [];
