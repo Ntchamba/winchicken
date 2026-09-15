@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { payrollApi, employeesApi } from "../../api/endpoints";
 import { getServerErrorMessage } from "../../api/errors";
 import { formatMoney } from "../../utils/money";
-import { todayISO } from "../../utils/localDate";
+import { useDateDefaultingToToday } from "../../hooks/useTodayISO";
 
 const MONTH_LABELS = [
   "", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
@@ -38,7 +38,10 @@ export default function SalairesSection({ onPaymentRecorded }) {
   const [error, setError] = useState("");
   const [savingRateId, setSavingRateId] = useState(null);
   const [payingId, setPayingId] = useState(null);
-  const [hoursForm, setHoursForm] = useState({ user: "", date: todayISO(), hours_worked: "", note: "" });
+  // The date lives outside `hoursForm` so it can follow the farm-local day on its own — see
+  // useTodayISO. The rest of the form is unrelated to the clock.
+  const [hoursDate, setHoursDate, today] = useDateDefaultingToToday();
+  const [hoursForm, setHoursForm] = useState({ user: "", hours_worked: "", note: "" });
   const [savingHours, setSavingHours] = useState(false);
   const [hoursSaved, setHoursSaved] = useState(false);
 
@@ -98,7 +101,7 @@ export default function SalairesSection({ onPaymentRecorded }) {
     setHoursSaved(false);
     try {
       await payrollApi.logHours({
-        user: hoursForm.user, date: hoursForm.date, hours_worked: hoursForm.hours_worked, note: hoursForm.note,
+        user: hoursForm.user, date: hoursDate, hours_worked: hoursForm.hours_worked, note: hoursForm.note,
       });
       setHoursForm({ ...hoursForm, hours_worked: "", note: "" });
       setHoursSaved(true);
@@ -127,7 +130,7 @@ export default function SalairesSection({ onPaymentRecorded }) {
           </label>
           <label className="field">
             <span>Date</span>
-            <input type="date" value={hoursForm.date} max={todayISO()} onChange={(e) => setHoursForm({ ...hoursForm, date: e.target.value })} />
+            <input type="date" value={hoursDate} max={today} onChange={(e) => setHoursDate(e.target.value)} />
           </label>
           <label className="field">
             <span>Heures travaillées</span>

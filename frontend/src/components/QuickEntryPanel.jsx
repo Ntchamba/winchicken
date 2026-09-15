@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { batchesApi } from "../api/endpoints";
 import "../styles/protocol-edit-modal.css";
-import { todayISO } from "../utils/localDate";
+import { useDateDefaultingToToday } from "../hooks/useTodayISO";
 
 // "Signal de perte" severity (2026-08-25 bugfix — this used to be a plain small number input
 // with no visual weight at all): gray at 0, amber for any non-zero count while we don't yet
@@ -35,7 +35,7 @@ function severityFor(mortalityValue, cumulativePct, referenceRange) {
  */
 export default function QuickEntryPanel({ batches = [], onLogged }) {
   const [batchCode, setBatchCode] = useState(batches[0]?.batch_code || batches[0]?.batchCode || "");
-  const [date, setDate] = useState(todayISO());
+  const [date, setDate, today] = useDateDefaultingToToday();
   const [mortality, setMortality] = useState("");
   const [eggsCollected, setEggsCollected] = useState("");
   const [saving, setSaving] = useState(false);
@@ -92,7 +92,7 @@ export default function QuickEntryPanel({ batches = [], onLogged }) {
         )}
         <label className="quick-entry-field">
           <span>Date</span>
-          <input type="date" value={date} max={todayISO()} onChange={(e) => { setDate(e.target.value); setSaved(false); }} />
+          <input type="date" value={date} max={today} onChange={(e) => { setDate(e.target.value); setSaved(false); }} />
         </label>
         <label className="quick-entry-field">
           <span>Mortalité — signal de perte</span>

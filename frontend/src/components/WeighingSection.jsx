@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { batchesApi } from "../api/endpoints";
 import "../styles/protocol-edit-modal.css";
-import { todayISO } from "../utils/localDate";
+import { useDateDefaultingToToday } from "../hooks/useTodayISO";
 
 function formatWeight(kg) {
   return `${kg} kg`;
@@ -25,7 +25,7 @@ function formatWeight(kg) {
 export default function WeighingSection({ batches = [], onLogged }) {
   const isMulti = batches.length > 1;
   const [batchCode, setBatchCode] = useState("");
-  const [date, setDate] = useState(todayISO());
+  const [date, setDate, today] = useDateDefaultingToToday();
   const [weight, setWeight] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -109,7 +109,7 @@ export default function WeighingSection({ batches = [], onLogged }) {
           )}
           <label className="quick-entry-field">
             <span>Date de la pesée</span>
-            <input type="date" value={date} max={todayISO()} onChange={(e) => { setDate(e.target.value); setSaved(false); }} />
+            <input type="date" value={date} max={today} onChange={(e) => { setDate(e.target.value); setSaved(false); }} />
           </label>
           <label className="quick-entry-field">
             <span>Poids moyen (kg)</span>

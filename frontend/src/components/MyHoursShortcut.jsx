@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Clock, X } from "lucide-react";
 import { payrollApi } from "../api/endpoints";
 import { getServerErrorMessage } from "../api/errors";
-import { todayISO } from "../utils/localDate";
+import { useDateDefaultingToToday } from "../hooks/useTodayISO";
 
 /**
  * "Mes heures" sidebar shortcut (2026-08-27, Salaires module Part D) — self-service hours
@@ -15,7 +15,7 @@ import { todayISO } from "../utils/localDate";
  */
 export default function MyHoursShortcut() {
   const [open, setOpen] = useState(false);
-  const [date, setDate] = useState(todayISO());
+  const [date, setDate, today] = useDateDefaultingToToday();
   const [hours, setHours] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -24,7 +24,7 @@ export default function MyHoursShortcut() {
 
   const reset = () => {
     setOpen(false);
-    setDate(todayISO());
+    setDate(today);
     setHours("");
     setNote("");
     setError("");
@@ -73,7 +73,7 @@ export default function MyHoursShortcut() {
             <form onSubmit={submit}>
               <label className="field" style={{ marginBottom: 12 }}>
                 <span>Date</span>
-                <input type="date" value={date} max={todayISO()} onChange={(e) => { setDate(e.target.value); setSaved(false); }} />
+                <input type="date" value={date} max={today} onChange={(e) => { setDate(e.target.value); setSaved(false); }} />
               </label>
               <label className="field" style={{ marginBottom: 12 }}>
                 <span>Heures travaillées</span>
