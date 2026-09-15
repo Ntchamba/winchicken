@@ -24,6 +24,7 @@ from apps.houses.services import compute_tasks_now
 from apps.protocols.models import (
     ProtocolCategory, ProtocolTemplate, ProtocolTimeSlot, TaskCompletion,
 )
+from apps.protocols.services import expand_protocol_to_alert_rules
 from apps.stock.calculations import current_quantity
 from apps.stock.consumption import complete_task_occurrence
 from apps.stock.models import MovementType, StockCategory, StockItem, StockMovement
@@ -204,6 +205,46 @@ class ProtocolUpsertTests(APITestCase):
         foreign.refresh_from_db()
         self.assertEqual(foreign.what, 'Ne pas toucher', "a line from another house must not be editable")
         self.assertEqual(foreign.house_id, other_house.house_code)
+
+    def test_a_protocol_save_keeps_the_notification_history_of_its_alert_rules(self):
+        """`expand_protocol_to_alert_rules` runs on every protocol save. It used to delete the
+        batch's PROTOCOL_TASK rules and recreate them, and `Alert.rule` is CASCADE — so the
+        notification-bell history, `is_read` state included, went with them."""
+        from apps.alerts.models import Alert, AlertRule, AlertRuleType
+
+        expand_protocol_to_alert_rules(self.batch)
+        rule = AlertRule.objects.filter(batch=self.batch, rule_type=AlertRuleType.PROTOCOL_TASK).first()
+        self.assertIsNotNone(rule)
+        alert = Alert.objects.create(rule=rule, batch=self.batch, message='Aliment démarrage', is_read=True)
+
+        self._save_unchanged()
+
+        self.assertTrue(
+            Alert.objects.filter(pk=alert.pk).exists(),
+            'saving the protocol must not delete the alerts already raised from its rules',
+        )
+        alert.refresh_from_db()
+        self.assertTrue(alert.is_read, 'the bell read state must survive too')
+        self.assertTrue(AlertRule.objects.filter(pk=rule.pk).exists())
+
+    def test_removing_a_line_removes_the_alert_rules_it_generated(self):
+        from apps.alerts.models import AlertRule, AlertRuleType
+
+        expand_protocol_to_alert_rules(self.batch)
+        self.assertTrue(
+            AlertRule.objects.filter(batch=self.batch, protocol_line=self.line).exists(),
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        self.client.put(f'/api/houses/{self.house.house_code}/protocol/', {'lines': []}, format='json')
+
+        self.assertFalse(ProtocolTemplate.objects.filter(house=self.house).exists())
+        self.assertFalse(
+            AlertRule.objects.filter(
+                batch=self.batch, rule_type=AlertRuleType.PROTOCOL_TASK, active=True,
+            ).exists(),
+            'a rule whose line is gone must not survive the reconcile',
+        )
 
     def test_changing_a_slot_time_replaces_only_that_slot(self):
         evening = ProtocolTimeSlot.objects.create(

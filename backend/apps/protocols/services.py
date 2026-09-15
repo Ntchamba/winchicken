@@ -3,7 +3,7 @@
 `UNIT_TO_DAYS` moved here from apps.protocols.views (2026-08-25) so `expand_protocol_to_alert_rules`
 can share it without a views->views import.
 """
-from datetime import timedelta
+from datetime import time, timedelta
 
 from django.db import transaction
 from django.utils import timezone
@@ -29,12 +29,19 @@ def expand_protocol_to_alert_rules(batch):
     (docs/deviations.md #16). This function is that implementation, extended to also handle
     protocol *edits* on an already-active batch (not just batch creation) per this task's Part C.
 
-    "Regenerate" means: delete the batch's not-yet-fired PROTOCOL_TASK rules (future-dated
-    ONE_TIME rows, and every recurring per-time-slot row), then recreate from the current
-    protocol. Past-dated ONE_TIME rows and anything already deactivated (a fired ONE_TIME) are
-    left untouched — once a date has gone by, a stale reminder is indistinguishable from "already
-    happened", and nothing marks Alert/SmsMessage rows sent automatically (see AlertRule's
-    docstring). Wrapped in one transaction so a failure can't leave a batch half-regenerated.
+    "Regenerate" is a reconcile, not a replace (FIX 3.5): a rule whose
+    `(protocol_line, trigger_time, scheduled_date)` still matches the current protocol is left
+    exactly where it is, only genuinely new ones are created, and only rules the protocol no
+    longer calls for are deleted. It used to delete them all and recreate — which cascaded every
+    `Alert` row away (`Alert.rule` is CASCADE), losing the notification-bell history and its
+    per-user `is_read` state each time anyone saved a protocol.
+
+    The scope is still the batch's not-yet-fired PROTOCOL_TASK rules (future-dated ONE_TIME
+    rows, and every recurring per-time-slot row). Past-dated ONE_TIME rows and anything already
+    deactivated (a fired ONE_TIME) are left untouched — once a date has gone by, a stale reminder
+    is indistinguishable from "already happened", and nothing marks Alert/SmsMessage rows sent
+    automatically (see AlertRule's docstring). Wrapped in one transaction so a failure can't
+    leave a batch half-regenerated.
 
     Two shapes of rule per line (2026-08-31 — "fire at the configured créneaux"):
       * line HAS `ProtocolTimeSlot` rows → one DAILY rule per slot, `trigger_time =
@@ -50,40 +57,54 @@ def expand_protocol_to_alert_rules(batch):
 
     today = timezone.localdate()
 
+    # What the current protocol says the rules should be, keyed so an unchanged one can be
+    # recognised rather than recreated.
+    wanted = {}
+    for line in ProtocolTemplate.objects.filter(house=batch.house).prefetch_related('time_slots'):
+        slots = list(line.time_slots.all())
+        if slots:
+            for slot in slots:
+                wanted[(line.id, slot.start_time, None)] = {
+                    'frequency': ScheduleFrequency.DAILY,
+                    'trigger_time': slot.start_time,
+                    'protocol_line': line,
+                    'scheduled_date': None,
+                }
+            continue
+        scheduled_date = batch.start_date + timedelta(days=to_days(line.from_value, line.from_unit))
+        if scheduled_date < today:
+            continue
+        wanted[(line.id, time(8, 0), scheduled_date)] = {
+            'frequency': ScheduleFrequency.ONE_TIME,
+            'trigger_time': time(8, 0),
+            'protocol_line': line,
+            'scheduled_date': scheduled_date,
+        }
+
     with transaction.atomic():
-        AlertRule.objects.filter(
+        current = AlertRule.objects.filter(
             Q(scheduled_date__gte=today) | Q(scheduled_date__isnull=True),
             batch=batch, rule_type=AlertRuleType.PROTOCOL_TASK, active=True,
-        ).delete()
+        )
+        # Keep the rows that still describe the same reminder. Deleting and recreating them
+        # cascades their `Alert` rows away — the notification-bell history and its per-user
+        # `is_read` state — every time anyone saves the protocol (FIX 3.5, step 2).
+        existing = {}
+        for rule in current:
+            existing.setdefault((rule.protocol_line_id, rule.trigger_time, rule.scheduled_date), rule)
 
-        new_rules = []
-        for line in ProtocolTemplate.objects.filter(house=batch.house).prefetch_related('time_slots'):
-            slots = list(line.time_slots.all())
-            if slots:
-                for slot in slots:
-                    new_rules.append(AlertRule(
-                        farm=batch.house.farm,
-                        rule_type=AlertRuleType.PROTOCOL_TASK,
-                        trigger_mode=TriggerMode.SCHEDULED,
-                        frequency=ScheduleFrequency.DAILY,
-                        trigger_time=slot.start_time,
-                        batch=batch,
-                        protocol_line=line,
-                    ))
-                continue
-            scheduled_date = batch.start_date + timedelta(days=to_days(line.from_value, line.from_unit))
-            if scheduled_date < today:
-                continue
-            new_rules.append(AlertRule(
-                farm=batch.house.farm,
-                rule_type=AlertRuleType.PROTOCOL_TASK,
-                trigger_mode=TriggerMode.SCHEDULED,
-                frequency=ScheduleFrequency.ONE_TIME,
-                trigger_time='08:00',
-                batch=batch,
-                protocol_line=line,
-                scheduled_date=scheduled_date,
-            ))
-        AlertRule.objects.bulk_create(new_rules)
+        kept_ids = set()
+        for key, spec in wanted.items():
+            rule = existing.get(key)
+            if rule is None:
+                rule = AlertRule.objects.create(
+                    farm=batch.house.farm,
+                    rule_type=AlertRuleType.PROTOCOL_TASK,
+                    trigger_mode=TriggerMode.SCHEDULED,
+                    batch=batch,
+                    **spec,
+                )
+            kept_ids.add(rule.id)
+        current.exclude(id__in=kept_ids).delete()
 
-    return new_rules
+    return list(AlertRule.objects.filter(id__in=kept_ids))
