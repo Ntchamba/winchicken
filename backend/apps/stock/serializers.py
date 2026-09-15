@@ -92,10 +92,11 @@ def generate_item_code(farm_id, category):
 
 def next_free_item_code(farm_id, category, taken):
     """Like `generate_item_code` but skips any code already in `taken`. Needed by the
-    /stock-items/ PUT, which deletes then re-creates every row in one transaction: mid-
-    transaction the DB row count `generate_item_code` relies on is 0, so a new row would be
-    handed `{PREFIX}-{farm}-001` — colliding with the preserved item_code of an existing row
-    being kept in the same request (the actual cause of the 500 on "add an article")."""
+    /stock-items/ PUT: `generate_item_code` derives the sequence number from a row *count*, so
+    it cannot see a code that is about to be taken by another row in the same request, and a
+    new article would be handed a code that collides with a kept one (the actual cause of the
+    500 on "add an article"). `taken` therefore carries both the codes already in the database
+    and every code this request keeps."""
     prefix = _KIND_PREFIX.get(category.kind, 'CUS')
     seq = 1
     while True:

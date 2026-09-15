@@ -34,11 +34,21 @@ _PROTOCOL_LABEL_TO_KIND = {
 
 
 class FarmStockItemsView(APIView):
-    """GET/PUT /api/farms/{farmId}/stock-items/ — read or fully replace stock parameters.
+    """GET/PUT /api/farms/{farmId}/stock-items/ — read or save stock parameters.
 
-    PUT is a full replace, not a merge (used by both the onboarding "Stock" step and
-    /dashboard/stock): existing StockItem rows for the farm are deleted and recreated from the
-    submitted `items` list inside one transaction. Editing reserved to Admin / Farm Manager /
+    PUT is an **upsert** keyed on `item_code` (used by both the onboarding "Stock" step and
+    /dashboard/stock): a row whose code already exists is updated in place, a row with no code
+    is created, and only rows the client left out are deleted — all inside one transaction.
+
+    It used to delete every row and recreate them, which silently destroyed everything pointing
+    at a StockItem: its `StockMovement` history, its `PurchaseOrder`s, its `Vaccination` records
+    and its `StockComposition` recipes (all CASCADE), and it severed `EquipmentFault.item` and
+    `ProtocolTemplate.stock_item` (both SET_NULL). The last one stopped protocol-driven stock
+    deduction dead — re-sending the same `item_code` did not save it, because the `delete()`
+    nulled the FK before the row was recreated and a same-PK recreate does not restore it.
+    Opening the form and pressing save without changing anything was enough (FIX 3.5, bug B).
+
+    Editing reserved to Admin / Farm Manager /
     Farmer (`IsAdminOrFarmManagerOrFarmer`); GET is open to any authenticated user of the farm.
 
     Each item's `category` is a `StockCategory` id (must belong to this farm); `supplier` is an
@@ -108,13 +118,13 @@ class FarmStockItemsView(APIView):
         supplier_ids = set(Supplier.objects.filter(farm=farm).values_list('id', flat=True))
 
         with transaction.atomic():
-            StockItem.objects.filter(farm=farm).delete()
-            created = []
+            existing = {i.item_code: i for i in StockItem.objects.filter(farm=farm)}
             # Codes the client sent for rows it wants kept are authoritative and must not
-            # change (StockMovement / composition rows reference them). A row with no code is
-            # a new article and gets one that avoids every kept code — generate_item_code
-            # can't, because every row was just deleted above so its count is 0.
-            used_codes = {e['item_code'] for e in items_data if e.get('item_code')}
+            # change — StockMovement, PurchaseOrder, Vaccination, StockComposition and
+            # ProtocolTemplate.stock_item all reference them. A row with no code is a new
+            # article and gets one that avoids every code already taken or kept in this request.
+            used_codes = set(existing) | {e['item_code'] for e in items_data if e.get('item_code')}
+            kept_codes = set()
             for entry in items_data:
                 category = categories.get(entry.get('category'))
                 if category is None:
@@ -128,25 +138,35 @@ class FarmStockItemsView(APIView):
                         {'detail': f'Fournisseur invalide : {supplier_id!r}.'},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
-                item_code = entry.get('item_code')
-                if not item_code:
-                    item_code = next_free_item_code(farm.id, category, used_codes)
-                    used_codes.add(item_code)
-                created.append(StockItem(
-                    item_code=item_code,
-                    farm=farm,
-                    category=category,
-                    name=entry['name'],
-                    unit=entry.get('unit', ''),
-                    item_type=entry.get('item_type', '') or '',
-                    feed_stage=entry.get('feed_stage', 'NOT_APPLICABLE'),
-                    cold_chain_required=entry.get('cold_chain_required', False),
-                    alert_threshold=entry.get('alert_threshold', 0),
-                    unit_price=entry.get('unit_price', 0),
-                    supplier_id=supplier_id,
-                ))
-            StockItem.objects.bulk_create(created)
-        record_audit_log(request.user, 'stock.updated', f'Paramètres de stock ({len(created)} article(s))')
+                fields = {
+                    'category': category,
+                    'name': entry['name'],
+                    'unit': entry.get('unit', ''),
+                    'item_type': entry.get('item_type', '') or '',
+                    'feed_stage': entry.get('feed_stage', 'NOT_APPLICABLE'),
+                    'cold_chain_required': entry.get('cold_chain_required', False),
+                    'alert_threshold': entry.get('alert_threshold', 0),
+                    'unit_price': entry.get('unit_price', 0),
+                    'supplier_id': supplier_id,
+                }
+                item = existing.get(entry.get('item_code'))
+                if item is None:
+                    item_code = entry.get('item_code')
+                    if not item_code:
+                        item_code = next_free_item_code(farm.id, category, used_codes)
+                        used_codes.add(item_code)
+                    item = StockItem.objects.create(item_code=item_code, farm=farm, **fields)
+                else:
+                    for field, value in fields.items():
+                        setattr(item, field, value)
+                    item.save()
+                kept_codes.add(item.item_code)
+
+            # Only rows the client actually left out are removed. Deleting one still cascades
+            # to its movements, purchase orders, vaccinations and compositions — that is a
+            # deletion the user asked for, unlike the old blanket delete of every row.
+            StockItem.objects.filter(farm=farm).exclude(item_code__in=kept_codes).delete()
+        record_audit_log(request.user, 'stock.updated', f'Paramètres de stock ({len(kept_codes)} article(s))')
         items = StockItem.objects.filter(farm=farm).select_related('category', 'supplier')
         return Response({'items': StockItemSerializer(items, many=True).data})
 
