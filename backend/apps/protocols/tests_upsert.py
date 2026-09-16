@@ -263,3 +263,43 @@ class ProtocolUpsertTests(APITestCase):
         self.assertIn(self.slot.id, slot_ids, 'the untouched morning slot keeps its identity')
         self.assertNotIn(evening.id, slot_ids, 'the retimed evening slot is a different occurrence')
         self.assertEqual(len(slot_ids), 2)
+
+    def test_a_protocol_save_keeps_every_assignee_of_a_line(self):
+        """FIX 7, requirement 5. The pre-3.5 delete-and-recreate took the assignment with the
+        row; the upsert must not, and `ProtocolTemplateSerializer` deliberately does not expose
+        `assignees`, so the M2M is simply never touched by a save. Pinned here because the form
+        posting a line back without its assignees is exactly what used to clear them."""
+        second = User.objects.create_user(
+            email='worker2@proto.local', password='x', name='Ouvrier 02',
+            role=UserRole.WORKER, farm=self.farm,
+        )
+        create_role_profile(second)
+        self.line.assignees.set([self.worker, second])
+
+        self._save_unchanged()
+
+        self.line.refresh_from_db()
+        self.assertEqual(
+            sorted(self.line.assignees.values_list('id', flat=True)),
+            sorted([self.worker.id, second.id]),
+            'a protocol save must not clear the line assignment',
+        )
+        _, tasks = compute_tasks_now(self.house)
+        task = next(t for t in tasks if str(t['id']) == str(self.line.id))
+        self.assertEqual(sorted(task['assignedTo']), sorted([self.worker.id, second.id]))
+
+    def test_an_edited_line_keeps_its_assignees(self):
+        """The same line, renamed and re-ranged — the row is updated in place, so the set rides
+        along. A rename that reads as delete + create is how the assignment used to die."""
+        self.line.assignees.set([self.worker])
+        self.client.force_authenticate(user=self.admin)
+        read = self.client.get(f'/api/houses/{self.house.house_code}/protocol/')
+        lines = [{**line, 'what': 'Aliment croissance', 'from_value': 3} for line in read.data]
+        written = self.client.put(
+            f'/api/houses/{self.house.house_code}/protocol/', {'lines': lines}, format='json',
+        )
+        self.assertEqual(written.status_code, 200, written.data)
+
+        self.line.refresh_from_db()
+        self.assertEqual(self.line.what, 'Aliment croissance')
+        self.assertEqual(list(self.line.assignees.values_list('id', flat=True)), [self.worker.id])
