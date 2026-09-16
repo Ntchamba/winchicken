@@ -5,7 +5,8 @@ import ReceiptModal from "../../components/ReceiptModal";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import { formatMoney } from "../../utils/money";
 import QuickLinksBar from "../../components/QuickLinksBar";
-import { todayISO } from "../../utils/localDate";
+import { getServerErrorMessage } from "../../api/errors";
+import { useTodayISO } from "../../hooks/useTodayISO";
 
 const PRODUCT_TYPES = [
   { value: "BIRD", label: "Volaille" },
@@ -28,32 +29,63 @@ const EXPENSE_CATEGORIES = [
 
 const EMPTY_EXPENSE_FORM = { category: "FEED", amount: "", supplier: "" };
 
+/**
+ * The cashier's screen. Everything recorded here is money, which is why it gets the FIX 6
+ * treatment in full (FIX 8, group 1): both forms are real `<form onSubmit>` elements so the
+ * phone keyboard's "Go" key works, both say when a save is running, both confirm what was
+ * recorded, and both surface the server's own error instead of failing silently. A sale that
+ * vanishes with no trace is money nobody can reconcile — "rien ne s'est passé" and "c'est
+ * enregistré" must never look the same.
+ *
+ * `useTodayISO()` rather than a render-time `todayISO()`: this page stays open all day on a
+ * phone, and the date it stamps on a sale has to be the farm-local day *now*, not the day the
+ * screen happened to render (FIX 2.6).
+ */
 export default function CashierPage() {
   useDocumentTitle("Caissier");
   const [sales, setSales] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState("");
   const [receiptSale, setReceiptSale] = useState(null);
   const [expenseForm, setExpenseForm] = useState(EMPTY_EXPENSE_FORM);
   const [savingExpense, setSavingExpense] = useState(false);
-  const [expenseSaved, setExpenseSaved] = useState(false);
+  const [expenseError, setExpenseError] = useState("");
+  const [expenseSaved, setExpenseSaved] = useState("");
 
-  const load = () => financeApi.sales().then(({ data }) => setSales(data.results || data));
+  // Caught like EmployeesPage's: the sale can be recorded and this refresh still fail, which
+  // would leave the row out of "Ventes du jour" and read exactly like a lost sale.
+  const load = () =>
+    financeApi
+      .sales()
+      .then(({ data }) => setSales(data.results || data))
+      .catch((err) => setError(getServerErrorMessage(err, "La liste des ventes n'a pas pu être rechargée.")));
 
   useEffect(() => { load(); }, []);
 
   const total = (Number(form.quantity) || 0) * (Number(form.unitPrice) || 0);
 
-  const today = todayISO();
+  const today = useTodayISO();
   const todaySales = sales.filter((s) => s.sale_date === today);
   // Every Sale row already recorded today by any cashier (financeApi.sales() is farm-scoped,
   // not filtered by the logged-in cashier) — "Ventes du jour" is deliberately farm-wide, not
   // per-user, per the task's own wording ("every Sale recorded today by any cashier").
   const todayTotal = todaySales.reduce((sum, s) => sum + Number(s.total_amount), 0);
 
-  const submit = async () => {
-    if (!form.quantity || !form.unitPrice) return;
+  const submit = async (event) => {
+    event?.preventDefault();
+    if (saving) return;
+    setError("");
+    setSaved("");
+    // Was a bare `return`: tapping "Enregistrer la vente" with a field empty did nothing at
+    // all, which on a phone is indistinguishable from a dead button.
+    if (!form.quantity || !form.unitPrice) {
+      setError("Renseignez la quantité et le prix unitaire avant d'enregistrer.");
+      return;
+    }
     setSaving(true);
+    const recorded = { total, label: PRODUCT_TYPES.find((p) => p.value === form.productType)?.label };
     try {
       await financeApi.addSale({
         product_type: form.productType,
@@ -62,26 +94,44 @@ export default function CashierPage() {
         sale_date: today,
         customer: form.customer,
       });
+      setSaved(`Vente enregistrée : ${recorded.label} — ${formatMoney(recorded.total)}.`);
       setForm(EMPTY_FORM);
-      load();
+      await load();
+    } catch (err) {
+      // The form keeps what was typed: the cashier re-taps rather than re-enters the sale.
+      setError(getServerErrorMessage(err, "La vente n'a pas été enregistrée. Réessayez."));
     } finally {
       setSaving(false);
     }
   };
 
-  const submitExpense = async () => {
-    if (!expenseForm.amount) return;
+  const submitExpense = async (event) => {
+    event?.preventDefault();
+    if (savingExpense) return;
+    setExpenseError("");
+    setExpenseSaved("");
+    if (!expenseForm.amount) {
+      setExpenseError("Renseignez le montant avant d'enregistrer.");
+      return;
+    }
     setSavingExpense(true);
-    setExpenseSaved(false);
+    const recorded = {
+      amount: Number(expenseForm.amount),
+      label: EXPENSE_CATEGORIES.find((c) => c.value === expenseForm.category)?.label,
+    };
     try {
       await financeApi.addExpense({
         category: expenseForm.category,
-        amount: Number(expenseForm.amount),
+        amount: recorded.amount,
         expense_date: today,
         supplier: expenseForm.supplier,
       });
+      // Nothing on this page lists expenses, so this line is the *only* evidence the entry
+      // exists — it has to say what was recorded, not just that something was.
+      setExpenseSaved(`Dépense enregistrée : ${recorded.label} — ${formatMoney(recorded.amount)}.`);
       setExpenseForm(EMPTY_EXPENSE_FORM);
-      setExpenseSaved(true);
+    } catch (err) {
+      setExpenseError(getServerErrorMessage(err, "La dépense n'a pas été enregistrée. Réessayez."));
     } finally {
       setSavingExpense(false);
     }
@@ -98,7 +148,7 @@ export default function CashierPage() {
         </div>
       </div>
 
-      <div className="card house-card" style={{ marginTop: 18 }}>
+      <form className="card house-card" style={{ marginTop: 18 }} onSubmit={submit}>
         <div className="detail-grid">
           <label className="field">
             <span>Produit</span>
@@ -119,16 +169,18 @@ export default function CashierPage() {
           <span>Client</span>
           <input value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} placeholder="Facultatif" />
         </label>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, marginTop: 16, flexWrap: "wrap" }}>
           <p style={{ margin: 0, fontFamily: "'Space Grotesk',sans-serif", fontSize: 20 }}>Total : {formatMoney(total)}</p>
-          <button className="save-button" onClick={submit} disabled={saving}>
-            {saving ? <Loader2 size={16} className="spin" /> : "Enregistrer la vente"}
+          <button type="submit" className="save-button" disabled={saving}>
+            {saving ? <><Loader2 size={16} className="spin" /> Enregistrement…</> : "Enregistrer la vente"}
           </button>
         </div>
-      </div>
+        {error && <p className="field-error" style={{ marginBottom: 0 }} role="alert">{error}</p>}
+        {saved && <p className="save-message success" style={{ marginBottom: 0 }}>{saved}</p>}
+      </form>
 
       <div className="section-row" style={{ marginTop: 26 }}><h2>Enregistrer une dépense</h2></div>
-      <div className="card house-card">
+      <form className="card house-card" onSubmit={submitExpense}>
         <div className="detail-grid">
           <label className="field">
             <span>Catégorie</span>
@@ -145,13 +197,14 @@ export default function CashierPage() {
             <input value={expenseForm.supplier} onChange={(e) => setExpenseForm({ ...expenseForm, supplier: e.target.value })} placeholder="Facultatif" />
           </label>
         </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14, marginTop: 16 }}>
-          {expenseSaved && <p style={{ margin: 0, color: "var(--mint)", fontSize: 13 }}>Dépense enregistrée.</p>}
-          <button className="save-button" onClick={submitExpense} disabled={savingExpense}>
-            {savingExpense ? <Loader2 size={16} className="spin" /> : "Enregistrer la dépense"}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14, marginTop: 16, flexWrap: "wrap" }}>
+          {expenseSaved && <p className="save-message success" style={{ margin: 0 }}>{expenseSaved}</p>}
+          <button type="submit" className="save-button" disabled={savingExpense}>
+            {savingExpense ? <><Loader2 size={16} className="spin" /> Enregistrement…</> : "Enregistrer la dépense"}
           </button>
         </div>
-      </div>
+        {expenseError && <p className="field-error" style={{ marginBottom: 0 }} role="alert">{expenseError}</p>}
+      </form>
 
       <div className="section-row" style={{ marginTop: 26 }}><h2>Ventes du jour</h2></div>
       {todaySales.length === 0 ? (

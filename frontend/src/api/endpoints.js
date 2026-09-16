@@ -177,9 +177,13 @@ export const financeApi = {
   expenseCategories: (range) => client.get("/finance/expense-categories/", { params: { range } }),
   transactions: (page, type) => client.get("/finance/transactions/", { params: { page, type } }),
   expenses: () => client.get("/expenses/"),
-  addExpense: (payload) => client.post("/expenses/", payload),
+  // Same 20s per-request timeout as the employee create (FIX 6, FIX 8): the cashier works on
+  // a phone, and a promise that never settles leaves the button spinning over a sale nobody
+  // can tell was recorded or lost. An aborted request has no `err.response`, which
+  // getServerErrorMessage already words as "serveur inaccessible".
+  addExpense: (payload) => client.post("/expenses/", payload, { timeout: 20000 }),
   sales: () => client.get("/sales/"),
-  addSale: (payload) => client.post("/sales/", payload),
+  addSale: (payload) => client.post("/sales/", payload, { timeout: 20000 }),
   purchaseOrders: (params) => client.get("/purchase-orders/", { params }),
   addPurchaseOrder: (payload) => client.post("/purchase-orders/", payload),
   receivePurchaseOrder: (orderCode, supplierBatchNumber) =>
