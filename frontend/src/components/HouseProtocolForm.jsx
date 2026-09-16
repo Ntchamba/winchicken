@@ -192,6 +192,10 @@ export default function HouseProtocolForm({
     if (farmId) stockApi.updateItem(code, { unit }).catch(() => {});
   };
   const [saveMessage, setSaveMessage] = useState("");
+  // A rejected save used to escape as an unhandled promise rejection from `handleSave`: the
+  // wizard simply did not advance and said nothing, which is the worst possible outcome for
+  // the one screen where the user has just typed a whole protocol (FIX 8, group 3).
+  const [saveError, setSaveError] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
 
   // Excel import (docs/excel-import.md) — parse server-side, then REPLACE the form's rows with
@@ -470,17 +474,31 @@ export default function HouseProtocolForm({
   };
 
   const handleSave = async () => {
-    if (!onSave) return;
-    await onSave(buildPayload());
-    if (mode !== "onboarding") {
-      setSaveMessage("Enregistré");
-      setTimeout(() => setSaveMessage(""), 3000);
+    if (!onSave || saving) return;
+    setSaveError("");
+    try {
+      await onSave(buildPayload());
+      if (mode !== "onboarding") {
+        setSaveMessage("Enregistré");
+        setTimeout(() => setSaveMessage(""), 3000);
+      }
+    } catch (err) {
+      // Everything typed stays on screen: this form holds a whole protocol, and re-entering it
+      // because the save was silent is how a house ends up with half a protocol.
+      setSaveError(getServerErrorMessage(err, "Le protocole n'a pas été enregistré. Réessayez."));
     }
   };
 
   const handleAddAnother = async () => {
-    if (!onAddAnother) return;
-    await onAddAnother(buildPayload());
+    if (!onAddAnother || saving) return;
+    setSaveError("");
+    try {
+      await onAddAnother(buildPayload());
+    } catch (err) {
+      // Same treatment as handleSave: this one submits a house *and* keeps the wizard open,
+      // so a silent failure looks exactly like a house that was added.
+      setSaveError(getServerErrorMessage(err, "Le bâtiment n'a pas été ajouté. Réessayez."));
+    }
   };
 
   return (
@@ -954,7 +972,12 @@ export default function HouseProtocolForm({
       </div>
 
       <div className="save-bar">
-        <span className={`save-message ${saveMessage ? "success" : ""}`}>{saveMessage}</span>
+        <span
+          className={`save-message ${saveError ? "error" : saveMessage ? "success" : ""}`}
+          role={saveError ? "alert" : undefined}
+        >
+          {saveError || saveMessage}
+        </span>
         {onAddAnother && (
           <button className="add-button" style={{ marginTop: 0 }} onClick={handleAddAnother} disabled={saving || totalRows === 0 || batchNameMissing}>
             {saving ? <Loader2 size={16} className="spin" /> : "Ajouter ce bâtiment et en configurer un autre"}

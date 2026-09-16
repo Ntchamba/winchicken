@@ -126,6 +126,9 @@ export default function StockParametersForm({
   const [data, setData] = useState(initialData);
   const [suppliers, setSuppliers] = useState(initialSuppliers);
   const [saveMessage, setSaveMessage] = useState("");
+  // Same reason as HouseProtocolForm's (FIX 8, group 3): a rejected save left the onboarding
+  // step sitting there with no message at all, indistinguishable from a click that missed.
+  const [saveError, setSaveError] = useState("");
 
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
@@ -294,11 +297,16 @@ export default function StockParametersForm({
   });
 
   const handleSave = async () => {
-    if (!onSave) return;
-    await onSave(buildPayload());
-    if (mode !== "onboarding") {
-      setSaveMessage("Enregistré");
-      setTimeout(() => setSaveMessage(""), 3000);
+    if (!onSave || saving) return;
+    setSaveError("");
+    try {
+      await onSave(buildPayload());
+      if (mode !== "onboarding") {
+        setSaveMessage("Enregistré");
+        setTimeout(() => setSaveMessage(""), 3000);
+      }
+    } catch (err) {
+      setSaveError(getServerErrorMessage(err, "Les paramètres n'ont pas été enregistrés. Réessayez."));
     }
   };
 
@@ -583,14 +591,19 @@ export default function StockParametersForm({
           {onBack && (
             <button className="add-button" onClick={onBack} disabled={saving}>Retour</button>
           )}
-          <span style={{ flex: 1 }} />
+          <span className="save-message error" role="alert" style={{ flex: 1 }}>{saveError}</span>
           <button className="save-button" onClick={handleSave} disabled={saving || totalItems === 0}>
             {saving ? <Loader2 size={16} className="spin" /> : "Suivant"}
           </button>
         </div>
       ) : (
         <div className="save-bar">
-          <span className={`save-message ${saveMessage ? "success" : ""}`}>{saveMessage}</span>
+          <span
+            className={`save-message ${saveError ? "error" : saveMessage ? "success" : ""}`}
+            role={saveError ? "alert" : undefined}
+          >
+            {saveError || saveMessage}
+          </span>
           <button className="add-button" style={{ marginTop: 0 }} onClick={resetForm} disabled={saving} type="button">
             <RotateCcw size={14} strokeWidth={2.2} />
             Réinitialiser
