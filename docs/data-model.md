@@ -67,7 +67,10 @@ table ("protocols → ProtocolTemplate"), so the puml is simply out of date rela
 to the cahier des charges rather than the implementation inventing an undocumented
 model. Fields: `house` (FK to `PoultryHouse`), `category` (FK to `ProtocolCategory`),
 `from_value` + `from_unit`, `to_value` + `to_unit` (both nullable — ignored when
-`until_end` is set), `until_end` (boolean), `what`, `details`, `assigned_to`,
+`until_end` is set), `until_end` (boolean), `what`, `details`, `assignees`
+(many-to-many to `User` since 2026-09-16, FIX 7 — it was a single `assigned_to` FK;
+several workers can hold one line and the first to complete an occurrence closes it
+for all of them),
 `stock_item` (nullable FK to `StockItem`) + `quantity_per_day` (nullable float —
 optional "this row consumes X units/day of that item", drives
 `apps.stock.services.run_daily_consumption`), `time_slots` (reverse FK), `created_at`.
