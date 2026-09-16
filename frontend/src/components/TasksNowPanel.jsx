@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { iconFor } from "./HouseProtocolForm";
+import AssigneePicker from "./AssigneePicker";
 import TaskCompleteButton from "./TaskCompleteButton";
 import { housesApi, tasksApi } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
@@ -27,7 +28,12 @@ const CAN_ASSIGN_ROLES = ["ADMIN", "FARM_MANAGER", "FARMER"];
  * including whoever is currently logged in, can be *chosen* as an assignee — who can *perform*
  * an assignment is still `CAN_ASSIGN_ROLES` below, unchanged.
  *
- * @param {{dayOfCycle: ?number, tasks: {id: string, category: string, icon: string, what: string, details: string, periodDay: ?number, periodLength: ?number, recurrence: ?string, assignedTo: ?number, assignedToName: ?string}[]}} tasksNow
+ * Several assignees per line since 2026-09-16 (FIX 7): the `<select>` became the shared
+ * `AssigneePicker`, and `assignedTo`/`assignedToNames` are parallel lists. One worker
+ * completing an occurrence closes it for all of them — completion is a property of the task
+ * (the feed either got distributed or it did not), not of each assignee.
+ *
+ * @param {{dayOfCycle: ?number, tasks: {id: string, category: string, icon: string, what: string, details: string, periodDay: ?number, periodLength: ?number, recurrence: ?string, assignedTo: number[], assignedToNames: string[]}[]}} tasksNow
  * @param {string} [houseCode] - Required for assignment (omit to render read-only, e.g. if ever reused somewhere without edit rights).
  * @param {() => void} [onAssigned] - Called after a successful assignment change, to refetch tasksNow.
  */
@@ -42,10 +48,13 @@ export default function TasksNowPanel({ tasksNow, houseCode, onAssigned }) {
     tasksApi.assignableUsers().then(({ data }) => setEmployees(data.results || data));
   }, [canAssign]);
 
-  const handleAssign = async (taskId, userId) => {
+  // Takes the whole set: the endpoint `set()`s it, so what the picker shows is what is sent.
+  // Errors are surfaced by `AssigneePicker` itself, which is why this re-throws instead of
+  // swallowing — a failed assignment that looks like a successful one is the FIX 6 failure.
+  const handleAssign = async (taskId, assigneeIds) => {
     setSavingId(taskId);
     try {
-      await housesApi.assignTask(houseCode, taskId, userId);
+      await housesApi.assignTask(houseCode, taskId, assigneeIds);
       onAssigned?.();
     } finally {
       setSavingId(null);
@@ -63,7 +72,9 @@ export default function TasksNowPanel({ tasksNow, houseCode, onAssigned }) {
         <div style={{ display: "grid", gap: 10 }}>
           {tasksNow.tasks.map((task) => {
             const Icon = iconFor(task.icon);
-            const isMine = task.assignedTo === user.id;
+            const assignedTo = task.assignedTo ?? [];
+            const assignedToNames = task.assignedToNames ?? [];
+            const isMine = assignedTo.includes(user.id);
             return (
               <div
                 key={`${task.id}-${task.timeSlotId ?? "all-day"}`}
@@ -85,22 +96,21 @@ export default function TasksNowPanel({ tasksNow, houseCode, onAssigned }) {
                         : `Jour ${task.periodDay} (jusqu'à la fin du cycle)`}
                   </span>
                   {/* Assignment lives on the ProtocolTemplate, not the occurrence, so every
-                      slot of a line shows — and changes — the same assignee. */}
+                      slot of a line shows — and changes — the same assignees. */}
                   <div style={{ marginTop: 6 }}>
                     {canAssign ? (
-                      <select
-                        className="task-assignee-select"
-                        value={task.assignedTo || ""}
+                      <AssigneePicker
+                        users={employees}
+                        assignedTo={assignedTo}
+                        assignedToNames={assignedToNames}
+                        currentUserId={user.id}
                         disabled={savingId === task.id}
-                        onChange={(e) => handleAssign(task.id, e.target.value ? Number(e.target.value) : null)}
-                      >
-                        <option value="">Non assignée</option>
-                        {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-                      </select>
+                        onChange={(ids) => handleAssign(task.id, ids)}
+                      />
                     ) : (
-                      task.assignedToName && (
+                      assignedToNames.length > 0 && (
                         <span className="task-assignee-label">
-                          Assignée à {task.assignedToName}{isMine ? " (vous)" : ""}
+                          Assignée à {assignedToNames.join(", ")}{isMine ? " (vous)" : ""}
                         </span>
                       )
                     )}

@@ -1,0 +1,73 @@
+/* Assignee picker (FIX 7) — used on a phone in a poultry house, so every checkbox row is a
+   44px tap target like the rest of the task controls (see task-complete-button.css). */
+
+.assignee-picker { display: flex; flex-direction: column; gap: 6px; }
+
+.assignee-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.assignee-picker-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid rgba(13, 49, 41, .16);
+  border-radius: 999px;
+  background: #fff;
+  color: #53696d;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.assignee-picker-toggle:hover:not(:disabled) { border-color: #9bb0ad; color: #10242c; }
+.assignee-picker-toggle:disabled { opacity: .6; cursor: not-allowed; }
+
+.assignee-picker-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  max-height: 232px;
+  overflow-y: auto;
+}
+
+.assignee-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 13.5px;
+  color: #10242c;
+  cursor: pointer;
+}
+
+.assignee-picker-option + .assignee-picker-option { border-top: 1px solid rgba(13, 49, 41, .07); }
+
+.assignee-picker-option input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--mint-fill, #17b892);
+  cursor: pointer;
+}
+
+.assignee-picker-option input:disabled { cursor: wait; }
+
+.assignee-picker-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.assignee-picker-status--ok { color: #0b5137; font-weight: 600; }
+
+.assignee-picker-error { margin: 0; font-size: 12.5px; }

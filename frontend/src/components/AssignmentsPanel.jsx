@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { housesApi } from "../api/endpoints";
+import AssigneePicker from "./AssigneePicker";
+import { housesApi, tasksApi } from "../api/endpoints";
 // Reuses the secondary-button style TaskCompleteButton already defines (44px touch target)
 // rather than growing a second copy of it.
 import "./task-complete-button.css";
@@ -19,6 +20,11 @@ const CAN_ASSIGN_ROLES = ["ADMIN", "FARM_MANAGER", "FARMER"];
  * rows are marked "Pas prévue aujourd'hui" rather than hidden, and each row can be cleared
  * through the same assign endpoint the panel uses.
  *
+ * Since FIX 7 (2026-09-16) a line carries several assignees, so this card edits the set with
+ * the same `AssigneePicker` `TasksNowPanel` uses — for a task that is not due today this is
+ * the *only* screen that can add someone to it, which is exactly the gap FIX 4 found. The
+ * "Retirer" button stays as the one-tap "nobody is on this any more" (`[]`).
+ *
  * @param {string} houseCode
  * @param {number} [reloadKey] - Bump to refetch after an assignment changed elsewhere.
  * @param {() => void} [onChanged] - Called after a removal, so the caller can refetch tasksNow.
@@ -27,6 +33,7 @@ export default function AssignmentsPanel({ houseCode, reloadKey, onChanged }) {
   const { user } = useAuth();
   const canAssign = CAN_ASSIGN_ROLES.includes(user.role);
   const [rows, setRows] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [removingId, setRemovingId] = useState(null);
   const [error, setError] = useState("");
 
@@ -40,13 +47,20 @@ export default function AssignmentsPanel({ houseCode, reloadKey, onChanged }) {
 
   useEffect(() => { load(); }, [load, reloadKey]);
 
+  useEffect(() => {
+    if (!canAssign) return;
+    tasksApi.assignableUsers()
+      .then(({ data }) => setEmployees(data.results || data))
+      .catch(() => setError("Impossible de charger la liste des employés."));
+  }, [canAssign]);
+
   if (!canAssign) return null;
 
   const handleRemove = async (taskId) => {
     setRemovingId(taskId);
     setError("");
     try {
-      await housesApi.assignTask(houseCode, taskId, null);
+      await housesApi.assignTask(houseCode, taskId, []);
       setRows((current) => current.filter((row) => row.id !== taskId));
       onChanged?.();
     } catch {
@@ -54,6 +68,14 @@ export default function AssignmentsPanel({ houseCode, reloadKey, onChanged }) {
     } finally {
       setRemovingId(null);
     }
+  };
+
+  // Re-reads from the server rather than patching `rows` locally: an emptied set must drop the
+  // row, and the server is the only thing that decides what this list holds.
+  const handleAssign = async (taskId, assigneeIds) => {
+    await housesApi.assignTask(houseCode, taskId, assigneeIds);
+    load();
+    onChanged?.();
   };
 
   // The heading lives here rather than in the page so that a role without assignment rights
@@ -75,11 +97,18 @@ export default function AssignmentsPanel({ houseCode, reloadKey, onChanged }) {
               >
                 <div className="alert-text" style={{ flex: 1 }}>
                   <p style={{ fontWeight: 600 }}>{row.category} — {row.what}</p>
-                  <span className="task-assignee-label">Assignée à {row.assignedToName}</span>
                   <p style={{ margin: "2px 0", fontSize: 12.5, color: "var(--muted)" }}>
                     {row.activeToday ? "Prévue aujourd'hui" : "Pas prévue aujourd'hui"}
                     {row.periodLabel ? ` — ${row.periodLabel}` : ""}
                   </p>
+                  <AssigneePicker
+                    users={employees}
+                    assignedTo={row.assignedTo ?? []}
+                    assignedToNames={row.assignedToNames ?? []}
+                    currentUserId={user.id}
+                    disabled={removingId === row.id}
+                    onChange={(ids) => handleAssign(row.id, ids)}
+                  />
                 </div>
                 <button
                   type="button"

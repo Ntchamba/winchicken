@@ -67,8 +67,11 @@ export const housesApi = {
   addProtocolCategory: (houseCode, payload) => client.post(`/houses/${houseCode}/protocol-categories/`, payload),
   removeProtocolCategory: (houseCode, categoryId) => client.delete(`/houses/${houseCode}/protocol-categories/${categoryId}/`),
   tasksNow: (houseCode) => client.get(`/houses/${houseCode}/tasks-now/`),
-  assignTask: (houseCode, taskId, userId) =>
-    client.patch(`/houses/${houseCode}/tasks-now/${taskId}/assign/`, { assigned_to: userId }),
+  // Takes the *whole* assignee set (FIX 7, many-to-many since 2026-09-16): `[]` clears it.
+  // The server `set()`s it, so sending what the picker shows is idempotent — no add/remove
+  // pair that could drift from the checkboxes the user actually sees.
+  assignTask: (houseCode, taskId, assigneeIds) =>
+    client.patch(`/houses/${houseCode}/tasks-now/${taskId}/assign/`, { assignees: assigneeIds ?? [] }),
   // Every assignment the house carries, due today or not (FIX 4) — tasksNow only lists what is
   // due now, which is what made an assignment invisible the day after its task ran.
   assignments: (houseCode) => client.get(`/houses/${houseCode}/assignments/`),
