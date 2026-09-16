@@ -85,6 +85,23 @@ describe("CashierPage — recording a sale", () => {
     release();
   });
 
+  test("three clicks in one tick still record one sale — the guard is a ref, not state", async () => {
+    // Found by the FIX 8 verification pass: `saving` is React state, so it only blocks a second
+    // submit once the update has flushed. No human can click three times inside one tick, but
+    // this is money, so the guard is synchronous.
+    let release;
+    financeApi.addSale.mockReturnValue(new Promise((resolve) => { release = () => resolve({ data: {} }); }));
+    const user = userEvent.setup();
+    render(<CashierPage />);
+    await fillSale(user);
+    const button = screen.getByRole("button", { name: /Enregistrer la vente/ });
+    button.click();
+    button.click();
+    button.click();
+    await waitFor(() => expect(financeApi.addSale).toHaveBeenCalledTimes(1));
+    release();
+  });
+
   test("an incomplete sale says what is missing instead of doing nothing", async () => {
     const user = userEvent.setup();
     render(<CashierPage />);

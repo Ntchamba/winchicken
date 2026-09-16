@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, Receipt, Wallet2 } from "lucide-react";
 import { financeApi } from "../../api/endpoints";
 import ReceiptModal from "../../components/ReceiptModal";
@@ -51,6 +51,12 @@ export default function CashierPage() {
   const [receiptSale, setReceiptSale] = useState(null);
   const [expenseForm, setExpenseForm] = useState(EMPTY_EXPENSE_FORM);
   const [savingExpense, setSavingExpense] = useState(false);
+  // Belt to `saving`'s braces. `saving` is React state, so it only blocks a second submit once
+  // the update has flushed — three programmatic clicks inside one JavaScript tick got past it
+  // and wrote three Sale rows (found by the FIX 8 verification pass). No human or touch device
+  // can do that, but this is money, and a ref flips synchronously, so the window closes.
+  const inFlight = useRef(false);
+  const expenseInFlight = useRef(false);
   const [expenseError, setExpenseError] = useState("");
   const [expenseSaved, setExpenseSaved] = useState("");
 
@@ -75,7 +81,7 @@ export default function CashierPage() {
 
   const submit = async (event) => {
     event?.preventDefault();
-    if (saving) return;
+    if (saving || inFlight.current) return;
     setError("");
     setSaved("");
     // Was a bare `return`: tapping "Enregistrer la vente" with a field empty did nothing at
@@ -84,6 +90,7 @@ export default function CashierPage() {
       setError("Renseignez la quantité et le prix unitaire avant d'enregistrer.");
       return;
     }
+    inFlight.current = true;
     setSaving(true);
     const recorded = { total, label: PRODUCT_TYPES.find((p) => p.value === form.productType)?.label };
     try {
@@ -101,19 +108,21 @@ export default function CashierPage() {
       // The form keeps what was typed: the cashier re-taps rather than re-enters the sale.
       setError(getServerErrorMessage(err, "La vente n'a pas été enregistrée. Réessayez."));
     } finally {
+      inFlight.current = false;
       setSaving(false);
     }
   };
 
   const submitExpense = async (event) => {
     event?.preventDefault();
-    if (savingExpense) return;
+    if (savingExpense || expenseInFlight.current) return;
     setExpenseError("");
     setExpenseSaved("");
     if (!expenseForm.amount) {
       setExpenseError("Renseignez le montant avant d'enregistrer.");
       return;
     }
+    expenseInFlight.current = true;
     setSavingExpense(true);
     const recorded = {
       amount: Number(expenseForm.amount),
@@ -133,6 +142,7 @@ export default function CashierPage() {
     } catch (err) {
       setExpenseError(getServerErrorMessage(err, "La dépense n'a pas été enregistrée. Réessayez."));
     } finally {
+      expenseInFlight.current = false;
       setSavingExpense(false);
     }
   };
