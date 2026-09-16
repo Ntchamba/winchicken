@@ -41,8 +41,11 @@ function daysAgoLabel(isoDate) {
  * of a second, separately-maintained view.
  *
  * @param {string} [houseCode] - Omit for farm-wide (global view); set to scope to one house.
+ * @param {number} [reloadKey] - Bump to refetch after a case was reported elsewhere on the page
+ *   (2026-09-16, FIX 8 group 2) — same shape as `AssignmentsPanel`'s, so a freshly reported
+ *   case shows up here instead of leaving the list looking unchanged.
  */
-export default function IncidentsPanel({ houseCode }) {
+export default function IncidentsPanel({ houseCode, reloadKey }) {
   const [tab, setTab] = useState("open");
   const [cases, setCases] = useState([]);
   const [faults, setFaults] = useState([]);
@@ -64,7 +67,7 @@ export default function IncidentsPanel({ houseCode }) {
     });
   };
 
-  useEffect(() => { load(); }, [houseCode, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [houseCode, tab, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const items = [
     ...cases.map((c) => ({

@@ -33,6 +33,7 @@ export default function HouseDetailPage() {
   const [growthSeries, setGrowthSeries] = useState([]);
   const [tasksNow, setTasksNow] = useState({ dayOfCycle: null, tasks: [] });
   const [assignmentsKey, setAssignmentsKey] = useState(0);
+  const [incidentsKey, setIncidentsKey] = useState(0);
   const [closing, setClosing] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -168,7 +169,7 @@ export default function HouseDetailPage() {
 
       {!batch && <p className="empty-state">Ce bâtiment n'a pas encore de bande.</p>}
 
-      <IncidentsPanel houseCode={houseCode} />
+      <IncidentsPanel houseCode={houseCode} reloadKey={incidentsKey} />
 
       {/* Outside the `batch &&` block on purpose: a house between two batches still carries its
           assignments, and they were exactly as invisible as the ones FIX 4 is about. */}
@@ -189,7 +190,12 @@ export default function HouseDetailPage() {
           <div className="section-row"><h2>Saisie rapide du jour</h2></div>
           <QuickEntryPanel batches={[{ batch_code: batch.batch_code, name: batch.name }]} onLogged={loadGrowthCurve} />
           <div style={{ marginBottom: 18 }}>
-            <UnusualCaseReportForm batchCode={batch.batch_code} />
+            {/* Refreshes "Cas signalés" above: the form used to collapse silently while the
+                list stayed as it was, which reads as a report that never went through. */}
+            <UnusualCaseReportForm
+              batchCode={batch.batch_code}
+              onReported={() => setIncidentsKey((key) => key + 1)}
+            />
           </div>
 
           {weeklyKpi && <WeeklyKpiCharts weeklyKpi={weeklyKpi} />}

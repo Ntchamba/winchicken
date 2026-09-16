@@ -168,7 +168,9 @@ export const maintenanceApi = {
   addFault: (payload) => client.post("/equipment-faults/", payload),
   resolveFault: (faultCode) => client.post(`/equipment-faults/${faultCode}/resolve/`),
   cases: (params) => client.get("/unusual-cases/", { params }),
-  addCase: (payload) => client.post("/unusual-cases/", payload),
+  // 20s timeout, like the other phone-side submissions (FIX 6, FIX 8): a report that hangs
+  // forever is a sick bird nobody hears about.
+  addCase: (payload) => client.post("/unusual-cases/", payload, { timeout: 20000 }),
   resolveCase: (caseCode) => client.post(`/unusual-cases/${caseCode}/resolve/`),
 };
 
