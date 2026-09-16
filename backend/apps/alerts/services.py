@@ -158,32 +158,39 @@ def _already_fired(rule, batch):
 
 
 def _resolve_scheduled_reminder(rule):
-    """(recipient User | None, message str | None) for a fired SCHEDULED rule, via the existing
-    task-reminder template building blocks. PROTOCOL_TASK -> the line's assigned employee else
+    """[(recipient User, message str), ...] for a fired SCHEDULED rule, via the existing
+    task-reminder template building blocks. PROTOCOL_TASK -> the line's assigned employees else
     the batch Fermier, timed to the matching ProtocolTimeSlot when there is one.
-    WEIGHING_REMINDER -> rule.assigned_to else the batch Fermier."""
-    from apps.alerts.templates import render_task_reminder, resolve_task_reminder_recipient
+    WEIGHING_REMINDER -> the rule's assignees else the batch Fermier.
+
+    A list since 2026-09-16 (FIX 7): both carriers hold several assignees now, and picking one of
+    them would silently leave the others unwarned. Each gets their own message, greeted by name;
+    they still share the single occurrence.
+    """
+    from apps.alerts.templates import render_task_reminder, resolve_task_reminder_recipients
 
     batch = rule.batch
     house_name = batch.house.name
 
     if rule.rule_type == AlertRuleType.WEIGHING_REMINDER:
-        recipient = rule.assigned_to or batch.farmer
-        if recipient is None:
-            return None, None
-        return recipient, render_task_reminder(recipient, 'la pesée d’un échantillon de la bande', house_name)
+        recipients = list(rule.assignees.all()) or ([batch.farmer] if batch.farmer else [])
+        return [
+            (recipient, render_task_reminder(recipient, 'la pesée d’un échantillon de la bande', house_name))
+            for recipient in recipients
+        ]
 
     line = rule.protocol_line
     if line is None:
-        return None, None
-    recipient = resolve_task_reminder_recipient(line, batch)
-    if recipient is None:
-        return None, None
+        return []
+    recipients = resolve_task_reminder_recipients(line, batch)
     slots = list(line.time_slots.all())
     start_time = next((s.start_time for s in slots if s.start_time == rule.trigger_time), None)
     if start_time is None and slots:
         start_time = slots[0].start_time
-    return recipient, render_task_reminder(recipient, line.what, house_name, start_time=start_time)
+    return [
+        (recipient, render_task_reminder(recipient, line.what, house_name, start_time=start_time))
+        for recipient in recipients
+    ]
 
 
 def _queue_reminder_sms(alert, recipient, message):
@@ -221,6 +228,7 @@ def fire_scheduled_alerts(now=None):
         AlertRule.objects
         .filter(_trigger_time_window(now_local), trigger_mode=TriggerMode.SCHEDULED, active=True, trigger_time__isnull=False)
         .select_related('batch', 'batch__house', 'batch__house__farm', 'batch__farmer', 'protocol_line')
+        .prefetch_related('assignees', 'protocol_line__assignees')
     )
 
     created = []
@@ -230,10 +238,16 @@ def fire_scheduled_alerts(now=None):
         if _already_fired(rule, rule.batch):
             continue
 
-        recipient, message = _resolve_scheduled_reminder(rule)
+        reminders = _resolve_scheduled_reminder(rule)
         with transaction.atomic():
-            alert = Alert.objects.create(rule=rule, batch=rule.batch, message=message or '', severity='info')
-            _queue_reminder_sms(alert, recipient, message)
+            # One Alert per occurrence (it is the farm's record that the task came due), but one
+            # SMS per assignee — `_queue_reminder_sms` keys its idempotency on the recipient's
+            # phone, so several messages under one Alert do not collide.
+            alert = Alert.objects.create(
+                rule=rule, batch=rule.batch, message=reminders[0][1] if reminders else '', severity='info',
+            )
+            for recipient, message in reminders:
+                _queue_reminder_sms(alert, recipient, message)
             if rule.frequency == ScheduleFrequency.ONE_TIME:
                 AlertRule.objects.filter(pk=rule.pk).update(active=False)  # fire once, never re-evaluate
         created.append(alert)

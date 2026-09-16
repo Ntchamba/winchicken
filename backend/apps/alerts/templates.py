@@ -46,28 +46,43 @@ def render_task_reminder(user, task_what, house_name, start_time=None):
     )
 
 
-def resolve_task_reminder_recipient(protocol_line, batch):
-    """The task's assigned employee (`ProtocolTemplate.assigned_to`) if set, else the batch's
-    Fermier (`PoultryBatch.farmer`). Never broadcasts to every farm employee — returns None
-    (caller must not send anything) if neither is set."""
+def resolve_task_reminder_recipients(protocol_line, batch):
+    """The task's assigned employees (`ProtocolTemplate.assignees`) if any, else the batch's
+    Fermier (`PoultryBatch.farmer`) alone. Never broadcasts to every farm employee — returns an
+    empty list (caller must not send anything) if neither is set.
 
-    return protocol_line.assigned_to or batch.farmer
+    A list since 2026-09-16 (FIX 7): a line can be assigned to several workers, and each of them
+    gets their own reminder, addressed to them by name. They still share one occurrence — the
+    first to mark it done closes it for everyone.
+    """
+
+    assignees = list(protocol_line.assignees.all())
+    if assignees:
+        return assignees
+    return [batch.farmer] if batch.farmer else []
 
 
 def build_task_reminders(protocol_line, batch):
-    """One (recipient, message) pair per `ProtocolTimeSlot` on `protocol_line`, or a single pair
-    with no time clause if the line has none — never one message trying to list multiple times.
-    Returns an empty list if there is no one to notify (see `resolve_task_reminder_recipient`).
+    """One (recipient, message) pair per `ProtocolTimeSlot` on `protocol_line` **per recipient**,
+    or one pair per recipient with no time clause if the line has none — never one message trying
+    to list multiple times, and never one message addressed to several people (each is greeted by
+    their own name). Returns an empty list if there is no one to notify (see
+    `resolve_task_reminder_recipients`).
     """
-    recipient = resolve_task_reminder_recipient(protocol_line, batch)
-    if recipient is None:
+    recipients = resolve_task_reminder_recipients(protocol_line, batch)
+    if not recipients:
         return []
 
     house_name = batch.house.name
-    slots = list(protocol_line.time_slots.all())
-    if not slots:
-        return [(recipient, render_task_reminder(recipient, protocol_line.what, house_name))]
+    slots = list(protocol_line.time_slots.all()) or [None]
     return [
-        (recipient, render_task_reminder(recipient, protocol_line.what, house_name, start_time=slot.start_time))
+        (
+            recipient,
+            render_task_reminder(
+                recipient, protocol_line.what, house_name,
+                start_time=slot.start_time if slot else None,
+            ),
+        )
+        for recipient in recipients
         for slot in slots
     ]

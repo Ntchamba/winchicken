@@ -33,10 +33,12 @@ def compute_tasks_now(house):
     logic living in two places and diverging (the sidebar-staleness bug, docs/deviations.md
     Part 5/6). Returns `(None, [])` if the house has no active batch.
 
-    Each task dict carries `assignedTo`/`assignedToName` (both `None` if unassigned) — resolved
-    from `ProtocolTemplate.assigned_to` for a protocol-line task, or from the batch's
-    `WEIGHING_REMINDER` `AlertRule.assigned_to` for the recurring weighing task (see those
-    fields' docstrings for why assignment lives on two different models).
+    Each task dict carries `assignedTo`/`assignedToNames` — parallel lists, empty when nobody is
+    assigned (many-to-many since 2026-09-16, FIX 7; they were a single id/name before) — resolved
+    from `ProtocolTemplate.assignees` for a protocol-line task, or from the batch's
+    `WEIGHING_REMINDER` `AlertRule.assignees` for the recurring weighing task (see those fields'
+    docstrings for why assignment lives on two different models). Several assignees share one
+    occurrence: the first to complete it closes it for all of them.
 
     `timeSlotId`/`startTime`/`endTime` (2026-09-14 bugfix): a line with one or more
     `ProtocolTimeSlot` rows is one task *per slot*, each completable on its own; a line with
@@ -79,8 +81,8 @@ def compute_tasks_now(house):
     tasks = []
     lines = (
         ProtocolTemplate.objects.filter(house=house)
-        .select_related('category', 'assigned_to')
-        .prefetch_related('time_slots')
+        .select_related('category')
+        .prefetch_related('time_slots', 'assignees')
     )
     for line in lines:
         occurrence = _protocol_line_occurrence(line, day_of_cycle)
@@ -99,8 +101,8 @@ def compute_tasks_now(house):
             'periodDay': period_day,
             'periodLength': period_length,
             'recurrence': None,
-            'assignedTo': line.assigned_to_id,
-            'assignedToName': line.assigned_to.name if line.assigned_to_id else None,
+            'assignedTo': [user.id for user in line.assignees.all()],
+            'assignedToNames': [user.name for user in line.assignees.all()],
             # `completable` is False for the weighing reminder below: it is not a
             # ProtocolTemplate row, so the complete endpoint has nothing to record against.
             'completable': True,
@@ -127,9 +129,10 @@ def compute_tasks_now(house):
     if weighing_task:
         rule = AlertRule.objects.filter(
             batch=batch, rule_type=AlertRuleType.WEIGHING_REMINDER,
-        ).select_related('assigned_to').first()
-        weighing_task['assignedTo'] = rule.assigned_to_id if rule else None
-        weighing_task['assignedToName'] = rule.assigned_to.name if rule and rule.assigned_to_id else None
+        ).prefetch_related('assignees').first()
+        assignees = list(rule.assignees.all()) if rule else []
+        weighing_task['assignedTo'] = [user.id for user in assignees]
+        weighing_task['assignedToNames'] = [user.name for user in assignees]
         # Not a ProtocolTemplate row — it is satisfied by recording a weighing, not by a
         # "fait" checkbox, so the UI must not offer one.
         weighing_task['completable'] = False

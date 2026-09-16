@@ -34,9 +34,10 @@ class TaskReminderTemplateTests(TestCase):
 
     def test_two_time_slots_produce_two_correctly_timed_reminders(self):
         line = ProtocolTemplate.objects.create(
-            house=self.house, category=self.category, assigned_to=self.worker,
+            house=self.house, category=self.category,
             from_value=1, to_value=1, what='le nourrissage',
         )
+        line.assignees.add(self.worker)
         ProtocolTimeSlot.objects.create(protocol_line=line, start_time=time(7, 0), end_time=time(9, 0))
         ProtocolTimeSlot.objects.create(protocol_line=line, start_time=time(18, 0), end_time=time(20, 0))
 
@@ -51,9 +52,10 @@ class TaskReminderTemplateTests(TestCase):
 
     def test_no_time_slot_renders_aujourdhui_not_a_dangling_clause(self):
         line = ProtocolTemplate.objects.create(
-            house=self.house, category=self.category, assigned_to=self.worker,
+            house=self.house, category=self.category,
             from_value=1, to_value=5, what='le nettoyage',
         )
+        line.assignees.add(self.worker)
 
         reminders = build_task_reminders(line, self.batch)
 
@@ -64,7 +66,7 @@ class TaskReminderTemplateTests(TestCase):
 
     def test_unassigned_task_falls_back_to_batch_farmer(self):
         line = ProtocolTemplate.objects.create(
-            house=self.house, category=self.category, assigned_to=None,
+            house=self.house, category=self.category,
             from_value=1, to_value=1, what='la vaccination Newcastle',
         )
 
@@ -79,7 +81,7 @@ class TaskReminderTemplateTests(TestCase):
         self.batch.farmer = None
         self.batch.save()
         line = ProtocolTemplate.objects.create(
-            house=self.house, category=self.category, assigned_to=None,
+            house=self.house, category=self.category,
             from_value=1, to_value=1, what='le nourrissage',
         )
 
@@ -118,7 +120,7 @@ class FireScheduledAlertsTests(TestCase):
         )
         self.category = ProtocolCategory.objects.create(house=self.house, label='Alimentation', icon='Soup')
         self.line = ProtocolTemplate.objects.create(
-            house=self.house, category=self.category, assigned_to=None,
+            house=self.house, category=self.category,
             from_value=1, from_unit='DAY', to_value=10, to_unit='DAY', what='le nourrissage',
         )
 

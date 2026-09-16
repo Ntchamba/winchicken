@@ -175,9 +175,9 @@ class TaskAssignmentTests(APITestCase):
 
     def test_admin_assigns_task_and_it_appears_in_the_employees_my_tasks_view(self):
         self.client.force_authenticate(user=self.admin)
-        response = self.client.patch(self.assign_url, {'assigned_to': self.worker.id}, format='json')
+        response = self.client.patch(self.assign_url, {'assignees': [self.worker.id]}, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['assignedToName'], 'Ouvrier Test')
+        self.assertEqual(response.data['assignedToNames'], ['Ouvrier Test'])
 
         self.client.force_authenticate(user=self.worker)
         mine = self.client.get('/api/tasks/mine/')
@@ -196,22 +196,22 @@ class TaskAssignmentTests(APITestCase):
 
     def test_worker_cannot_assign_tasks(self):
         self.client.force_authenticate(user=self.worker)
-        response = self.client.patch(self.assign_url, {'assigned_to': self.worker.id}, format='json')
+        response = self.client.patch(self.assign_url, {'assignees': [self.worker.id]}, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_clearing_an_assignment(self):
         self.client.force_authenticate(user=self.admin)
-        self.client.patch(self.assign_url, {'assigned_to': self.worker.id}, format='json')
-        response = self.client.patch(self.assign_url, {'assigned_to': None}, format='json')
-        self.assertIsNone(response.data['assignedTo'])
+        self.client.patch(self.assign_url, {'assignees': [self.worker.id]}, format='json')
+        response = self.client.patch(self.assign_url, {'assignees': []}, format='json')
+        self.assertEqual(response.data['assignedTo'], [])
 
     def test_admin_can_assign_a_task_to_themselves(self):
         # Feature 4 (2026-08-27, docs/deviations.md) — any role, including the assigner's own
         # Admin account, can be the assignee; not just operational roles.
         self.client.force_authenticate(user=self.admin)
-        response = self.client.patch(self.assign_url, {'assigned_to': self.admin.id}, format='json')
+        response = self.client.patch(self.assign_url, {'assignees': [self.admin.id]}, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['assignedTo'], self.admin.id)
+        self.assertEqual(response.data['assignedTo'], [self.admin.id])
 
         mine = self.client.get('/api/tasks/mine/')
         self.assertEqual(len(mine.data), 1)
@@ -328,3 +328,97 @@ class ProtocolEditPermissionTests(APITestCase):
         resp = self.client.put(f'/api/houses/{self.house.house_code}/protocol/', self.payload, format='json')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(list(ProtocolTemplate.objects.filter(house=self.house).values_list('what', flat=True)), ['Modifié'])
+
+
+class MarquerCommeFaitTests(APITestCase):
+    """POST /api/houses/{code}/tasks-now/{lineId}/complete/ — the single, validation-triggered
+    stock-deduction mechanism (2026-08-31). Idempotent; non-blocking insufficient-stock check."""
+
+    def setUp(self):
+        from apps.stock.calculations import current_quantity
+        from apps.stock.models import MovementType, StockCategory, StockItem, StockMovement
+
+        self._cq = current_quantity
+        self._MovementType = MovementType
+        self._StockMovement = StockMovement
+
+        self.farm = Farm.objects.create(name='Ferme Fait')
+        self.admin = User.objects.create_user(email='a@fait.local', password='x', name='A', role=UserRole.ADMIN, farm=self.farm)
+        create_role_profile(self.admin)
+        self.client.force_authenticate(self.admin)
+        self.house = PoultryHouse.objects.create(house_code='H-F-1', farm=self.farm, name='Salle', max_capacity=1000)
+        self.today = date.today()
+        self.batch = PoultryBatch.objects.create(
+            batch_code='BATCH-F-1', house=self.house, production_type=ProductionType.BROILER,
+            initial_count=500, start_date=self.today - timedelta(days=3),  # day_of_cycle 3
+        )
+        self.category = ProtocolCategory.objects.create(house=self.house, label='Alimentation', icon='Soup')
+        self.cat = StockCategory.objects.get(farm=self.farm, kind='FEED')
+        self.item = StockItem.objects.create(
+            item_code='FEE-1-001', farm=self.farm, category=self.cat, name='Aliment démarrage', unit='kg',
+        )
+        StockMovement.objects.create(item=self.item, movement_type=MovementType.IN, quantity=100, movement_date=self.today)
+        self.line = ProtocolTemplate.objects.create(
+            house=self.house, category=self.category, from_value=1, from_unit='DAY',
+            to_value=15, to_unit='DAY', what='Alimentation', stock_item=self.item, quantity_per_day=40,
+        )
+        self.url = f'/api/houses/{self.house.house_code}/tasks-now/{self.line.id}/complete/'
+
+    def test_no_deduction_just_because_a_day_passed(self):
+        """A day inside the line's range with no "Marquer comme fait" → stock unchanged."""
+        self.assertEqual(self._cq(self.item), 100)  # nothing auto-deducts anymore
+
+    def test_marking_done_creates_one_out_movement(self):
+        resp = self.client.post(self.url, {}, format='json')
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data['status'], 'done')
+        self.assertEqual(resp.data['movement']['quantity'], 40)
+        mv = self._StockMovement.objects.get(id=resp.data['movement']['id'])
+        self.assertEqual(mv.movement_type, self._MovementType.OUT)
+        self.assertEqual(mv.batch_id, self.batch.batch_code)
+        self.assertEqual(mv.item_id, self.item.item_code)
+        self.assertEqual(mv.protocol_line_id, self.line.id)
+        self.assertEqual(self._cq(self.item), 60)
+
+    def test_marking_done_twice_is_idempotent(self):
+        self.client.post(self.url, {}, format='json')
+        resp2 = self.client.post(self.url, {}, format='json')
+        self.assertEqual(resp2.status_code, 200)
+        self.assertEqual(resp2.data['status'], 'already_done')
+        self.assertEqual(self._StockMovement.objects.filter(movement_type=self._MovementType.OUT).count(), 1)
+        self.assertEqual(self._cq(self.item), 60)
+
+    def test_row_without_resource_records_completion_no_movement(self):
+        bare = ProtocolTemplate.objects.create(
+            house=self.house, category=self.category, from_value=1, to_value=15, what='Nettoyage',
+        )
+        resp = self.client.post(f'/api/houses/{self.house.house_code}/tasks-now/{bare.id}/complete/', {}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        self.assertIsNone(resp.data['movement'])
+        self.assertEqual(self._StockMovement.objects.filter(movement_type=self._MovementType.OUT).count(), 0)
+
+    def test_insufficient_stock_is_non_blocking_and_writes_nothing_without_force(self):
+        self.line.quantity_per_day = 250  # > 100 on hand
+        self.line.save(update_fields=['quantity_per_day'])
+        resp = self.client.post(self.url, {}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['status'], 'insufficient_stock')
+        self.assertEqual(resp.data['shortfall']['needed'], 250)
+        self.assertEqual(resp.data['shortfall']['onHand'], 100)
+        self.assertEqual(self._StockMovement.objects.filter(movement_type=self._MovementType.OUT).count(), 0)
+
+    def test_force_completes_despite_insufficient_stock(self):
+        self.line.quantity_per_day = 250
+        self.line.save(update_fields=['quantity_per_day'])
+        resp = self.client.post(self.url, {'force': True}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data['status'], 'done')
+        self.assertEqual(self._cq(self.item), -150)  # allowed to go negative
+
+    def test_dose_per_bird_uses_current_count(self):
+        self.line.quantity_per_day = None
+        self.line.dose_per_bird = 0.1  # 0.1 * 500 birds = 50
+        self.line.save(update_fields=['quantity_per_day', 'dose_per_bird'])
+        resp = self.client.post(self.url, {}, format='json')
+        self.assertEqual(resp.data['movement']['quantity'], 50)
+        self.assertEqual(self._cq(self.item), 50)

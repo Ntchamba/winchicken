@@ -2,7 +2,7 @@
 
 Reported (FIX 4): a WEIGHING_REMINDER assigned to Ouvrier 01 on day 0 vanished from the admin
 panel and from /api/tasks/mine/ the moment the cycle rolled to day 1, while
-`AlertRule.assigned_to` sat in the database with no UI able to see or clear it.
+`AlertRule.assignees` sat in the database with no UI able to see or clear it.
 
 The cause is the due-today filter, not an expired target. `compute_tasks_now` feeds both views
 and only emits what is due *right now* — `weighing_reminder_task` returns None unless
@@ -47,14 +47,14 @@ class AssignmentVisibilityTests(APITestCase):
         )
         sync_weighing_reminder(self.batch)
         self.rule = AlertRule.objects.get(batch=self.batch, rule_type=AlertRuleType.WEIGHING_REMINDER)
-        self.rule.assigned_to = self.worker
-        self.rule.save(update_fields=['assigned_to'])
+        self.rule.assignees.add(self.worker)
 
         category = ProtocolCategory.objects.filter(house=self.house, label='Alimentation').first()
         self.line = ProtocolTemplate.objects.create(
             house=self.house, category=category, from_value=1, to_value=15,
-            what='Aliment démarrage', details='', assigned_to=self.worker,
+            what='Aliment démarrage', details='',
         )
+        self.line.assignees.add(self.worker)
 
     def _roll_to_day(self, day):
         self.batch.start_date = dt.date.today() - dt.timedelta(days=day)
@@ -69,7 +69,7 @@ class AssignmentVisibilityTests(APITestCase):
     def test_the_weighing_assignment_is_listed_on_the_day_it_is_due(self):
         rows = self._assignments()
         weighing = rows[f'weighing-{self.batch.batch_code}']
-        self.assertEqual(weighing['assignedToName'], 'Ouvrier 01')
+        self.assertEqual(weighing['assignedToNames'], ['Ouvrier 01'])
         self.assertTrue(weighing['activeToday'])
 
     def test_the_weighing_assignment_is_still_listed_the_day_after(self):
@@ -77,7 +77,7 @@ class AssignmentVisibilityTests(APITestCase):
         rows = self._assignments()
         weighing = rows.get(f'weighing-{self.batch.batch_code}')
         self.assertIsNotNone(weighing, 'the assignment must not vanish when the task is not due')
-        self.assertEqual(weighing['assignedToName'], 'Ouvrier 01')
+        self.assertEqual(weighing['assignedToNames'], ['Ouvrier 01'])
         self.assertFalse(weighing['activeToday'], 'and it must be marked as not due today')
         self.assertEqual(weighing['periodLabel'], 'Hebdomadaire')
 
@@ -103,11 +103,11 @@ class AssignmentVisibilityTests(APITestCase):
         self.client.force_authenticate(user=self.admin)
         response = self.client.patch(
             f'/api/houses/{self.house.house_code}/tasks-now/weighing-{self.batch.batch_code}/assign/',
-            {'assigned_to': None}, format='json',
+            {'assignees': []}, format='json',
         )
         self.assertEqual(response.status_code, 200)
         self.rule.refresh_from_db()
-        self.assertIsNone(self.rule.assigned_to_id)
+        self.assertEqual(list(self.rule.assignees.all()), [])
         self.assertNotIn(f'weighing-{self.batch.batch_code}', self._assignments())
 
     def test_a_protocol_assignment_out_of_range_can_still_be_cleared(self):
@@ -115,15 +115,14 @@ class AssignmentVisibilityTests(APITestCase):
         self.client.force_authenticate(user=self.admin)
         response = self.client.patch(
             f'/api/houses/{self.house.house_code}/tasks-now/{self.line.id}/assign/',
-            {'assigned_to': None}, format='json',
+            {'assignees': []}, format='json',
         )
         self.assertEqual(response.status_code, 200)
         self.line.refresh_from_db()
-        self.assertIsNone(self.line.assigned_to_id)
+        self.assertEqual(list(self.line.assignees.all()), [])
 
     def test_unassigned_tasks_are_not_listed(self):
-        self.line.assigned_to = None
-        self.line.save(update_fields=['assigned_to'])
+        self.line.assignees.clear()
         self.assertNotIn(str(self.line.id), self._assignments())
 
     def test_a_worker_cannot_read_the_assignment_list(self):

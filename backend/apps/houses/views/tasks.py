@@ -1,6 +1,6 @@
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, inline_serializer
-from rest_framework import serializers
+from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -23,8 +23,11 @@ _TASK_SERIALIZER = inline_serializer('HouseTaskNow', {
     'periodDay': serializers.IntegerField(allow_null=True),
     'periodLength': serializers.IntegerField(allow_null=True),
     'recurrence': serializers.CharField(allow_null=True, help_text='Set only for the recurring weighing reminder (2026-08-25) — a human label like "Hebdomadaire," in place of periodDay/periodLength which don\'t apply to a recurring item.'),
-    'assignedTo': serializers.IntegerField(allow_null=True, help_text='Assignee user id, or null if unassigned (2026-08-26).'),
-    'assignedToName': serializers.CharField(allow_null=True),
+    'assignedTo': serializers.ListField(
+        child=serializers.IntegerField(),
+        help_text='Assignee user ids — empty when unassigned (a list since 2026-09-16, FIX 7).',
+    ),
+    'assignedToNames': serializers.ListField(child=serializers.CharField()),
 }, many=True)
 
 
@@ -57,10 +60,12 @@ class HouseTasksNowView(APIView):
 
 
 @extend_schema(
-    request=inline_serializer('HouseTaskAssignRequest', {'assigned_to': serializers.IntegerField(allow_null=True)}),
+    request=inline_serializer('HouseTaskAssignRequest', {
+        'assignees': serializers.ListField(child=serializers.IntegerField(), allow_empty=True),
+    }),
     responses=inline_serializer('HouseTaskAssignResponse', {
-        'assignedTo': serializers.IntegerField(allow_null=True),
-        'assignedToName': serializers.CharField(allow_null=True),
+        'assignedTo': serializers.ListField(child=serializers.IntegerField()),
+        'assignedToNames': serializers.ListField(child=serializers.CharField()),
     }),
 )
 class HouseTaskAssignView(APIView):
@@ -68,34 +73,41 @@ class HouseTaskAssignView(APIView):
     assignee (2026-08-26, docs/deviations.md Part 15, Part E). `taskId` is whatever id
     `HouseTasksNowView`/`compute_tasks_now` gave that task: a plain `ProtocolTemplate` pk for a
     protocol-line task, or `weighing-{batchCode}` for the recurring weighing reminder — resolved
-    back to the underlying row here (`ProtocolTemplate.assigned_to` or the batch's
-    `WEIGHING_REMINDER` `AlertRule.assigned_to`, respectively). Reserved to Admin/Farm
+    back to the underlying row here (`ProtocolTemplate.assignees` or the batch's
+    `WEIGHING_REMINDER` `AlertRule.assignees`, respectively). Reserved to Admin/Farm
     Manager/Farmer (`CanEditHouseProtocol`, the same role set that edits the protocol these
     tasks are generated from) — Ouvrier/Technicien can see assignment (via `HouseTasksNowView`)
-    but not set it. `assigned_to: null` clears it; purely additive either way, an unassigned
-    task keeps showing normally for anyone with access to the house.
+    but not set it.
+
+    Takes the **whole** assignee set (`{"assignees": [id, ...]}`, many-to-many since 2026-09-16,
+    FIX 7); `[]` clears it. `set()` rather than add/remove so the request is idempotent and the
+    admin UI can send exactly what the multi-select shows. Purely additive either way — an
+    unassigned task keeps showing normally for anyone with access to the house.
     """
 
     permission_classes = [CanEditHouseProtocol]
 
     def patch(self, request, house_code, task_id):
         house = get_object_or_404(PoultryHouse, house_code=house_code, farm=request.user.farm)
-        user_id = request.data.get('assigned_to')
-        assignee = get_object_or_404(User, pk=user_id, farm=request.user.farm) if user_id is not None else None
+        user_ids = request.data.get('assignees')
+        if not isinstance(user_ids, list):
+            return Response(
+                {'detail': 'Le champ « assignees » doit être une liste d’identifiants.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Farm-scoped on purpose: an id from another farm must 404, not silently assign.
+        assignees = [get_object_or_404(User, pk=user_id, farm=request.user.farm) for user_id in user_ids]
 
         if task_id.startswith('weighing-'):
             batch = get_object_or_404(PoultryBatch, batch_code=task_id.removeprefix('weighing-'), house=house)
-            rule = get_object_or_404(AlertRule, batch=batch, rule_type=AlertRuleType.WEIGHING_REMINDER)
-            rule.assigned_to = assignee
-            rule.save(update_fields=['assigned_to'])
+            row = get_object_or_404(AlertRule, batch=batch, rule_type=AlertRuleType.WEIGHING_REMINDER)
         else:
-            line = get_object_or_404(ProtocolTemplate, pk=task_id, house=house)
-            line.assigned_to = assignee
-            line.save(update_fields=['assigned_to'])
+            row = get_object_or_404(ProtocolTemplate, pk=task_id, house=house)
+        row.assignees.set(assignees)
 
         return Response({
-            'assignedTo': assignee.id if assignee else None,
-            'assignedToName': assignee.name if assignee else None,
+            'assignedTo': [user.id for user in assignees],
+            'assignedToNames': [user.name for user in assignees],
         })
 
 
@@ -262,7 +274,10 @@ class MyTasksView(APIView):
         for house in PoultryHouse.objects.filter(farm=request.user.farm):
             _, tasks = compute_tasks_now(house)
             for task in tasks:
-                if task['assignedTo'] == request.user.id:
+                # `assignedTo` is a list since FIX 7 — the same occurrence appears for every
+                # assignee, and whoever completes it closes it for all of them (`done` and
+                # `completedByName` come from the single TaskCompletion row).
+                if request.user.id in task['assignedTo']:
                     results.append({**task, 'houseCode': house.house_code, 'houseName': house.name})
         return Response(results)
 
@@ -271,8 +286,8 @@ _ASSIGNMENT_SERIALIZER = inline_serializer('HouseAssignment', {
     'id': serializers.CharField(help_text='The same task id the assign endpoint takes.'),
     'what': serializers.CharField(),
     'category': serializers.CharField(),
-    'assignedTo': serializers.IntegerField(),
-    'assignedToName': serializers.CharField(),
+    'assignedTo': serializers.ListField(child=serializers.IntegerField()),
+    'assignedToNames': serializers.ListField(child=serializers.CharField()),
     'activeToday': serializers.BooleanField(),
     'periodLabel': serializers.CharField(allow_null=True),
 }, many=True)
@@ -286,7 +301,7 @@ class HouseAssignmentsView(APIView):
     `HouseTasksNowView` only ever lists what is due *now*, and assignment display was hung off
     that list. So the moment a task stopped being due — the day after a weekly weighing, or the
     day a protocol line's range ended — its assignment disappeared from the panel and from
-    `/api/tasks/mine/` while `assigned_to` sat in the database with no way to see or clear it.
+    `/api/tasks/mine/` while the assignment sat in the database with no way to see or clear it.
     The row had not expired: a weekly reminder is due again six days later. The filter was too
     narrow, so this is the wider read rather than a cleanup that would throw the assignment away.
 
@@ -304,8 +319,10 @@ class HouseAssignmentsView(APIView):
         rows = []
         lines = (
             ProtocolTemplate.objects
-            .filter(house=house, assigned_to__isnull=False)
-            .select_related('assigned_to', 'category')
+            .filter(house=house, assignees__isnull=False)
+            .distinct()
+            .select_related('category')
+            .prefetch_related('assignees')
         )
         for line in lines:
             if line.until_end:
@@ -316,16 +333,18 @@ class HouseAssignmentsView(APIView):
                 'id': str(line.id),
                 'what': line.what,
                 'category': line.category.label,
-                'assignedTo': line.assigned_to_id,
-                'assignedToName': line.assigned_to.name,
+                'assignedTo': [user.id for user in line.assignees.all()],
+                'assignedToNames': [user.name for user in line.assignees.all()],
                 'activeToday': str(line.id) in due_ids,
                 'periodLabel': period,
             })
 
         rules = (
             AlertRule.objects
-            .filter(batch__house=house, rule_type=AlertRuleType.WEIGHING_REMINDER, assigned_to__isnull=False)
-            .select_related('assigned_to', 'batch')
+            .filter(batch__house=house, rule_type=AlertRuleType.WEIGHING_REMINDER, assignees__isnull=False)
+            .distinct()
+            .select_related('batch')
+            .prefetch_related('assignees')
         )
         for rule in rules:
             task_id = f'weighing-{rule.batch.batch_code}'
@@ -333,8 +352,8 @@ class HouseAssignmentsView(APIView):
                 'id': task_id,
                 'what': 'Peser un échantillon de la bande',
                 'category': 'Pesée',
-                'assignedTo': rule.assigned_to_id,
-                'assignedToName': rule.assigned_to.name,
+                'assignedTo': [user.id for user in rule.assignees.all()],
+                'assignedToNames': [user.name for user in rule.assignees.all()],
                 'activeToday': task_id in due_ids,
                 'periodLabel': WEIGHING_RECURRENCE_LABELS.get(rule.batch.weighing_frequency),
             })
