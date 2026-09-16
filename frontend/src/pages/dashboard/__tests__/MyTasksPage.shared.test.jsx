@@ -47,11 +47,20 @@ describe("MyTasksPage — a task shared by several workers", () => {
 
   test("a colleague's completion shows as done, with their name, in this worker's list", async () => {
     tasksApi.mine.mockResolvedValue({
-      data: [{ ...TASK, done: true, completedByName: "Ouvrier 02" }],
+      data: [{ ...TASK, done: true, completedBy: 8, completedByName: "Ouvrier 02" }],
     });
     render(<MyTasksPage />);
-    expect(await screen.findByText(/Fait/)).toBeInTheDocument();
-    expect(screen.getByText(/Ouvrier 02/, { selector: ".task-done-badge" })).toBeInTheDocument();
+    expect(await screen.findByText("Fait par Ouvrier 02")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Marquer comme fait/ })).not.toBeInTheDocument();
+    // Still undoable by anyone on the line — they are doing one job, not three.
+    expect(screen.getByRole("button", { name: /Annuler/ })).toBeInTheDocument();
+  });
+
+  test("the worker's own completion reads as theirs, not as a name they have to decode", async () => {
+    tasksApi.mine.mockResolvedValue({
+      data: [{ ...TASK, done: true, completedBy: 7, completedByName: "Ouvrier 01" }],
+    });
+    render(<MyTasksPage />);
+    expect(await screen.findByText("Fait par vous")).toBeInTheDocument();
   });
 });

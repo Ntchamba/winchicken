@@ -122,6 +122,7 @@ export default function TasksNowPanel({ tasksNow, houseCode, onAssigned }) {
                         taskId={task.id}
                         timeSlotId={task.timeSlotId}
                         done={task.done}
+                        completedBy={task.completedBy}
                         completedByName={task.completedByName}
                         onChanged={onAssigned}
                       />

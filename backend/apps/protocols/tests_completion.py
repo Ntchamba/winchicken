@@ -405,3 +405,107 @@ class MidnightHourTests(APITestCase):
             result = uncomplete_task_occurrence(self.line, self.batch)
         self.assertTrue(result['undone'])
         self.assertEqual(current_quantity(self.item), 500)
+
+
+class SharedCompletionTests(APITestCase):
+    """One occurrence, several assignees (FIX 7).
+
+    The user's call: on a real farm the feed either got distributed or it did not, so completion
+    is a property of the task, not of each worker. `TaskCompletion` is keyed
+    `(protocol_template, batch, date, time_slot)` and never on the assignee, which is what makes
+    the stock move exactly once however many people are on the line — these pin that down,
+    because the obvious alternative (a completion row per assignee) would deduct N times and
+    empty the store on paper.
+    """
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Partagée')
+        self.workers = []
+        for index in range(1, 4):
+            worker = User.objects.create_user(
+                email=f'ouvrier0{index}@partage.local', password='x', name=f'Ouvrier 0{index}',
+                role=UserRole.WORKER, farm=self.farm,
+            )
+            create_role_profile(worker)
+            self.workers.append(worker)
+
+        self.house = PoultryHouse.objects.create(
+            house_code=f'H-{self.farm.id}-001', farm=self.farm, name='Poulailler', max_capacity=500,
+        )
+        self.batch = PoultryBatch.objects.create(
+            batch_code='BATCH-S-1', house=self.house, name='Bande', production_type=ProductionType.BROILER,
+            initial_count=500, start_date=dt.date.today() - dt.timedelta(days=1),
+            planned_end_date=dt.date.today() + dt.timedelta(days=56), status=BatchStatus.ACTIVE,
+        )
+        feed = StockCategory.objects.get(farm=self.farm, kind='FEED')
+        self.item = StockItem.objects.create(
+            item_code=f'FEE-{self.farm.id}-001', farm=self.farm, category=feed, name='Provende',
+            unit='kg', alert_threshold=10, unit_price=Decimal('450.00'),
+        )
+        StockMovement.objects.create(
+            item=self.item, movement_type=MovementType.IN, quantity=500, movement_date=dt.date.today(),
+        )
+        category = ProtocolCategory.objects.filter(house=self.house, label='Alimentation').first()
+        self.line = ProtocolTemplate.objects.create(
+            house=self.house, category=category, from_value=1, until_end=True,
+            what='Aliment démarrage', details='', stock_item=self.item, quantity_per_day=40,
+        )
+        self.line.assignees.set(self.workers)
+
+    def _my_tasks(self, worker):
+        self.client.force_authenticate(user=worker)
+        response = self.client.get('/api/tasks/mine/')
+        self.assertEqual(response.status_code, 200)
+        return response.data
+
+    def _complete(self, worker):
+        self.client.force_authenticate(user=worker)
+        return self.client.post(
+            f'/api/houses/{self.house.house_code}/tasks-now/{self.line.id}/complete/',
+            {'force': True}, format='json',
+        )
+
+    def test_the_task_appears_for_every_assignee(self):
+        for worker in self.workers:
+            tasks = self._my_tasks(worker)
+            self.assertEqual([task['id'] for task in tasks], [str(self.line.id)], worker.name)
+            self.assertEqual(sorted(tasks[0]['assignedTo']), sorted(w.id for w in self.workers))
+
+    def test_one_completion_closes_the_occurrence_for_the_others_and_names_who_did_it(self):
+        completer = self.workers[0]
+        self.assertEqual(self._complete(completer).status_code, 201)
+
+        for worker in self.workers[1:]:
+            task = self._my_tasks(worker)[0]
+            self.assertTrue(task['done'], f'{worker.name} still sees the task as outstanding')
+            self.assertEqual(task['completedByName'], 'Ouvrier 01')
+            self.assertEqual(task['completedBy'], completer.id)
+
+    def test_the_stock_moves_exactly_once_however_many_assignees_tap(self):
+        self.assertEqual(current_quantity(self.item), 500)
+        self.assertEqual(self._complete(self.workers[0]).status_code, 201)
+        self.assertEqual(current_quantity(self.item), 460)
+
+        # The second and third workers find a row that is already done and tap it anyway (a
+        # stale screen, or two phones at once) — idempotent, and no second deduction.
+        for worker in self.workers[1:]:
+            response = self._complete(worker)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data['status'], 'already_done')
+
+        self.assertEqual(current_quantity(self.item), 460)
+        self.assertEqual(
+            StockMovement.objects.filter(item=self.item, movement_type=MovementType.OUT).count(), 1,
+        )
+        self.assertEqual(TaskCompletion.objects.filter(protocol_template=self.line).count(), 1)
+
+    def test_any_assignee_can_undo_the_completion_another_one_recorded(self):
+        self._complete(self.workers[0])
+        self.client.force_authenticate(user=self.workers[2])
+        response = self.client.post(
+            f'/api/houses/{self.house.house_code}/tasks-now/{self.line.id}/uncomplete/', {}, format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], 'undone')
+        self.assertEqual(current_quantity(self.item), 500)
+        self.assertFalse(self._my_tasks(self.workers[0])[0]['done'])

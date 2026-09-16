@@ -28,6 +28,14 @@ _TASK_SERIALIZER = inline_serializer('HouseTaskNow', {
         help_text='Assignee user ids — empty when unassigned (a list since 2026-09-16, FIX 7).',
     ),
     'assignedToNames': serializers.ListField(child=serializers.CharField()),
+    'timeSlotId': serializers.IntegerField(allow_null=True),
+    'startTime': serializers.CharField(allow_null=True),
+    'endTime': serializers.CharField(allow_null=True),
+    'completable': serializers.BooleanField(),
+    'done': serializers.BooleanField(help_text='One occurrence, one completion — shared by every assignee since FIX 7.'),
+    'completedAt': serializers.DateTimeField(allow_null=True),
+    'completedBy': serializers.IntegerField(allow_null=True, help_text='Who closed it, so the other assignees see who did the work.'),
+    'completedByName': serializers.CharField(allow_null=True),
 }, many=True)
 
 

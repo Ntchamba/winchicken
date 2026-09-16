@@ -94,6 +94,7 @@ export default function MyTasksPage() {
                           taskId={task.id}
                           timeSlotId={task.timeSlotId}
                           done={task.done}
+                          completedBy={task.completedBy}
                           completedByName={task.completedByName}
                           onChanged={load}
                         />

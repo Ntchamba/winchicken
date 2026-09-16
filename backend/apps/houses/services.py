@@ -120,6 +120,11 @@ def compute_tasks_now(house):
                 # Completion state, so a finished task reads as done instead of vanishing.
                 'done': completion is not None,
                 'completedAt': completion.completed_at if completion else None,
+                # Who closed it, for the *other* assignees: a line can carry several workers
+                # (FIX 7) and the first completion closes the occurrence for all of them, so a
+                # row that reads "Fait" in someone else's list must say by whom. The id travels
+                # beside the name so the UI can say "vous" without matching on a display name.
+                'completedBy': completion.completed_by_id if completion else None,
                 'completedByName': (
                     completion.completed_by.name if completion and completion.completed_by_id else None
                 ),
@@ -138,6 +143,7 @@ def compute_tasks_now(house):
         weighing_task['completable'] = False
         weighing_task['done'] = False
         weighing_task['completedAt'] = None
+        weighing_task['completedBy'] = None
         weighing_task['completedByName'] = None
         # Same keys as a protocol-line task so consumers never branch on which kind they hold.
         weighing_task['timeSlotId'] = None
