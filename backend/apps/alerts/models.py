@@ -85,12 +85,14 @@ class AlertRule(models.Model):
         help_text='Calendar date this ONE_TIME PROTOCOL_TASK rule fires on — '
                    'batch.start_date + protocol_line.from_value converted to days.',
     )
-    assigned_to = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_alert_rules',
-        help_text='Task-assignment target (2026-08-26, docs/deviations.md Part 15) — only meaningful for '
-                   'WEIGHING_REMINDER rows, which (unlike PROTOCOL_TASK) are stable/persistent rather than '
-                   "pruned each time they'd fire; see apps.protocols.models.ProtocolTemplate.assigned_to for "
-                   'the protocol-line equivalent used by every other "tâches à effectuer maintenant" entry.',
+    assignees = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name='assigned_alert_rules',
+        help_text='Task-assignment targets (2026-08-26, docs/deviations.md Part 15; many-to-many since '
+                   '2026-09-16, FIX 7) — only meaningful for WEIGHING_REMINDER rows, which (unlike '
+                   "PROTOCOL_TASK) are stable/persistent rather than pruned each time they'd fire; see "
+                   'apps.protocols.models.ProtocolTemplate.assignees for the protocol-line equivalent used '
+                   'by every other "tâches à effectuer maintenant" entry. Several workers can share one '
+                   'task: whoever completes it closes it for all of them.',
     )
 
     def __str__(self):

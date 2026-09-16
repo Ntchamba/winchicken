@@ -71,22 +71,27 @@ class ProtocolTemplate(models.Model):
     `to_value`/`to_unit` are ignored when `until_end` is True (the line runs to the end of the
     cycle instead of a fixed bound) — enforced by the frontend form, not a DB constraint.
 
-    `assigned_to` (2026-08-26, docs/deviations.md Part 15) is the task-assignment target for
-    this line's occurrences in "tâches à effectuer maintenant" (`apps.houses.views.
-    HouseTasksNowView` reuses this line's own row as the one persisted "task" identity, matching
-    how it's already keyed by `line.id` there). Purely additive — `null` still shows normally
-    for anyone with house access, only Admin/Farm Manager/Farmer (`CanEditHouseProtocol`) can
-    set it. Known limitation, accepted rather than engineered around: `HouseProtocolView.put`
-    does a full delete-and-recreate of a house's `ProtocolTemplate` rows on every protocol save
-    (see that view), so any assignment is cleared the next time the protocol is edited at all,
-    not just the assigned line — the same full-replace semantics the rows themselves already
-    have, not a new fragility this field introduces.
+    `assignees` (2026-08-26 as a single `assigned_to` FK, docs/deviations.md Part 15;
+    many-to-many since 2026-09-16, FIX 7) is the set of employees this line's occurrences in
+    "tâches à effectuer maintenant" are assigned to (`apps.houses.views.HouseTasksNowView`
+    reuses this line's own row as the one persisted "task" identity, matching how it's already
+    keyed by `line.id` there). Purely additive — an empty set still shows normally for anyone
+    with house access, only Admin/Farm Manager/Farmer (`CanEditHouseProtocol`) can set it.
+
+    **Several workers share one occurrence, not one each.** Completion is recorded on
+    `TaskCompletion`, keyed `(protocol_template, batch, date, time_slot)` and never on the
+    assignee, so whoever marks it done closes it for every assignee and the linked stock is
+    deducted exactly once; `TaskCompletion.completed_by` records who actually did it.
+
+    The old "any protocol edit clears every assignment" limitation is gone: `HouseProtocolView.put`
+    upserts rows instead of deleting and recreating them (FIX 3.5, 2026-09-15), and the protocol
+    serializer never carries assignees, so a protocol save leaves them untouched.
     """
 
     house = models.ForeignKey(PoultryHouse, on_delete=models.CASCADE, related_name='protocol_lines')
     category = models.ForeignKey(ProtocolCategory, on_delete=models.CASCADE, related_name='protocol_lines')
-    assigned_to = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_protocol_tasks',
+    assignees = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name='assigned_protocol_tasks',
     )
     from_value = models.PositiveIntegerField()
     from_unit = models.CharField(max_length=8, choices=ProtocolUnit.choices, default=ProtocolUnit.DAY)
