@@ -35,3 +35,7 @@ Images/
 
 # Root-owned leftover from a rootless-Docker run (see docs/deviations.md Part 1); recreated by Django as logs/
 backend/logs.docker-owned/
+
+# Responsive-audit output (regenerate with `npm run audit:responsive`) — screenshots and
+# measurements are evidence for one run, not source
+frontend/tools/responsive-audit/out/
