@@ -261,20 +261,20 @@ export default function PurchaseOrdersPage() {
         <p className="empty-state">Aucune commande pour ces filtres.</p>
       ) : (
         <>
-          <table className="data-table">
+          <table className="data-table stacked">
             <thead>
               <tr><th>Code</th><th>Article</th><th>Fournisseur</th><th>Quantité</th><th>Montant</th><th>Date</th><th>Statut</th><th></th></tr>
             </thead>
             <tbody>
               {orders.results.map((order) => (
                 <tr key={order.order_code}>
-                  <td>{order.order_code}</td>
-                  <td>{order.itemName}</td>
-                  <td>{order.supplier || "—"}</td>
-                  <td>{order.quantity}</td>
-                  <td>{formatMoney(order.amount)}</td>
-                  <td>{order.order_date}</td>
-                  <td><span className={`status-pill ${STATUS_PILL_CLASS[order.status]}`}>{STATUS_LABELS[order.status] || order.status}</span></td>
+                  <td data-label="Code">{order.order_code}</td>
+                  <td data-label="Article">{order.itemName}</td>
+                  <td data-label="Fournisseur">{order.supplier || "—"}</td>
+                  <td data-label="Quantité">{order.quantity}</td>
+                  <td data-label="Montant">{formatMoney(order.amount)}</td>
+                  <td data-label="Date">{order.order_date}</td>
+                  <td data-label="Statut"><span className={`status-pill ${STATUS_PILL_CLASS[order.status]}`}>{STATUS_LABELS[order.status] || order.status}</span></td>
                   <td>
                     {canManage && order.status === "PENDING" && (
                       <div style={{ display: "flex", gap: 6 }}>

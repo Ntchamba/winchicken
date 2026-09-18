@@ -220,18 +220,18 @@ export default function CashierPage() {
       {todaySales.length === 0 ? (
         <p className="empty-state">Aucune vente enregistrée aujourd'hui.</p>
       ) : (
-        <table className="data-table">
+        <table className="data-table stacked">
           <thead>
             <tr><th>Produit</th><th>Qté</th><th>Prix unitaire</th><th>Total</th><th>Client</th><th></th></tr>
           </thead>
           <tbody>
             {todaySales.map((s) => (
               <tr key={s.id}>
-                <td>{PRODUCT_TYPES.find((p) => p.value === s.product_type)?.label || s.product_type}</td>
-                <td>{s.quantity}</td>
-                <td>{s.unit_price}</td>
-                <td className="amount in">{s.total_amount}</td>
-                <td>{s.customer || "—"}</td>
+                <td data-label="Produit">{PRODUCT_TYPES.find((p) => p.value === s.product_type)?.label || s.product_type}</td>
+                <td data-label="Qté">{s.quantity}</td>
+                <td data-label="Prix unitaire">{s.unit_price}</td>
+                <td className="amount in" data-label="Total">{s.total_amount}</td>
+                <td data-label="Client">{s.customer || "—"}</td>
                 <td>
                   <button className="icon-button" title="Reçu" onClick={() => setReceiptSale(s)}>
                     <Receipt size={15} strokeWidth={1.8} />
@@ -241,10 +241,12 @@ export default function CashierPage() {
             ))}
           </tbody>
           <tfoot>
-            <tr>
-              <td colSpan={3} style={{ fontWeight: 700, borderTop: "2px solid #10242c" }}>Total du jour</td>
-              <td className="amount in" style={{ fontWeight: 700, borderTop: "2px solid #10242c" }}>{formatMoney(todayTotal)}</td>
-              <td style={{ borderTop: "2px solid #10242c" }} colSpan={2}></td>
+            {/* The rule above this row was three inline borderTops, which an inline style makes
+                impossible to drop when the row becomes a card on a phone. It is a class now. */}
+            <tr className="table-total-row">
+              <td colSpan={3}>Total du jour</td>
+              <td className="amount in" data-label="Total du jour">{formatMoney(todayTotal)}</td>
+              <td colSpan={2}></td>
             </tr>
           </tfoot>
         </table>

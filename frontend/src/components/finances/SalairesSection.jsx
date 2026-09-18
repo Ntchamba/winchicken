@@ -153,7 +153,7 @@ export default function SalairesSection({ onPaymentRecorded }) {
         <h2>Taux horaires</h2>
       </div>
       <div className="card schedule-card" style={{ marginBottom: 22 }}>
-        <table className="data-table">
+        <table className="data-table stacked">
           <thead>
             <tr><th>Employé</th><th>Taux horaire</th><th></th></tr>
           </thead>
@@ -163,8 +163,8 @@ export default function SalairesSection({ onPaymentRecorded }) {
               const value = editing ? rateEdits[emp.id] : (emp.hourly_rate ?? "");
               return (
                 <tr key={emp.id}>
-                  <td>{emp.name}</td>
-                  <td>
+                  <td data-label="Employé">{emp.name}</td>
+                  <td data-label="Taux horaire">
                     <input
                       type="number" min="0" step="0.01" value={value}
                       style={{ width: 100, padding: "4px 8px", borderRadius: 8, border: "1px solid var(--line)" }}
@@ -193,18 +193,18 @@ export default function SalairesSection({ onPaymentRecorded }) {
         </button>
       </div>
       <div className="card schedule-card">
-        <table className="data-table">
+        <table className="data-table stacked">
           <thead>
             <tr><th>Employé</th><th>Période</th><th>Heures</th><th>Montant</th><th>Statut</th><th></th></tr>
           </thead>
           <tbody>
             {payments.map((p) => (
               <tr key={p.id}>
-                <td>{p.employeeName}</td>
-                <td>{MONTH_LABELS[p.period_month]} {p.period_year}</td>
-                <td>{p.total_hours}</td>
-                <td>{formatMoney(p.amount)}</td>
-                <td>
+                <td data-label="Employé">{p.employeeName}</td>
+                <td data-label="Période">{MONTH_LABELS[p.period_month]} {p.period_year}</td>
+                <td data-label="Heures">{p.total_hours}</td>
+                <td data-label="Montant">{formatMoney(p.amount)}</td>
+                <td data-label="Statut">
                   <span className={`status-pill ${p.status === "PAID" ? "received" : "pending"}`}>
                     {p.status === "PAID" ? "Payé" : "À payer"}
                   </span>

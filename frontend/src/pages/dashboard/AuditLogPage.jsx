@@ -102,6 +102,10 @@ export default function AuditLogPage() {
         <p className="empty-state">Aucune entrée pour ces filtres.</p>
       ) : (
         <>
+          {/* Kept as a grid and scrolled, not stacked: an audit log is read by scanning down a
+              column for an anomaly, which a card per entry destroys. */}
+          <p className="data-table-scroll-hint">Faites glisser le tableau horizontalement pour voir toutes les colonnes.</p>
+          <div className="data-table-scroll">
           <table className="data-table">
             <thead>
               <tr><th>Horodatage</th><th>Utilisateur</th><th>Action</th><th>Cible</th></tr>
@@ -117,6 +121,7 @@ export default function AuditLogPage() {
               ))}
             </tbody>
           </table>
+          </div>
           {totalPages > 1 && (
             <div className="pagination">
               <button onClick={() => setPage((p) => p - 1)} disabled={page <= 1}>Précédent</button>

@@ -49,19 +49,36 @@ export const PROBE = `
     return { el: label(el), w: Math.round(r.width), h: Math.round(r.height) };
   }).filter((t) => t.w < 44 || t.h < 44);
 
-  // 6. Table columns collapsed to nothing — a column the user cannot reach at all.
-  //    This is finding (3): @media hiding nth-child(4) deletes money columns silently.
-  const zeroCells = Array.from(document.querySelectorAll('th, td')).filter((el) => {
-    const s = getComputedStyle(el);
-    return s.display === 'none' || el.getBoundingClientRect().width === 0;
-  }).map((el) => {
-    const row = el.closest('tr');
-    const table = el.closest('table');
-    const index = row ? Array.from(row.children).indexOf(el) : -1;
-    const head = table && table.tHead && table.tHead.rows[0] ? table.tHead.rows[0].children[index] : null;
-    return { column: index + 1, header: head ? (head.textContent || '').trim() : '(inconnu)' };
-  });
-  const hiddenColumns = [...new Map(zeroCells.map((c) => [c.column + '|' + c.header, c])).values()];
+  // 6. Columns the user cannot reach. This is finding (3): the old
+  //    @media rule hiding nth-child(4) deleted a money column from five tables in silence.
+  //
+  //    A stacked table hides its <thead> on purpose — the headers move onto each cell as
+  //    data-label — so a hidden <th> is only a lost column when nothing carries it instead.
+  //    What is measured is therefore the cell, and the label that reaches the user with it.
+  const hiddenColumns = [];
+  for (const table of document.querySelectorAll('table')) {
+    const stacked = table.classList.contains('stacked');
+    const head = table.tHead && table.tHead.rows[0] ? Array.from(table.tHead.rows[0].cells) : [];
+    const headers = head.map((th) => (th.textContent || '').trim());
+    const bodyRow = table.tBodies[0] && table.tBodies[0].rows[0] ? Array.from(table.tBodies[0].rows[0].cells) : [];
+
+    headers.forEach((header, i) => {
+      if (!header) return; // an actions column has no header of its own
+      const cell = bodyRow[i];
+      if (!cell) return;
+      const cs = getComputedStyle(cell);
+      const cellGone = cs.display === 'none' || cell.getBoundingClientRect().width === 0;
+      if (cellGone) {
+        hiddenColumns.push({ column: i + 1, header, reason: 'cell not rendered' });
+        return;
+      }
+      // The cell is there; can the user tell which column it is?
+      const headGone = !head[i] || head[i].getClientRects().length === 0;
+      if (headGone && (cell.getAttribute('data-label') || '').trim() !== header) {
+        hiddenColumns.push({ column: i + 1, header, reason: stacked ? 'no data-label on the cell' : 'header not rendered' });
+      }
+    });
+  }
 
   // 7. Is the mobile drawer reachable at all? Finding (1).
   const toggle = document.querySelector('#sidebar-mobile-toggle, .sidebar-mobile-toggle');

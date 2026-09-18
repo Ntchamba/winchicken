@@ -97,6 +97,7 @@
 .data-table{width:100%;border-collapse:collapse;font-size:13px}
 .data-table th{text-align:left;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:0 10px 10px}
 .data-table td{padding:12px 10px;border-top:1px solid var(--line);color:#10242c}
+.data-table tfoot .table-total-row td{font-weight:700;border-top:2px solid #10242c}
 .data-table td.amount.in{color:var(--mint);font-weight:700}
 .data-table td.amount.out{color:var(--danger);font-weight:700}
 .pagination{display:flex;justify-content:center;align-items:center;gap:14px;padding:16px 0 0;font-size:13px;color:var(--muted)}
@@ -254,7 +255,56 @@
   .quick-actions{grid-template-columns:1fr}
   .house-item{flex-direction:column;align-items:flex-start}
   .house-meta{width:100%;justify-content:space-between}
-  .data-table th:nth-child(4),.data-table td:nth-child(4){display:none}
+}
+
+/* Phone layout for data tables (2026-09-18 mobile audit, finding 3).
+   What was here before: `.data-table th:nth-child(4),.data-table td:nth-child(4){display:none}`
+   — column 4 of every data table, hidden below 768px with nothing telling the user. Column 4 is
+   a different thing in each table: "Total" on la Caisse, "Contrepartie" on Achats/Globale,
+   "Montant" on Salaires, "Quantité" on Commandes fournisseurs, "Cible" on le Journal d'audit.
+   Two money columns and a quantity, silently deleted. A column may not be hidden unless the
+   user can still reach it.
+
+   Two shapes replace it, and both keep every column. `.data-table.stacked` becomes one card per
+   row on a phone, each cell carrying its own header in `data-label`; `.data-table-scroll` keeps
+   the grid and scrolls it, with a line saying so. One pattern for all of them rather than a
+   bespoke mobile component per page. */
+.data-table-scroll-hint{display:none}
+
+@media(max-width:767px){
+  .data-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .data-table-scroll .data-table{min-width:560px}
+  .data-table-scroll-hint{display:block;margin:0 0 10px;font-size:12px;color:var(--muted)}
+
+  .data-table.stacked,.data-table.stacked tbody,.data-table.stacked tfoot,
+  .data-table.stacked tr,.data-table.stacked td{display:block;width:100%}
+  /* The column headers move onto the cells themselves, via td::before below. */
+  .data-table.stacked thead{display:none}
+  .data-table.stacked tr{
+    border:1px solid var(--line);border-radius:14px;background:#fff;
+    padding:4px 14px;margin-bottom:12px;box-shadow:0 6px 18px rgba(13,49,41,.05);
+  }
+  .data-table.stacked td{
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
+    padding:10px 0;border-top:0;border-bottom:1px solid var(--line);text-align:right;
+  }
+  .data-table.stacked tr td:last-child{border-bottom:0}
+  .data-table.stacked td::before{
+    content:attr(data-label);flex:0 0 auto;text-align:left;white-space:nowrap;
+    font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+  }
+  /* An action cell has no header of its own; give its buttons the whole width. */
+  .data-table.stacked td:not([data-label]){justify-content:flex-end}
+  .data-table.stacked td:empty{display:none}
+  /* A totals row is one labelled line, not a card of blanks — the cells that only exist to
+     carry the colSpan have nothing to say once the row is a block. */
+  .data-table.stacked tfoot td{display:none}
+  .data-table.stacked tfoot td[data-label]{display:flex}
+  .data-table.stacked tfoot tr{border-color:var(--mint);background:var(--mint-fill,#eefaf5)}
+  /* The desktop rule above the totals row is what separates it from the last entry; as a card
+     it is already separate, and the line just reads as a stray mark across the green. */
+  .data-table.stacked tfoot .table-total-row td{border-top:0;font-size:14px;color:#082019}
+  .data-table.stacked tfoot .table-total-row td::before{color:#0b5a46}
 }
 
 /* Baseline tap target for controls inside page content (2026-09-11). Filter chips,

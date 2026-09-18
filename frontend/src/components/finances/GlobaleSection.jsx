@@ -186,18 +186,18 @@ export default function GlobaleSection({ refreshKey }) {
         </div>
       </div>
       <div className="card schedule-card">
-        <table className="data-table">
+        <table className="data-table stacked">
           <thead>
             <tr><th>ID</th><th>Date</th><th>Catégorie</th><th>Contrepartie</th><th>Montant</th></tr>
           </thead>
           <tbody>
             {transactions.results.map((row) => (
               <tr key={row.id}>
-                <td>{row.id}</td>
-                <td>{row.date}</td>
-                <td>{CATEGORY_LABELS[row.category] || row.category}</td>
-                <td>{row.counterparty || "—"}</td>
-                <td className={`amount ${row.amount >= 0 ? "in" : "out"}`}>{row.amount.toLocaleString()}</td>
+                <td data-label="ID">{row.id}</td>
+                <td data-label="Date">{row.date}</td>
+                <td data-label="Catégorie">{CATEGORY_LABELS[row.category] || row.category}</td>
+                <td data-label="Contrepartie">{row.counterparty || "—"}</td>
+                <td className={`amount ${row.amount >= 0 ? "in" : "out"}`} data-label="Montant">{row.amount.toLocaleString()}</td>
               </tr>
             ))}
           </tbody>
