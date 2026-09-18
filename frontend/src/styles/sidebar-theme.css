@@ -102,10 +102,48 @@
 
 .sidebar-version{margin:8px 0 0;padding:0 8px;font-size:10.5px;color:rgba(255,255,255,.25);text-align:center}
 
+.dashboard-main{flex:1;min-width:0;display:flex;flex-direction:column}
 .dashboard-content{flex:1;min-width:0;padding:32px 40px}
+
+/* Mobile navigation (2026-09-18) — see DashboardLayout.jsx. Hidden above the drawer
+   breakpoint: on a desktop the sidebar is always on screen, so a menu button would open
+   something already open. */
+.dashboard-topbar{display:none}
+.sidebar-close-button{display:none}
+.sidebar-scrim{display:none}
 
 @media(max-width:900px){
   .sidebar{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);transition:transform .2s;z-index:40;box-shadow:0 0 0 1px var(--line)}
-  .sidebar.open{transform:translateX(0)}
+  .sidebar.open{transform:translateX(0);box-shadow:0 0 40px rgba(0,0,0,.45)}
   .dashboard-content{padding:20px}
+
+  /* Sticky, so the menu is still one tap away after scrolling down a long list — the reason
+     a worker reaches for it mid-page is usually to leave the page they scrolled into. */
+  .dashboard-topbar{
+    display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:30;
+    padding:6px 12px;background:#0d1b28;border-bottom:1px solid rgba(255,255,255,.12);
+  }
+  .topbar-menu-button{
+    display:grid;place-items:center;width:44px;height:44px;flex-shrink:0;
+    border:0;border-radius:11px;background:none;color:#fff;cursor:pointer;transition:.15s;
+  }
+  .topbar-menu-button:hover,.topbar-menu-button:focus-visible{background:rgba(23,184,146,.2);color:#5eead4}
+  .topbar-brand{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.1em;color:rgba(255,255,255,.75)}
+  .topbar-brand img{width:24px;height:24px;object-fit:contain}
+
+  .sidebar-scrim{display:block;position:fixed;inset:0;z-index:35;background:rgba(4,12,18,.55);backdrop-filter:blur(1px)}
+
+  /* Sits over the brand row's own padding rather than in the flow, so opening the drawer does
+     not push every link down by a row's height on the shortest screens. */
+  .sidebar-close-button{
+    display:grid;place-items:center;position:absolute;top:12px;right:12px;width:44px;height:44px;
+    border:0;border-radius:11px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer;z-index:1;
+  }
+  .sidebar-close-button:hover{background:rgba(23,184,146,.22);color:#5eead4}
+  /* Keep the bell clear of the close button. */
+  .sidebar-brand-row{padding-right:52px}
+}
+
+@media(max-width:900px) and (prefers-reduced-motion:reduce){
+  .sidebar{transition:none}
 }

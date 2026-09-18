@@ -1,5 +1,5 @@
 import { Calendar, ClipboardCheck, FileClock, Home, Wallet, Package, Users, Wallet2, Plus, Settings, LogOut, Bird, Egg, Menu, X, HelpCircle, Truck, ChevronDown, LayoutGrid } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "../styles/house-protocol-theme-light.css";
 import "../styles/dashboard-theme.css";
 import "../styles/sidebar-theme.css";
@@ -93,6 +93,29 @@ export default function DashboardLayout({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [financesOpen, setFinancesOpen] = useState(() => activePath.startsWith("/dashboard/finances"));
 
+  // Escape closes the drawer, and the page behind it stops scrolling while it is open — both
+  // are what a phone user expects from an overlay, and without the scroll lock the body scrolls
+  // under the drawer on iOS as soon as the finger leaves the panel.
+  useEffect(() => {
+    if (!mobileOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [mobileOpen]);
+
+  // A route change must close the drawer even when it did not come from a drawer link —
+  // the browser back button, a cross-link in the page body, or a redirect all land here.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [activePath, activeHash]);
+
   const isActive = (path) => activePath === path || (path !== "/dashboard" && activePath.startsWith(path));
 
   const go = (path) => {
@@ -102,18 +125,23 @@ export default function DashboardLayout({
 
   return (
     <div className="dashboard-shell">
-      <button
-        className="sidebar-link-ghost"
-        style={{ position: "fixed", top: 12, left: 12, zIndex: 50, display: "none" }}
-        id="sidebar-mobile-toggle"
-        onClick={() => setMobileOpen((v) => !v)}
-        aria-label="Ouvrir le menu"
-      >
-        {mobileOpen ? <X size={16} /> : <Menu size={16} />}
-      </button>
+      {/* Tapping the dimmed page closes the drawer. Rendered before the sidebar so the sidebar
+          wins the stacking order without either of them needing a large z-index. */}
+      {mobileOpen && (
+        <div className="sidebar-scrim" onClick={() => setMobileOpen(false)} aria-hidden="true" />
+      )}
 
-      <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
+      <aside id="dashboard-sidebar" className={`sidebar ${mobileOpen ? "open" : ""}`}>
         <FireflyField className="sidebar-fireflies" />
+        {/* Closing from inside the drawer: once it is open it covers the top bar's hamburger,
+            so the only other way out would be the scrim, which is not discoverable on its own. */}
+        <button
+          className="sidebar-close-button"
+          onClick={() => setMobileOpen(false)}
+          aria-label="Fermer le menu"
+        >
+          <X size={18} strokeWidth={2} />
+        </button>
         <div className="sidebar-brand-row">
           <div className="sidebar-brand">
             <span className="brand-mark" style={{ width: 34, height: 34 }}>
@@ -286,7 +314,31 @@ export default function DashboardLayout({
         <p className="sidebar-version">v{packageJson.version}</p>
       </aside>
 
-      <main className="dashboard-content">{children}</main>
+      <div className="dashboard-main">
+        {/* Mobile navigation (2026-09-18). Below 900px the sidebar is an off-canvas drawer, and
+            until now nothing on the page opened it: the toggle carried an inline
+            `display: "none"`, so Finances, Stock, Employés, Paramètres, Déconnexion and Mes
+            heures were unreachable on a phone on every view. A sticky bar rather than a floating
+            button because a fixed button overlaps the page heading it sits on top of. */}
+        <header className="dashboard-topbar">
+          <button
+            type="button"
+            className="topbar-menu-button"
+            id="sidebar-mobile-toggle"
+            onClick={() => setMobileOpen((v) => !v)}
+            aria-label={mobileOpen ? "Fermer le menu" : "Ouvrir le menu"}
+            aria-expanded={mobileOpen}
+            aria-controls="dashboard-sidebar"
+          >
+            <Menu size={20} strokeWidth={2} />
+          </button>
+          <span className="topbar-brand">
+            <img src="/logo-mark.png" alt="" aria-hidden="true" />
+            WINCHICKEN
+          </span>
+        </header>
+        <main className="dashboard-content">{children}</main>
+      </div>
     </div>
   );
 }
