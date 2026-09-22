@@ -2,14 +2,19 @@ import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { ChevronLeft, Loader2 } from "lucide-react";
 import { farmApi } from "../api/endpoints";
+import { getFieldErrors, getServerErrorMessage } from "../api/errors";
 import { useAuth } from "../context/AuthContext";
 import AnimatedBackground from "../components/AnimatedBackground";
+import FireflyField from "../components/FireflyField";
 import TransitionScreen from "../components/TransitionScreen";
+import useDocumentTitle from "../hooks/useDocumentTitle";
 import "../styles/house-protocol-theme-light.css";
 import "./auth-pages.css";
 
 export default function CreateFarmPage() {
+  useDocumentTitle("Créer une ferme");
   const [adminName, setAdminName] = useState("");
+  const [civility, setCivility] = useState("M");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [farmName, setFarmName] = useState("");
@@ -50,14 +55,22 @@ export default function CreateFarmPage() {
     if (!validate()) return;
     setSubmitting(true);
     try {
-      const { data } = await farmApi.create({ admin_name: adminName, email, password, farm_name: farmName });
+      const { data } = await farmApi.create({ admin_name: adminName, civility, email, password, farm_name: farmName });
       await loginWithTokens(data);
       // Farm/admin already created and saved server-side at this point — the transition
       // screen only delays this page's own navigation, it never blocks the save itself.
       setShowTransition(true);
     } catch (err) {
-      if (err.response?.status === 409) setServerError("Une ferme existe déjà — veuillez vous connecter.");
-      else setServerError(err.response?.data?.email?.[0] || "Impossible de créer la ferme. Vérifiez les champs.");
+      if (err.response?.status === 409) {
+        setServerError(err.response?.data?.detail || "Une ferme existe déjà — veuillez vous connecter.");
+      } else {
+        // Field-level errors (email already used, weak password, ...) show next to their own
+        // input; anything else (network down, unexpected 500) shows as the banner below —
+        // never both collapsed into one generic sentence (see api/errors.js).
+        const fieldErrors = getFieldErrors(err);
+        if (Object.keys(fieldErrors).length > 0) setErrors((prev) => ({ ...prev, ...fieldErrors }));
+        else setServerError(getServerErrorMessage(err));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -79,18 +92,28 @@ export default function CreateFarmPage() {
 
   return (
     <div className="auth-shell">
-      <AnimatedBackground src="/welcome-bg.jpg" />
+      <AnimatedBackground src="/image22.png" blur />
+      <FireflyField className="auth-fireflies" />
       <Link to="/" className="auth-back-link">
         <ChevronLeft size={15} strokeWidth={2} /> Retour à l'accueil
       </Link>
       <form className="card auth-card" onSubmit={handleSubmit}>
         <p className="eyebrow" style={{ textAlign: "center" }}>WINCHICKEN</p>
-        <h1 className="auth-title">Créer la ferme</h1>
+        <h1 className="auth-title">Créer une ferme</h1>
         <p className="auth-subtitle">Cela crée le compte unique de la ferme pour cette installation.</p>
 
         <label className="field">
           <span>Nom de l'administrateur</span>
           <input value={adminName} onChange={(e) => setAdminName(e.target.value)} required />
+          {errors.admin_name && <p className="field-error">{errors.admin_name}</p>}
+        </label>
+        <label className="field">
+          <span>Civilité</span>
+          <select value={civility} onChange={(e) => setCivility(e.target.value)}>
+            <option value="M">M.</option>
+            <option value="MME">Mme</option>
+          </select>
+          {errors.civility && <p className="field-error">{errors.civility}</p>}
         </label>
         <label className="field">
           <span>Email</span>
@@ -105,12 +128,13 @@ export default function CreateFarmPage() {
         <label className="field">
           <span>Nom de la ferme</span>
           <input value={farmName} onChange={(e) => setFarmName(e.target.value)} required />
+          {errors.farm_name && <p className="field-error">{errors.farm_name}</p>}
         </label>
 
         {serverError && <p className="field-error" style={{ marginTop: 4 }}>{serverError}</p>}
 
         <button className="save-button auth-submit" type="submit" disabled={submitting}>
-          {submitting ? <Loader2 size={16} className="spin" /> : "Créer la ferme"}
+          {submitting ? <Loader2 size={16} className="spin" /> : "Créer une ferme"}
         </button>
 
         <p className="auth-switch">

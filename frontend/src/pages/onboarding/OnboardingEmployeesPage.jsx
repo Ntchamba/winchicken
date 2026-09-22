@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Trash2, Loader2, UserPlus } from "lucide-react";
 import { employeesApi } from "../../api/endpoints";
+import { getServerErrorMessage } from "../../api/errors";
 import { useAuth } from "../../context/AuthContext";
 import { useOnboarding } from "../../context/OnboardingContext";
 import TransitionScreen from "../../components/TransitionScreen";
@@ -15,7 +16,7 @@ const ROLES = [
   { value: "FARM_MANAGER", label: "Gérant de ferme" },
 ];
 
-const EMPTY_FORM = { name: "", email: "", role: "FARMER", password: "" };
+const EMPTY_FORM = { name: "", civility: "M", email: "", role: "FARMER", password: "" };
 
 export default function OnboardingEmployeesPage() {
   const { employees, setEmployees } = useOnboarding();
@@ -46,7 +47,8 @@ export default function OnboardingEmployeesPage() {
     try {
       for (const employee of employees) {
         await employeesApi.create({
-          name: employee.name, email: employee.email, role: employee.role, password: employee.password,
+          name: employee.name, civility: employee.civility, email: employee.email,
+          role: employee.role, password: employee.password,
         });
       }
       await refreshMe();
@@ -54,7 +56,7 @@ export default function OnboardingEmployeesPage() {
       // the transition screen only delays this page's own navigation.
       setShowTransition(true);
     } catch (err) {
-      setError(err.response?.data?.email?.[0] || "Impossible de créer l'un des employés.");
+      setError(getServerErrorMessage(err, "Impossible de créer l'un des employés."));
     } finally {
       setSaving(false);
     }
@@ -106,6 +108,13 @@ export default function OnboardingEmployeesPage() {
           <label className="field">
             <span>Nom</span>
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </label>
+          <label className="field">
+            <span>Civilité</span>
+            <select value={form.civility} onChange={(e) => setForm({ ...form, civility: e.target.value })}>
+              <option value="M">M.</option>
+              <option value="MME">Mme</option>
+            </select>
           </label>
           <label className="field">
             <span>Email</span>
