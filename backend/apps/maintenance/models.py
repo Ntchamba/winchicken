@@ -6,14 +6,18 @@ from apps.houses.models import PoultryHouse
 from apps.stock.models import StockItem
 
 
+class EquipmentFaultStatus(models.TextChoices):
+    REPORTED = 'REPORTED', 'Reported'
+    IN_PROGRESS = 'IN_PROGRESS', 'In progress'
+    REPAIRED = 'REPAIRED', 'Repaired'
+
+
 class EquipmentFault(models.Model):
     """A reported equipment breakdown for a house. `fault_code` is server-generated
     (`FAULT-{houseCode}-{seq}`, see apps.maintenance.serializers.EquipmentFaultSerializer.create).
-    `status` is a free-text field (default "REPORTED") rather than a TextChoices enum — there is
-    no dedicated "validate a maintenance task" endpoint in this app despite the cahier des
-    charges section 8 permission-matrix row "Valider une tâche de maintenance" (Technician /
-    assigned Worker); status transitions happen via a plain PATCH on this model's fields if
-    exposed, but no such PATCH endpoint currently exists (see docs/deviations.md)."""
+    `PATCH /api/equipment-faults/{faultCode}/` moves `status` through
+    `EquipmentFaultStatus` and sets `repaired_date` (Technician / Admin only — section 8
+    "Valider une tâche de maintenance")."""
 
     fault_code = models.CharField(max_length=32, primary_key=True)
     technician = models.ForeignKey(
@@ -24,7 +28,7 @@ class EquipmentFault(models.Model):
     fault_description = models.CharField(max_length=1000)
     reported_date = models.DateField(auto_now_add=True)
     repaired_date = models.DateField(null=True, blank=True)
-    status = models.CharField(max_length=32, default='REPORTED')
+    status = models.CharField(max_length=32, choices=EquipmentFaultStatus.choices, default=EquipmentFaultStatus.REPORTED)
 
     class Meta:
         ordering = ['-reported_date']

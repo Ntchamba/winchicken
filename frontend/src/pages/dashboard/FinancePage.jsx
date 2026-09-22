@@ -47,8 +47,8 @@ export default function FinancePage() {
   if (!summary) return <div className="page-wrap"><p className="empty-state">Chargement…</p></div>;
 
   if (!isFull) {
-    const RevenueIcon = TREND_ICON[summary.revenueTrend] || Minus;
-    const ExpenseIcon = TREND_ICON[summary.expenseTrend] || Minus;
+    const RevenueIcon = TREND_ICON[summary.revenue_trend] || Minus;
+    const ExpenseIcon = TREND_ICON[summary.expense_trend] || Minus;
     return (
       <div className="page-wrap">
         <div className="breadcrumb">Tableau de bord / <strong>Finance</strong></div>
@@ -60,14 +60,14 @@ export default function FinancePage() {
             <p className="stat-label">Tendance du chiffre d'affaires</p>
             <p className="stat-value" style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <RevenueIcon size={22} />
-              <span className={`badge-trend ${summary.revenueTrend}`}>{TREND_LABELS[summary.revenueTrend] || summary.revenueTrend}</span>
+              <span className={`badge-trend ${summary.revenue_trend}`}>{TREND_LABELS[summary.revenue_trend] || summary.revenue_trend}</span>
             </p>
           </div>
           <div className="stat-card">
             <p className="stat-label">Tendance des charges</p>
             <p className="stat-value" style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <ExpenseIcon size={22} />
-              <span className={`badge-trend ${summary.expenseTrend}`}>{TREND_LABELS[summary.expenseTrend] || summary.expenseTrend}</span>
+              <span className={`badge-trend ${summary.expense_trend}`}>{TREND_LABELS[summary.expense_trend] || summary.expense_trend}</span>
             </p>
           </div>
         </div>
@@ -75,7 +75,7 @@ export default function FinancePage() {
     );
   }
 
-  const totalPages = Math.max(1, Math.ceil(transactions.count / (transactions.pageSize || 20)));
+  const totalPages = Math.max(1, Math.ceil(transactions.count / (transactions.page_size || 20)));
   const thisMonth = summary.months[summary.months.length - 1] || { revenue: 0, expenses: 0 };
 
   return (
@@ -107,7 +107,7 @@ export default function FinancePage() {
           <p className="schedule-note" style={{ marginBottom: 10 }}>Répartition des dépenses</p>
           <ResponsiveContainer width="100%" height="85%">
             <PieChart>
-              <Pie data={categories} dataKey="amountPct" nameKey="category" innerRadius={50} outerRadius={80} paddingAngle={2}>
+              <Pie data={categories} dataKey="amount_pct" nameKey="category" innerRadius={50} outerRadius={80} paddingAngle={2}>
                 {categories.map((c) => <Cell key={c.category} fill={CATEGORY_COLORS[c.category] || "#5f7377"} />)}
               </Pie>
               <Tooltip formatter={(value) => `${value}%`} />
@@ -125,19 +125,19 @@ export default function FinancePage() {
           </div>
           <div className="stat-card">
             <p className="stat-label">Prévision de rentabilité (ROI)</p>
-            <p className="stat-value">{summary.roiForecastPct != null ? `${summary.roiForecastPct}%` : "Non disponible"}</p>
+            <p className="stat-value">{summary.roi_forecast_pct != null ? `${summary.roi_forecast_pct}%` : "Non disponible"}</p>
           </div>
         </div>
       </div>
 
       <div className="card progress-card" style={{ marginBottom: 14 }}>
         <p className="schedule-note">Trésorerie disponible</p>
-        <p style={{ margin: "6px 0 0", fontFamily: "'Space Grotesk',sans-serif", fontSize: 24 }}>{summary.cashOnHand.toLocaleString()}</p>
+        <p style={{ margin: "6px 0 0", fontFamily: "'Space Grotesk',sans-serif", fontSize: 24 }}>{summary.cash_on_hand.toLocaleString()}</p>
       </div>
       <div className="card progress-card warn" style={{ marginBottom: 22 }}>
         <p className="schedule-note">Montants à régler</p>
         <p style={{ margin: "6px 0 0", fontFamily: "'Space Grotesk',sans-serif", fontSize: 24, color: "var(--warning)" }}>
-          {summary.pendingPayables.toLocaleString()}
+          {summary.pending_payables.toLocaleString()}
         </p>
       </div>
 

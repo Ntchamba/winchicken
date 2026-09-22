@@ -172,15 +172,15 @@ above is exactly what the implementation-detail spec's example shows and differs
 from what the code actually returns; see `docs/deviations.md`.
 
 ```json
-// GET /api/batches/BATCH-2026-014/kpi/weekly/ -> 200 (implementation-detail spec 11.1, verified to match apps.batches.calculations.weekly_kpi's real output shape)
+// GET /api/batches/BATCH-2026-014/kpi/weekly/ -> 200 (apps.batches.calculations.weekly_kpi's real output shape)
 {
-  "batchCode": "BATCH-2026-014",
+  "batch_code": "BATCH-2026-014",
   "weeks": [
-    {"week": 1, "mortalityPct": 0.4, "feedConversionRatio": 0.92, "avgWeightKg": 0.18},
-    {"week": 2, "mortalityPct": 0.6, "feedConversionRatio": 1.35, "avgWeightKg": 0.42},
-    {"week": 3, "mortalityPct": 0.3, "feedConversionRatio": 1.78, "avgWeightKg": 0.81}
+    {"week": 1, "mortality_pct": 0.4, "feed_conversion_ratio": 0.92, "avg_weight_kg": 0.18},
+    {"week": 2, "mortality_pct": 0.6, "feed_conversion_ratio": 1.35, "avg_weight_kg": 0.42},
+    {"week": 3, "mortality_pct": 0.3, "feed_conversion_ratio": 1.78, "avg_weight_kg": 0.81}
   ],
-  "referenceRange": {"feedConversionRatio": [2.10, 2.30], "mortalityPct": [3, 5]}
+  "reference_range": {"feed_conversion_ratio": [2.10, 2.30], "mortality_pct": [3, 5]}
 }
 ```
 
@@ -191,7 +191,7 @@ from what the code actually returns; see `docs/deviations.md`.
 | GET | `/api/farms/{farmId}/stock-items/` | JWT | `IsAuthenticated` |
 | PUT | `/api/farms/{farmId}/stock-items/` | JWT | `IsAuthenticated`, further gated in-view by `IsAdminOrFarmManagerOrFarmer` |
 | GET/POST | `/api/stock-movements/` | JWT | GET: `IsAuthenticated`; POST: `IsAdminOrFarmManagerOrFarmer` |
-| GET/POST | `/api/vaccinations/` | JWT | `IsAuthenticated` for both (no extra role restriction coded, despite this being a clinical action) |
+| GET/POST | `/api/vaccinations/` | JWT | GET: `IsAuthenticated`; POST: `CanAdministerVaccination` (Admin, Farm Manager, Farmer, Technician) |
 
 ```json
 // PUT /api/farms/1/stock-items/
@@ -221,7 +221,11 @@ from what the code actually returns; see `docs/deviations.md`.
 |---|---|---|---|
 | GET | `/api/equipment-faults/` | JWT | `IsAuthenticated` |
 | POST | `/api/equipment-faults/` | JWT | `IsAdminOrTechnician` |
-| GET/POST | `/api/unusual-cases/` | JWT | `IsAuthenticated` for both (no role restriction coded, despite the cahier des charges section 8 matrix limiting reporting to Farmer/Worker) |
+| GET | `/api/equipment-faults/{faultCode}/` | JWT | `IsAuthenticated` |
+| PATCH | `/api/equipment-faults/{faultCode}/` | JWT | `IsAdminOrTechnician` |
+| GET/POST | `/api/unusual-cases/` | JWT | GET: `IsAuthenticated`; POST: `IsFarmerOrWorker` |
+| GET | `/api/unusual-cases/{caseCode}/` | JWT | `IsAuthenticated` |
+| PATCH | `/api/unusual-cases/{caseCode}/` | JWT | `IsFarmerOrWorker` |
 
 ```json
 // POST /api/equipment-faults/
@@ -229,20 +233,24 @@ from what the code actually returns; see `docs/deviations.md`.
 ```
 
 ```json
+// PATCH /api/equipment-faults/FAULT-H-1-001-001/
+{"status": "REPAIRED", "repaired_date": "2026-08-27"}
+```
+
+```json
 // POST /api/unusual-cases/
 {"batch": "BATCH-2026-001", "farmer": 3, "worker": null, "case_description": "5 birds showing respiratory distress in the south corner"}
 ```
-
-There is no PATCH/PUT endpoint on either model — a fault or case cannot be updated
-(e.g. to set `repaired_date`/`status`) once created; see `docs/deviations.md`.
 
 ## apps.finance
 
 | Method | Path | Auth | Permission |
 |---|---|---|---|
-| GET | `/api/finance/summary/?range=6m\|1y` | JWT | `IsAdminOrFarmManager` |
+| GET | `/api/finance/summary/?range=6m\|1y` | JWT | `IsAuthenticated` — role-branched response, see below |
 | GET | `/api/finance/expense-categories/?range=6m\|1y` | JWT | `IsAdminOrFarmManager` |
 | GET | `/api/finance/transactions/?type=in\|out\|all&page=` | JWT | `IsAdminOrFarmManager` |
+| GET | `/api/finance/break-even/?batch_code=` | JWT | `IsAdminOrFarmManager` |
+| GET | `/api/finance/working-capital/?batch_code=&as_of=` | JWT | `IsAdminOrFarmManager` |
 | GET | `/api/expenses/` | JWT | `IsAuthenticated` |
 | POST | `/api/expenses/` | JWT | `IsAdminOrFarmManager` |
 | GET | `/api/sales/` | JWT | `IsAuthenticated` |
@@ -250,43 +258,64 @@ There is no PATCH/PUT endpoint on either model — a fault or case cannot be upd
 | GET/POST | `/api/purchase-orders/` | JWT | GET: `IsAuthenticated`; POST: `IsAdminOrCashier` |
 | GET/PATCH | `/api/purchase-orders/{orderCode}/` | JWT | `IsAdminOrCashier` — not in the cahier des charges' section 10 endpoint table at all; added to implement the schema's "receiving generates a StockMovement IN" rule (see `docs/deviations.md`) |
 
+`GET /api/finance/summary/` is open to every authenticated role — Admin/Farm
+Manager get `access: "full"` with the figures below; every other role gets
+`access: "restricted"` with only `revenue_trend`/`expense_trend`
+(`"up"`/`"down"`/`"flat"`), no monetary figures.
+
 ```json
-// GET /api/finance/summary/?range=6m -> 200 (implementation-detail spec 11.2, verified to match apps.finance.calculations.finance_summary's real output shape)
+// GET /api/finance/summary/?range=6m -> 200 (Admin / Farm Manager)
 {
+  "access": "full",
   "range": "6m",
   "months": [
     {"month": "2026-03", "revenue": 812000, "expenses": 610000},
     {"month": "2026-04", "revenue": 940000, "expenses": 705000},
     {"month": "2026-05", "revenue": 875000, "expenses": 660000}
   ],
-  "cashOnHand": 245600,
-  "pendingPayables": 18420.5,
-  "roiForecastPct": null
+  "cash_on_hand": 245600,
+  "pending_payables": 18420.5,
+  "roi_forecast_pct": null
 }
 ```
-`roiForecastPct` stays `null` until at least one `RECEIVED` `PurchaseOrder` in the
+`roi_forecast_pct` stays `null` until at least one `RECEIVED` `PurchaseOrder` in the
 `EQUIPMENT` category exists for the period — never a fabricated `0`.
 
 ```json
-// GET /api/finance/expense-categories/?range=6m -> 200 (implementation-detail spec 11.3)
+// GET /api/finance/expense-categories/?range=6m -> 200
 {
   "range": "6m",
   "categories": [
-    {"category": "FEED", "amountPct": 45},
-    {"category": "LABOR", "amountPct": 20},
-    {"category": "VETERINARY", "amountPct": 12},
-    {"category": "DEPRECIATION", "amountPct": 15},
-    {"category": "MISC", "amountPct": 8}
+    {"category": "FEED", "amount_pct": 45},
+    {"category": "LABOR", "amount_pct": 20},
+    {"category": "VETERINARY", "amount_pct": 12},
+    {"category": "DEPRECIATION", "amount_pct": 15},
+    {"category": "MISC", "amount_pct": 8}
   ]
 }
 ```
 
 ```json
-// GET /api/finance/transactions/?type=all&page=1 -> 200 (real shape, camelCase keys as coded)
-{"count": 2, "page": 1, "pageSize": 20, "results": [
+// GET /api/finance/transactions/?type=all&page=1 -> 200
+{"count": 2, "page": 1, "page_size": 20, "results": [
   {"id": "SALE-14", "date": "2026-08-24", "category": "BIRD", "counterparty": "Marché central", "amount": 1450000.0, "status": "IN"},
   {"id": "EXP-31", "date": "2026-08-20", "category": "FEED", "counterparty": "AgriSupply SARL", "amount": -350000.0, "status": "OUT"}
 ]}
+```
+
+```json
+// GET /api/finance/break-even/?batch_code=BATCH-2026-001 -> 200
+{
+  "batch_code": "BATCH-2026-001", "allocated_fixed_cost": 180000.0,
+  "unit_variable_cost": 850.0, "unit_sale_price": 3200.0,
+  "break_even_quantity": 76.6, "actual_quantity_sold": 4800.0,
+  "safety_margin_pct": 98.4
+}
+```
+
+```json
+// GET /api/finance/working-capital/?batch_code=BATCH-2026-001&as_of=2026-09-15 -> 200
+{"batch_code": "BATCH-2026-001", "as_of": "2026-09-15", "working_capital_requirement": 420000.0}
 ```
 
 ```json
@@ -308,6 +337,9 @@ There is no PATCH/PUT endpoint on either model — a fault or case cannot be upd
 |---|---|---|---|
 | GET/POST | `/api/alert-rules/` | JWT | `IsAdminOrFarmManager` for both |
 | GET | `/api/alerts/` (filterable `?batch_code=`) | JWT | `IsAuthenticated` |
+| GET | `/api/alerts/{id}/` | JWT | `IsAuthenticated` |
+| PATCH | `/api/alerts/{id}/` | JWT | `IsAuthenticated` — status transition (`NEW` → `SENT`/`RESOLVED`) |
+| POST | `/api/alerts/sms/webhook/` | none | `AllowAny` + `X-Twilio-Signature` verification — Twilio delivery-status callback, throttled at `sms_webhook` scope (120/min) |
 | GET | `/api/sms-messages/` | JWT | `IsAdminOrFarmManager` |
 | GET/POST | `/api/notification-preferences/` | JWT | `IsAuthenticated` for both — always scoped/forced to the requesting user, `user` field in the POST body is ignored |
 
@@ -319,8 +351,19 @@ There is no PATCH/PUT endpoint on either model — a fault or case cannot be upd
 ```json
 // GET /api/alerts/?batch_code=BATCH-2026-001 -> 200 (paginated: {"count", "next", "previous", "results": [...]})
 {"count": 1, "next": null, "previous": null, "results": [
-  {"id": 4, "rule": 2, "ruleType": "CONSUMPTION_DEVIATION", "batch": "BATCH-2026-001", "triggered_at": "2026-08-26T06:12:00Z", "status": "NEW", "message": "Water/feed ratio 2.61 outside 1.6-2.2 norm — BATCH-2026-001", "severity": "warning"}
+  {"id": 4, "rule": 2, "rule_type": "CONSUMPTION_DEVIATION", "batch": "BATCH-2026-001", "triggered_at": "2026-08-26T06:12:00Z", "status": "NEW", "message": "Ratio eau/aliment 2.61 hors norme 1,6-2,2 — BATCH-2026-001", "severity": "warning"}
 ]}
+```
+
+```json
+// PATCH /api/alerts/4/
+{"status": "RESOLVED"}
+```
+
+```
+// POST /api/alerts/sms/webhook/ — called by Twilio, not a browser client
+// form-encoded body: MessageSid=SM..., MessageStatus=delivered, To=+221...
+// -> 200 {"updated": 1} if X-Twilio-Signature is valid, else 403
 ```
 
 ```json
@@ -332,5 +375,11 @@ Every `List*View` in this project except `FinanceTransactionsView` uses the
 project-wide default pagination (`PageNumberPagination`, `PAGE_SIZE=20`,
 `?page=`), so most `GET` list responses are wrapped in
 `{"count", "next", "previous", "results"}` — `FinanceTransactionsView` is the one
-exception, with its own hand-rolled `{"count", "page", "pageSize", "results"}` shape
+exception, with its own hand-rolled `{"count", "page", "page_size", "results"}` shape
 (see `apps/finance/views.py`).
+
+Every endpoint returns snake_case JSON field names, with one deliberate
+exception: `POST /api/protocols/onboarding/`'s request and response both
+stay camelCase (`protocolLines`, `categoryIndex`, `houseCode`, `batchCode`,
+...) to match the implementation-detail spec's section 11 examples — see
+`docs/deviations.md`.

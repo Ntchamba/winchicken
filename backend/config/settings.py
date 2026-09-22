@@ -6,11 +6,23 @@ from datetime import timedelta
 from pathlib import Path
 
 from decouple import Csv, config
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-winchicken-dev-key-change-in-production')
-DEBUG = config('DEBUG', default=True, cast=bool)
+# No insecure fallback: every environment (including local dev) must set its
+# own SECRET_KEY via .env — copy backend/.env.example and change the value.
+SECRET_KEY = config('SECRET_KEY')
+if SECRET_KEY in ('', 'change-me-in-production'):
+    raise ImproperlyConfigured(
+        "SECRET_KEY must be set to a real value in backend/.env "
+        "(the .env.example placeholder is rejected on purpose)."
+    )
+
+# Defaults to False: a deployment that forgets to set DEBUG never accidentally
+# runs with stack traces and settings exposed. Local dev sets DEBUG=True
+# explicitly in backend/.env (see .env.example).
+DEBUG = config('DEBUG', default=False, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 
 INSTALLED_APPS = [
@@ -102,6 +114,20 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # Per-account/IP rate limiting (CLAUDE.md "Rate limiting per account/provider").
+    # 'sms_webhook' is applied explicitly on the provider delivery-status view
+    # (apps.alerts.views.SmsDeliveryWebhookView), not globally, since that endpoint
+    # is called by the SMS provider, not a logged-in account.
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.ScopedRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.AnonRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'user': '300/min',
+        'anon': '30/min',
+        'sms_webhook': '120/min',
+    },
 }
 
 # OpenAPI schema (drf-spectacular) — served at /api/schema/ (raw) and /api/docs/
@@ -151,5 +177,9 @@ CELERY_TASK_TRACK_STARTED = True
 
 # SMS provider — never hardcoded, always from env
 SMS_PROVIDER = config('SMS_PROVIDER', default='console')
-SMS_PROVIDER_API_KEY = config('SMS_PROVIDER_API_KEY', default='')
-SMS_PROVIDER_SENDER_ID = config('SMS_PROVIDER_SENDER_ID', default='WINCHICKEN')
+SMS_PROVIDER_API_KEY = config('SMS_PROVIDER_API_KEY', default='')  # Twilio: the auth token
+SMS_PROVIDER_ACCOUNT_SID = config('SMS_PROVIDER_ACCOUNT_SID', default='')  # Twilio: the account SID
+SMS_PROVIDER_SENDER_ID = config('SMS_PROVIDER_SENDER_ID', default='WINCHICKEN')  # Twilio: a verified from-number
+# Absolute URL Twilio calls back with delivery status (queued/sent/delivered/failed) —
+# see apps.alerts.views.SmsDeliveryWebhookView. Left blank in local dev (no public URL to call back to).
+SMS_STATUS_CALLBACK_URL = config('SMS_STATUS_CALLBACK_URL', default='')

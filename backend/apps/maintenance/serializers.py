@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.maintenance.models import EquipmentFault, UnusualCase
+from apps.maintenance.models import EquipmentFault, EquipmentFaultStatus, UnusualCase
 
 
 class EquipmentFaultSerializer(serializers.ModelSerializer):
@@ -20,6 +20,23 @@ class EquipmentFaultSerializer(serializers.ModelSerializer):
         count = EquipmentFault.objects.filter(house=validated_data['house']).count() + 1
         validated_data['fault_code'] = f"FAULT-{validated_data['house'].house_code}-{count:03d}"
         return super().create(validated_data)
+
+
+class EquipmentFaultUpdateSerializer(serializers.ModelSerializer):
+    """PATCH payload for /api/equipment-faults/{faultCode}/ — status transition and repair date
+    only; every other field is set once at creation and not editable here."""
+
+    class Meta:
+        model = EquipmentFault
+        fields = ['fault_code', 'status', 'repaired_date', 'technician']
+        read_only_fields = ['fault_code']
+
+    def validate(self, attrs):
+        status = attrs.get('status', getattr(self.instance, 'status', None))
+        repaired_date = attrs.get('repaired_date', getattr(self.instance, 'repaired_date', None))
+        if status == EquipmentFaultStatus.REPAIRED and not repaired_date:
+            raise serializers.ValidationError({'repaired_date': 'Requis pour marquer une panne comme réparée.'})
+        return attrs
 
 
 class UnusualCaseSerializer(serializers.ModelSerializer):

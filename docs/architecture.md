@@ -21,6 +21,27 @@ winchicken-spec-implementation-detaillee.docx   Implementation-detail spec (endp
             formulas, chart specs, permission matrix).
 ```
 
+## Security defaults
+
+- **`SECRET_KEY`** has no insecure fallback — `backend/config/settings.py`
+  raises `ImproperlyConfigured` at startup if it's unset or left at the
+  `.env.example` placeholder. Every environment (including local dev) must
+  set a real value in `backend/.env`.
+- **`DEBUG`** defaults to `False`; local dev sets it explicitly in
+  `backend/.env` (see `.env.example`).
+- **Rate limiting** — DRF's `DEFAULT_THROTTLE_CLASSES` apply a per-user
+  (`300/min`) and per-IP (`30/min`) rate limit across the API by default;
+  the SMS delivery webhook (`POST /api/alerts/sms/webhook/`) uses its own
+  `sms_webhook` scope (`120/min`) since it's called by the SMS provider, not
+  a logged-in account.
+- **Provider webhook signature verification** — `POST
+  /api/alerts/sms/webhook/` (`apps.alerts.views.SmsDeliveryWebhookView`)
+  verifies Twilio's `X-Twilio-Signature` header
+  (`_verify_twilio_signature`, HMAC-SHA1 over the callback URL + sorted
+  POST params, keyed with `SMS_PROVIDER_API_KEY`) before updating any
+  `SmsMessage` row; a missing or invalid signature gets a `403` and no DB
+  write.
+
 ## Backend: why each Django app exists
 
 All apps live under `backend/apps/` and are registered in
@@ -54,20 +75,57 @@ under `/api/` in `backend/config/urls.py`.
   `StockMovement` (IN/OUT transactions — on-hand quantity is always derived
   from these, never stored), `Vaccination`. `calculations.py` holds
   `current_quantity`.
-- **`apps.maintenance`** — `EquipmentFault`, `UnusualCase`. The smallest app:
-  declare-and-list only, no status-transition endpoints (see
-  `docs/deviations.md`).
+- **`apps.maintenance`** — `EquipmentFault`, `UnusualCase`. Declare-and-list
+  plus a `PATCH` detail endpoint on each (`EquipmentFaultDetailView`,
+  `UnusualCaseDetailView`) for status transitions / edits, role-restricted
+  to match who is allowed to declare/report in the first place.
 - **`apps.finance`** — `Expense`, `Sale`, `PurchaseOrder`, plus
   `calculations.py` (cash-on-hand, pending payables, ROI forecast, monthly
-  summary, expense-category breakdown, break-even/safety-margin helpers —
-  the last two are implemented but not wired to any endpoint).
+  summary, expense-category breakdown, and `batch_break_even` — break-even
+  quantity + safety margin derived from a batch's own Expense/Sale rows,
+  backing `GET /api/finance/break-even/?batch_code=`) and
+  `apps.batches.calculations.bfr_estimate` (working-capital estimate,
+  backing `GET /api/finance/working-capital/?batch_code=&as_of=`).
 - **`apps.alerts`** — `AlertRule`, `Alert`, `SmsMessage`,
   `NotificationPreference`, plus the async SMS pipeline: `services.py`
   (`trigger_alert`, `check_low_stock`, `check_consumption_deviation`),
   `signals.py` (wires `StockMovement`/`DailyLog` `post_save` to those
   checks), `tasks.py` (`send_sms_task`, the Celery task with idempotency +
-  exponential backoff), `providers/` (pluggable SMS gateway interface,
-  `console` provider for local dev).
+  exponential backoff, and `evaluate_scheduled_alert_rules`, the Celery
+  Beat periodic task that drives every `SCHEDULED`-mode `AlertRule` — see
+  "Scheduled alerts" below), `providers/` (pluggable SMS gateway interface:
+  `console` for local dev, `twilio` for a real integration against
+  Twilio's REST API). `GET /api/alerts/` is filterable by `?batch_code=`;
+  `PATCH /api/alerts/{id}/` transitions an alert's status
+  (`NEW` → `SENT`/`RESOLVED`). `POST /api/alerts/sms/webhook/` receives
+  Twilio's delivery-status callback, signature-verified
+  (`apps.alerts.views._verify_twilio_signature`) before touching the DB.
+
+## Scheduled alerts (Celery Beat)
+
+`config/celery.py` registers a `beat_schedule` entry
+(`evaluate-scheduled-alert-rules`, every 5 minutes) that runs
+`apps.alerts.tasks.evaluate_scheduled_alert_rules` — the only place
+`SCHEDULED`-mode `AlertRule` rows are evaluated:
+
+- **Recurring** rules (`frequency` DAILY/WEEKLY, `trigger_time` +
+  `active_days` set) fire once per day when "now" falls within 5 minutes of
+  `trigger_time` (and, for WEEKLY, today's weekday is in `active_days`);
+  `fired_at` guards against firing twice on the same day.
+- **`ONE_TIME`** rules (`fire_date` set, `batch` set) fire once, on that
+  calendar date, then are marked `fired_at` permanently. These are how
+  `VACCINE_DUE`/`SANITARY_VOID_END` alerts actually reach a user: at batch
+  creation, `apps.batches.signals.expand_protocol_on_batch_created` (a
+  `post_save` signal on `PoultryBatch`) calls
+  `apps.protocols.services.expand_protocol_to_alert_rules`, which creates
+  one `VACCINE_DUE` `AlertRule` per protocol line in a "Vaccination"
+  category (fire date = `batch.start_date` + the line's offset) plus one
+  `SANITARY_VOID_END` rule on `batch.planned_end_date`, if set — implementing
+  the cahier des charges §4.6 rule ("ProtocolTemplate expands into AlertRule
+  rows at batch creation, offset from PoultryBatch.startDate").
+
+Requires the `beat` service in `docker-compose.yml`
+(`celery -A config beat -l info`) running alongside `worker`.
 
 ## OpenAPI schema
 
@@ -81,20 +139,18 @@ under `/api/` in `backend/config/urls.py`.
 Neither view sets its own `permission_classes` directly, but
 drf-spectacular's `SpectacularAPIView`/`SpectacularSwaggerView` default
 their own permissions to `AllowAny` internally regardless of
-`REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES']` — this was caught by live
-testing (both endpoints returned `200` unauthenticated) and fixed by
-setting `SPECTACULAR_SETTINGS['SERVE_PERMISSIONS'] =
+`REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES']` — fixed by setting
+`SPECTACULAR_SETTINGS['SERVE_PERMISSIONS'] =
 ['rest_framework.permissions.IsAuthenticated']` explicitly (see
-`docs/deviations.md` item 24). Both now correctly require a JWT.
+`docs/deviations.md`). Both endpoints require a JWT: `401` unauthenticated,
+`200` with a valid access token.
 
 ```bash
 cd backend && .venv/bin/python manage.py spectacular --file /tmp/winchicken-schema-check.yaml
 ```
 
-produces the schema with **0 warnings and 0 errors**. This has been run
-against the live containerized stack: `GET /api/docs/` and
-`GET /api/schema/` both return `401` unauthenticated and `200` with a valid
-JWT, confirmed directly against the running `web` container.
+regenerates the schema — run this (and update `docs/api-reference.md`) any
+time an endpoint, serializer field, or permission class changes.
 
 ## Frontend routing map
 

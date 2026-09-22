@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.models import Farm
-from apps.core.permissions import IsAdminOrFarmManagerOrFarmer
+from apps.core.permissions import CanAdministerVaccination, IsAdminOrFarmManagerOrFarmer
 from apps.stock.models import StockItem, StockMovement, Vaccination
 from apps.stock.serializers import StockItemSerializer, StockMovementSerializer, VaccinationSerializer, generate_item_code
 
@@ -73,9 +73,16 @@ class StockMovementListCreateView(generics.ListCreateAPIView):
 
 
 class VaccinationListCreateView(generics.ListCreateAPIView):
-    """GET/POST /api/vaccinations/ — history and creation of vaccination events."""
+    """GET/POST /api/vaccinations/ — history and creation of vaccination events.
+    Recording a vaccination (a clinical action) is reserved to Admin / Farm Manager /
+    Farmer / Technician."""
 
     serializer_class = VaccinationSerializer
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [CanAdministerVaccination()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         return Vaccination.objects.filter(batch__house__farm=self.request.user.farm)

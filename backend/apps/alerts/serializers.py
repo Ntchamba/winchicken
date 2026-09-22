@@ -26,12 +26,21 @@ class AlertRuleSerializer(serializers.ModelSerializer):
 class AlertSerializer(serializers.ModelSerializer):
     """GET /api/alerts/ response row — a triggered occurrence of an AlertRule."""
 
-    ruleType = serializers.CharField(source='rule.rule_type', read_only=True)
+    rule_type = serializers.CharField(source='rule.rule_type', read_only=True)
 
     class Meta:
         model = Alert
-        fields = ['id', 'rule', 'ruleType', 'batch', 'triggered_at', 'status', 'message', 'severity']
+        fields = ['id', 'rule', 'rule_type', 'batch', 'triggered_at', 'status', 'message', 'severity']
         read_only_fields = ['id', 'triggered_at']
+
+
+class AlertUpdateSerializer(serializers.ModelSerializer):
+    """PATCH payload for /api/alerts/{id}/ — status transition only (NEW -> SENT/RESOLVED)."""
+
+    class Meta:
+        model = Alert
+        fields = ['id', 'status']
+        read_only_fields = ['id']
 
 
 class SmsMessageSerializer(serializers.ModelSerializer):

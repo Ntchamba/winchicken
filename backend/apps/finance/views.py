@@ -1,11 +1,16 @@
+from django.shortcuts import get_object_or_404
+from django.utils.dateparse import parse_date
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, extend_schema, inline_serializer
-from rest_framework import generics, serializers
+from rest_framework import generics, serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.batches.calculations import bfr_estimate
+from apps.batches.models import PoultryBatch
 from apps.core.permissions import ADMIN, FARM_MANAGER, IsAdminOrCashier, IsAdminOrFarmManager
-from apps.finance.calculations import expense_category_breakdown, finance_summary, finance_trend_direction
+from apps.finance.calculations import batch_break_even, expense_category_breakdown, finance_summary, finance_trend_direction
 from apps.finance.models import Expense, PurchaseOrder, Sale
 from apps.finance.serializers import ExpenseSerializer, PurchaseOrderSerializer, SaleSerializer
 
@@ -23,20 +28,20 @@ _RANGE_PARAM = OpenApiParameter(
         'months': inline_serializer('FinanceSummaryMonth', {
             'month': serializers.CharField(), 'revenue': serializers.FloatField(), 'expenses': serializers.FloatField(),
         }, many=True, required=False),
-        'cashOnHand': serializers.FloatField(required=False),
-        'pendingPayables': serializers.FloatField(required=False),
-        'roiForecastPct': serializers.FloatField(allow_null=True, required=False, help_text='null ("not available") until at least one EQUIPMENT purchase has been RECEIVED.'),
-        'revenueTrend': serializers.ChoiceField(choices=['up', 'down', 'flat'], required=False),
-        'expenseTrend': serializers.ChoiceField(choices=['up', 'down', 'flat'], required=False),
+        'cash_on_hand': serializers.FloatField(required=False),
+        'pending_payables': serializers.FloatField(required=False),
+        'roi_forecast_pct': serializers.FloatField(allow_null=True, required=False, help_text='null ("not available") until at least one EQUIPMENT purchase has been RECEIVED.'),
+        'revenue_trend': serializers.ChoiceField(choices=['up', 'down', 'flat'], required=False),
+        'expense_trend': serializers.ChoiceField(choices=['up', 'down', 'flat'], required=False),
     }),
     examples=[
         OpenApiExample('Full access (Admin / Farm Manager)', value={
             'access': 'full', 'range': '6m',
             'months': [{'month': '2026-03', 'revenue': 812000, 'expenses': 610000}],
-            'cashOnHand': 245600, 'pendingPayables': 18420.5, 'roiForecastPct': None,
+            'cash_on_hand': 245600, 'pending_payables': 18420.5, 'roi_forecast_pct': None,
         }, response_only=True),
         OpenApiExample('Restricted access (every other role)', value={
-            'access': 'restricted', 'range': '6m', 'revenueTrend': 'up', 'expenseTrend': 'flat',
+            'access': 'restricted', 'range': '6m', 'revenue_trend': 'up', 'expense_trend': 'flat',
         }, response_only=True),
     ],
 )
@@ -63,7 +68,7 @@ class FinanceSummaryView(APIView):
     responses=inline_serializer('ExpenseCategoriesResponse', {
         'range': serializers.CharField(),
         'categories': inline_serializer('ExpenseCategoryShare', {
-            'category': serializers.CharField(), 'amountPct': serializers.FloatField(),
+            'category': serializers.CharField(), 'amount_pct': serializers.FloatField(),
         }, many=True),
     }),
 )
@@ -87,7 +92,7 @@ class FinanceExpenseCategoriesView(APIView):
     responses=inline_serializer('FinanceTransactionsResponse', {
         'count': serializers.IntegerField(),
         'page': serializers.IntegerField(),
-        'pageSize': serializers.IntegerField(),
+        'page_size': serializers.IntegerField(),
         'results': inline_serializer('FinanceTransactionRow', {
             'id': serializers.CharField(help_text='"EXP-{id}" or "SALE-{id}" — not a real primary key, just a display id.'),
             'date': serializers.DateField(),
@@ -131,7 +136,68 @@ class FinanceTransactionsView(generics.ListAPIView):
         total = len(rows)
         start = (page - 1) * page_size
         paged = rows[start:start + page_size]
-        return Response({'count': total, 'page': page, 'pageSize': page_size, 'results': paged})
+        return Response({'count': total, 'page': page, 'page_size': page_size, 'results': paged})
+
+
+@extend_schema(
+    parameters=[OpenApiParameter(name='batch_code', type=str, required=True)],
+    responses=inline_serializer('BreakEvenResponse', {
+        'batch_code': serializers.CharField(),
+        'allocated_fixed_cost': serializers.FloatField(),
+        'unit_variable_cost': serializers.FloatField(allow_null=True),
+        'unit_sale_price': serializers.FloatField(allow_null=True, help_text='null until the batch has at least one sale.'),
+        'break_even_quantity': serializers.FloatField(allow_null=True),
+        'actual_quantity_sold': serializers.FloatField(),
+        'safety_margin_pct': serializers.FloatField(allow_null=True),
+    }),
+)
+class FinanceBreakEvenView(APIView):
+    """GET /api/finance/break-even/?batch_code= — break-even quantity and safety margin for
+    one batch (implementation-detail spec 5.3's break_even_quantity/safety_margin_pct
+    formulas, apps.finance.calculations.batch_break_even). Reserved to Admin / Farm Manager,
+    matching the other exact-figure finance endpoints."""
+
+    permission_classes = [IsAdminOrFarmManager]
+
+    def get(self, request):
+        batch_code = request.query_params.get('batch_code')
+        if not batch_code:
+            return Response({'detail': 'batch_code est requis.'}, status=status.HTTP_400_BAD_REQUEST)
+        batch = get_object_or_404(PoultryBatch, batch_code=batch_code, house__farm=request.user.farm)
+        return Response(batch_break_even(batch))
+
+
+@extend_schema(
+    parameters=[
+        OpenApiParameter(name='batch_code', type=str, required=True),
+        OpenApiParameter(name='as_of', type=str, required=False, description='YYYY-MM-DD, defaults to today.'),
+    ],
+    responses=inline_serializer('WorkingCapitalResponse', {
+        'batch_code': serializers.CharField(),
+        'as_of': serializers.DateField(),
+        'working_capital_requirement': serializers.FloatField(
+            help_text='Positive = cash need not yet covered by sales as of that date.'
+        ),
+    }),
+)
+class FinanceWorkingCapitalView(APIView):
+    """GET /api/finance/working-capital/?batch_code=&as_of= — working-capital-requirement
+    estimate for one batch as of a given date (implementation-detail spec 5.3's `bfr`,
+    apps.batches.calculations.bfr_estimate). Reserved to Admin / Farm Manager."""
+
+    permission_classes = [IsAdminOrFarmManager]
+
+    def get(self, request):
+        batch_code = request.query_params.get('batch_code')
+        if not batch_code:
+            return Response({'detail': 'batch_code est requis.'}, status=status.HTTP_400_BAD_REQUEST)
+        batch = get_object_or_404(PoultryBatch, batch_code=batch_code, house__farm=request.user.farm)
+        as_of = parse_date(request.query_params.get('as_of', '')) or timezone.now().date()
+        return Response({
+            'batch_code': batch.batch_code,
+            'as_of': as_of,
+            'working_capital_requirement': float(bfr_estimate(batch, as_of)),
+        })
 
 
 class ExpenseListCreateView(generics.ListCreateAPIView):

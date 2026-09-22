@@ -87,9 +87,9 @@ def finance_summary(farm, range_param='6m'):
     return {
         'range': range_param,
         'months': monthly_summary(farm, range_param),
-        'cashOnHand': cash_on_hand(farm),
-        'pendingPayables': pending_payables(farm),
-        'roiForecastPct': roi_forecast_pct(farm, range_param),
+        'cash_on_hand': cash_on_hand(farm),
+        'pending_payables': pending_payables(farm),
+        'roi_forecast_pct': roi_forecast_pct(farm, range_param),
     }
 
 
@@ -109,7 +109,7 @@ def finance_trend_direction(farm, range_param='6m'):
             return 'down'
         return 'flat'
 
-    return {'revenueTrend': direction('revenue'), 'expenseTrend': direction('expenses')}
+    return {'revenue_trend': direction('revenue'), 'expense_trend': direction('expenses')}
 
 
 def expense_category_breakdown(farm, range_param='6m'):
@@ -125,7 +125,7 @@ def expense_category_breakdown(farm, range_param='6m'):
     for expense in expenses:
         totals[expense.category] += expense.amount
     categories = [
-        {'category': category, 'amountPct': round(float(amount) / float(total) * 100, 1)}
+        {'category': category, 'amount_pct': round(float(amount) / float(total) * 100, 1)}
         for category, amount in totals.items() if amount
     ]
     return {'range': range_param, 'categories': categories}
@@ -136,9 +136,8 @@ def break_even_quantity(allocated_fixed_cost, unit_sale_price, unit_variable_cos
     (implementation-detail spec 5.3). Returns None if sale price equals variable cost (division
     by zero) — never a fabricated value.
 
-    NOT currently called from any view or serializer — implemented per the spec formula but not
-    wired to an API endpoint or exposed figure (see docs/deviations.md). Callers must compute
-    the three inputs themselves from Expense/Sale rows; this module does not do so for them.
+    Takes its three inputs already computed — see `batch_break_even` below for the
+    Expense/Sale aggregation `GET /api/finance/break-even/` actually uses.
     """
     denominator = unit_sale_price - unit_variable_cost
     if not denominator:
@@ -148,10 +147,51 @@ def break_even_quantity(allocated_fixed_cost, unit_sale_price, unit_variable_cos
 
 def safety_margin_pct(actual_quantity_sold, break_even_qty):
     """How far actual sales exceed the break-even quantity, as a percentage of actual sales.
-    Returns None if there were no sales or break_even_qty is unavailable.
-
-    NOT currently called from any view or serializer — same status as break_even_quantity above.
-    """
+    Returns None if there were no sales or break_even_qty is unavailable."""
     if not actual_quantity_sold or break_even_qty is None:
         return None
     return round((actual_quantity_sold - break_even_qty) / actual_quantity_sold * 100, 2)
+
+
+def batch_break_even(batch):
+    """Response payload for GET /api/finance/break-even/?batch_code= — derives
+    `break_even_quantity`'s three inputs from the batch's own Expense/Sale rows (the same
+    variable/fixed category split as `apps.batches.calculations.build_closing_report`), then
+    combines it with `safety_margin_pct` against the batch's actual quantity sold so far.
+
+    - `unit_variable_cost` = total variable-category Expense (FEED/VETERINARY/MISC) / batch
+      current bird count.
+    - `unit_sale_price` = average Sale.unit_price recorded for the batch (None if no sales yet).
+    - `allocated_fixed_cost` = total fixed-category Expense (DEPRECIATION/LABOR) for the batch.
+    """
+    from apps.batches.calculations import FIXED_EXPENSE_CATEGORIES, VARIABLE_EXPENSE_CATEGORIES
+
+    variable_cost = sum(
+        e.amount for e in Expense.objects.filter(batch=batch, category__in=VARIABLE_EXPENSE_CATEGORIES)
+    )
+    allocated_fixed_cost = sum(
+        e.amount for e in Expense.objects.filter(batch=batch, category__in=FIXED_EXPENSE_CATEGORIES)
+    )
+    from decimal import Decimal
+
+    sales = list(Sale.objects.filter(batch=batch))
+    actual_quantity_sold = sum(s.quantity for s in sales)
+    unit_sale_price = (
+        float(sum(s.unit_price * Decimal(str(s.quantity)) for s in sales) / Decimal(str(actual_quantity_sold)))
+        if actual_quantity_sold else None
+    )
+    unit_variable_cost = float(variable_cost) / batch.current_count if batch.current_count else None
+
+    break_even_qty = None
+    if unit_sale_price is not None and unit_variable_cost is not None:
+        break_even_qty = break_even_quantity(float(allocated_fixed_cost), unit_sale_price, unit_variable_cost)
+
+    return {
+        'batch_code': batch.batch_code,
+        'allocated_fixed_cost': float(allocated_fixed_cost),
+        'unit_variable_cost': unit_variable_cost,
+        'unit_sale_price': unit_sale_price,
+        'break_even_quantity': break_even_qty,
+        'actual_quantity_sold': float(actual_quantity_sold),
+        'safety_margin_pct': safety_margin_pct(actual_quantity_sold, break_even_qty),
+    }

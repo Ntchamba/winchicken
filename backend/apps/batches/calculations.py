@@ -8,6 +8,11 @@ from collections import defaultdict
 FCR_REFERENCE_RANGE = (2.10, 2.30)
 MORTALITY_REFERENCE_RANGE = (3, 5)
 
+# Expense category split used by both build_closing_report (below) and
+# apps.finance.calculations.batch_break_even.
+VARIABLE_EXPENSE_CATEGORIES = ['FEED', 'VETERINARY', 'MISC']
+FIXED_EXPENSE_CATEGORIES = ['DEPRECIATION', 'LABOR']
+
 
 def mortality_pct(batch):
     """Cumulative mortality since batch start, as a percentage of the initial flock size.
@@ -64,9 +69,9 @@ def weekly_kpi(batch):
         last_date_in_week = max(log.log_date for log in week_logs)
         weeks.append({
             'week': week,
-            'mortalityPct': round(week_mortality / batch.initial_count * 100, 2) if batch.initial_count else 0.0,
-            'feedConversionRatio': feed_conversion_ratio(batch, up_to_date=last_date_in_week),
-            'avgWeightKg': next(
+            'mortality_pct': round(week_mortality / batch.initial_count * 100, 2) if batch.initial_count else 0.0,
+            'feed_conversion_ratio': feed_conversion_ratio(batch, up_to_date=last_date_in_week),
+            'avg_weight_kg': next(
                 (log.avg_sample_weight for log in sorted(week_logs, key=lambda entry: entry.log_date, reverse=True)
                  if log.avg_sample_weight),
                 None,
@@ -74,11 +79,11 @@ def weekly_kpi(batch):
         })
 
     return {
-        'batchCode': batch.batch_code,
+        'batch_code': batch.batch_code,
         'weeks': weeks,
-        'referenceRange': {
-            'feedConversionRatio': list(FCR_REFERENCE_RANGE),
-            'mortalityPct': list(MORTALITY_REFERENCE_RANGE),
+        'reference_range': {
+            'feed_conversion_ratio': list(FCR_REFERENCE_RANGE),
+            'mortality_pct': list(MORTALITY_REFERENCE_RANGE),
         },
     }
 
@@ -91,12 +96,9 @@ def build_closing_report(batch):
     from apps.batches.models import BatchClosingReport
     from apps.finance.models import Expense, Sale
 
-    variable_categories = ['FEED', 'VETERINARY', 'MISC']
-    fixed_categories = ['DEPRECIATION', 'LABOR']
-
     expenses = Expense.objects.filter(batch=batch)
-    total_variable_cost = sum(e.amount for e in expenses.filter(category__in=variable_categories))
-    allocated_fixed_cost = sum(e.amount for e in expenses.filter(category__in=fixed_categories))
+    total_variable_cost = sum(e.amount for e in expenses.filter(category__in=VARIABLE_EXPENSE_CATEGORIES))
+    allocated_fixed_cost = sum(e.amount for e in expenses.filter(category__in=FIXED_EXPENSE_CATEGORIES))
     revenue = sum(s.total_amount for s in Sale.objects.filter(batch=batch))
     unit_cost_price = (total_variable_cost / batch.current_count) if batch.current_count else None
     gross_margin = revenue - total_variable_cost

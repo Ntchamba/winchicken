@@ -5,6 +5,14 @@ import { useAuth } from "../../context/AuthContext";
 
 const CATEGORY_TO_TAB = { FEED: "feed", VETERINARY: "veterinary", EQUIPMENT: "equipment", BEDDING: "bedding" };
 
+// Backend FeedStage enum values ("STARTER") don't match StockParametersForm's <select>
+// option values ("Starter") — without this conversion the feed-stage dropdown fails to
+// pre-select the item's actual stage when editing (see docs/deviations.md).
+function feedStageToDetail(feedStage) {
+  if (!feedStage || feedStage === "NOT_APPLICABLE") return "";
+  return feedStage.charAt(0) + feedStage.slice(1).toLowerCase();
+}
+
 export default function StockPage() {
   const { user } = useAuth();
   const [initialData, setInitialData] = useState(null);
@@ -19,7 +27,7 @@ export default function StockPage() {
           id: item.item_code,
           itemCode: item.item_code,
           item: item.name,
-          detail: tab === "feed" ? item.feed_stage : tab === "veterinary" ? (item.cold_chain_required ? "Chaîne du froid : Oui" : "Chaîne du froid : Non") : "",
+          detail: tab === "feed" ? feedStageToDetail(item.feed_stage) : tab === "veterinary" ? (item.cold_chain_required ? "Chaîne du froid : Oui" : "Chaîne du froid : Non") : "",
           threshold: item.alert_threshold,
           unit: item.unit,
           price: item.unit_price,

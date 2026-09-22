@@ -3,8 +3,10 @@ from datetime import date
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from apps.batches.models import BatchStatus, PoultryBatch
 from apps.core.models import Farm, User, UserRole, create_role_profile
 from apps.finance.models import Expense, ExpenseCategory, ProductType, Sale
+from apps.houses.models import PoultryHouse
 
 
 class FinanceAccessTests(APITestCase):
@@ -33,7 +35,7 @@ class FinanceAccessTests(APITestCase):
         resp = self.client.get('/api/finance/summary/')
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data['access'], 'full')
-        self.assertIn('cashOnHand', resp.data)
+        self.assertIn('cash_on_hand', resp.data)
         self.assertIn('months', resp.data)
 
     def test_farm_manager_gets_full_summary(self):
@@ -49,12 +51,12 @@ class FinanceAccessTests(APITestCase):
         resp = self.client.get('/api/finance/summary/')
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data['access'], 'restricted')
-        self.assertIn('revenueTrend', resp.data)
-        self.assertIn('expenseTrend', resp.data)
-        self.assertNotIn('cashOnHand', resp.data)
+        self.assertIn('revenue_trend', resp.data)
+        self.assertIn('expense_trend', resp.data)
+        self.assertNotIn('cash_on_hand', resp.data)
         self.assertNotIn('months', resp.data)
-        self.assertNotIn('pendingPayables', resp.data)
-        self.assertNotIn('roiForecastPct', resp.data)
+        self.assertNotIn('pending_payables', resp.data)
+        self.assertNotIn('roi_forecast_pct', resp.data)
 
     def test_farmer_denied_expense_categories_and_transactions(self):
         farmer = self._user(UserRole.FARMER, 'farmer2@test.com')
@@ -78,5 +80,26 @@ class FinanceAccessTests(APITestCase):
         farmer = self._user(UserRole.FARMER, 'farmer3@test.com')
         self._auth(farmer)
         resp = self.client.get('/api/finance/summary/')
-        self.assertIn(resp.data['revenueTrend'], ('up', 'down', 'flat'))
-        self.assertIn(resp.data['expenseTrend'], ('up', 'down', 'flat'))
+        self.assertIn(resp.data['revenue_trend'], ('up', 'down', 'flat'))
+        self.assertIn(resp.data['expense_trend'], ('up', 'down', 'flat'))
+
+    def test_break_even_endpoint_reserved_to_admin_and_farm_manager(self):
+        house = PoultryHouse.objects.create(house_code='H-1', farm=self.farm, name='House', max_capacity=100)
+        batch = PoultryBatch.objects.create(
+            batch_code='BATCH-1', house=house, production_type='BROILER',
+            initial_count=100, current_count=100, start_date=date(2026, 1, 1), status=BatchStatus.ACTIVE,
+        )
+        Expense.objects.create(farm=self.farm, batch=batch, category=ExpenseCategory.FEED, amount=1000, expense_date=date.today())
+        Sale.objects.create(farm=self.farm, batch=batch, product_type=ProductType.BIRD, quantity=50, unit_price=100, sale_date=date.today())
+
+        farmer = self._user(UserRole.FARMER, 'farmer4@test.com')
+        self._auth(farmer)
+        self.assertEqual(self.client.get(f'/api/finance/break-even/?batch_code={batch.batch_code}').status_code, 403)
+
+        admin = self._user(UserRole.ADMIN, 'admin2@test.com')
+        self._auth(admin)
+        resp = self.client.get(f'/api/finance/break-even/?batch_code={batch.batch_code}')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['batch_code'], batch.batch_code)
+        self.assertEqual(resp.data['unit_variable_cost'], 10.0)
+        self.assertEqual(resp.data['unit_sale_price'], 100.0)

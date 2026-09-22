@@ -130,9 +130,9 @@ export default function HouseDetailPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
                     <XAxis dataKey="week" fontSize={11} stroke="var(--muted)" />
                     <YAxis fontSize={11} stroke="var(--muted)" domain={[1.5, 2.8]} />
-                    <ReferenceArea y1={weeklyKpi.referenceRange.feedConversionRatio[0]} y2={weeklyKpi.referenceRange.feedConversionRatio[1]} fill="var(--mint-soft)" fillOpacity={0.5} />
+                    <ReferenceArea y1={weeklyKpi.reference_range.feed_conversion_ratio[0]} y2={weeklyKpi.reference_range.feed_conversion_ratio[1]} fill="var(--mint-soft)" fillOpacity={0.5} />
                     <Tooltip />
-                    <Line type="monotone" dataKey="feedConversionRatio" stroke="var(--mint)" strokeWidth={2} dot />
+                    <Line type="monotone" dataKey="feed_conversion_ratio" stroke="var(--mint)" strokeWidth={2} dot />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -145,9 +145,9 @@ export default function HouseDetailPage() {
                     <XAxis dataKey="week" fontSize={11} stroke="var(--muted)" />
                     <YAxis fontSize={11} stroke="var(--muted)" />
                     <Tooltip />
-                    <Bar dataKey="mortalityPct" radius={[4, 4, 0, 0]}>
+                    <Bar dataKey="mortality_pct" radius={[4, 4, 0, 0]}>
                       {weeklyKpi.weeks.map((w, i) => (
-                        <Cell key={i} fill={w.mortalityPct > 5 / (weeklyKpi.weeks.length || 1) ? "var(--danger)" : "var(--mint-fill)"} />
+                        <Cell key={i} fill={w.mortality_pct > 5 / (weeklyKpi.weeks.length || 1) ? "var(--danger)" : "var(--mint-fill)"} />
                       ))}
                     </Bar>
                   </BarChart>
