@@ -1,5 +1,8 @@
 .animated-bg{position:absolute;inset:0;z-index:0;overflow:hidden}
 .animated-bg-parallax{position:absolute;inset:-4%}
+/* Login / create-farm: blur the image layer only. The oversized negative inset above keeps
+   the blurred edges well outside the viewport; a small scale hides any residual softness. */
+.animated-bg-parallax.is-blurred{filter:blur(9px);transform:scale(1.06)}
 .animated-bg-image{
   position:absolute;inset:0;
   background-size:cover;background-position:center;background-repeat:no-repeat;
@@ -8,9 +11,12 @@
 .animated-bg-wash{
   position:absolute;top:-30%;left:-30%;width:160%;height:160%;
   background:
-    radial-gradient(ellipse at 30% 20%, rgba(23,184,146,.4), transparent 55%),
-    radial-gradient(ellipse at 75% 80%, rgba(11,143,104,.32), transparent 55%);
-  mix-blend-mode:screen;
+    radial-gradient(ellipse at 30% 20%, rgba(52,211,169,.34), transparent 55%),
+    radial-gradient(ellipse at 75% 80%, rgba(13,143,104,.30), transparent 55%);
+  /* Plain alpha compositing on purpose — an earlier `mix-blend-mode:screen` here forced the
+     compositor to read the image backdrop back every frame of the 26s drift (a measured jank
+     source on low-end GPUs / software raster). Normal blending keeps this layer on the fast
+     transform+opacity path; the mint tones above are nudged up to keep the same softening. */
   will-change:transform,opacity;
   animation:animated-bg-wash-drift 26s ease-in-out infinite alternate;
 }
@@ -19,18 +25,12 @@
   100%{transform:translate(3%,4%);opacity:.85}
 }
 .animated-bg-scrim{position:absolute;inset:0;background:rgba(7,15,21,.3)}
-.animated-bg-particles{position:absolute;inset:0;pointer-events:none}
-.animated-bg-mote{
-  position:absolute;border-radius:50%;background:rgba(215,245,236,.55);filter:blur(.5px);
-  animation-name:animated-bg-mote-drift;animation-timing-function:ease-in-out;animation-iteration-count:infinite;
-}
-@keyframes animated-bg-mote-drift{
-  0%{transform:translate(0,0);opacity:0}
-  15%{opacity:.4}
-  50%{transform:translate(14px,-22px);opacity:.6}
-  85%{opacity:.25}
-  100%{transform:translate(-8px,10px);opacity:0}
-}
+
+/* Foreground content passed as children — above every background layer, untouched by their
+   transforms. Callers using the sibling pattern (own z-index) simply pass no children. */
+.animated-bg-content{position:relative;z-index:1}
+
 @media(prefers-reduced-motion: reduce){
+  /* Freeze Ken Burns + wash drift; the wash stays as a near-static softening layer. */
   .animated-bg *{animation:none!important;transition:none!important}
 }

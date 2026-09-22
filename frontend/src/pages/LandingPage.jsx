@@ -3,7 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { motion, useMotionValue, useReducedMotion, useSpring } from "framer-motion";
 import { Play } from "lucide-react";
 import { farmApi } from "../api/endpoints";
+import AnimatedBackground from "../components/AnimatedBackground";
+import FireflyField from "../components/FireflyField";
 import DemoVideoModal from "../components/DemoVideoModal";
+import useDocumentTitle from "../hooks/useDocumentTitle";
 import "../styles/house-protocol-theme-light.css";
 import "./landing.css";
 
@@ -27,23 +30,7 @@ const stagger = {
 };
 
 const PARALLAX_MAX = 10; // px — cursor-driven halo drift, capped small on purpose
-const BG_PARALLAX_MAX = 13; // px — background image drift, capped small on purpose
 const MAGNETIC_MAX = 5; // px — button pull toward cursor, capped small on purpose
-
-// Sparse drifting motes over the background image — positions/timings fixed (not
-// re-randomized per render), independent-feeling only via varied duration/delay.
-const MOTES = [
-  { left: "8%", top: "18%", size: 3, duration: 22, delay: 0 },
-  { left: "82%", top: "12%", size: 2, duration: 26, delay: 3 },
-  { left: "18%", top: "72%", size: 4, duration: 30, delay: 1.5 },
-  { left: "65%", top: "80%", size: 2, duration: 24, delay: 5 },
-  { left: "40%", top: "30%", size: 3, duration: 28, delay: 2 },
-  { left: "92%", top: "55%", size: 2, duration: 21, delay: 4 },
-  { left: "25%", top: "48%", size: 3, duration: 27, delay: 6 },
-  { left: "55%", top: "15%", size: 2, duration: 23, delay: 1 },
-  { left: "10%", top: "85%", size: 3, duration: 29, delay: 3.5 },
-  { left: "75%", top: "35%", size: 2, duration: 25, delay: 2.5 },
-];
 
 // Small spring-backed x/y pair reused by the halo parallax and the two magnetic
 // buttons — imperative .set() calls, no React re-renders, always eases back via spring.
@@ -59,6 +46,7 @@ function useSpringOffset() {
 // routed by whether a farm already exists. Old marketing sections (nav, features,
 // specs, contact, newsletter, footer) are gone, not hidden — see docs/deviations.md.
 export default function LandingPage() {
+  useDocumentTitle();
   const [farmExists, setFarmExists] = useState(null);
   const [demoOpen, setDemoOpen] = useState(false);
   const navigate = useNavigate();
@@ -81,24 +69,19 @@ export default function LandingPage() {
     show: { ...fadeUp.show, transition: { ...fadeUp.show.transition, delay: reduceMotion ? 0 : 0.9 } },
   };
 
-  // Cursor-following halo + background-image parallax (disabled on touch devices
-  // and under reduced motion) — both driven from the same pointer sample.
+  // Cursor-following halo (disabled on touch devices and under reduced motion). The
+  // background image's own parallax lives inside <AnimatedBackground>.
   const halo = useSpringOffset();
-  const bgParallax = useSpringOffset();
   const handlePageMouseMove = (e) => {
     if (!parallaxEnabled) return;
     const nx = (e.clientX / window.innerWidth - 0.5) * 2;
     const ny = (e.clientY / window.innerHeight - 0.5) * 2;
     halo.x.set(nx * PARALLAX_MAX);
     halo.y.set(ny * PARALLAX_MAX);
-    bgParallax.x.set(nx * BG_PARALLAX_MAX);
-    bgParallax.y.set(ny * BG_PARALLAX_MAX);
   };
   const handlePageMouseLeave = () => {
     halo.x.set(0);
     halo.y.set(0);
-    bgParallax.x.set(0);
-    bgParallax.y.set(0);
   };
 
   // Magnetic buttons: shift a few px toward the cursor within their own bounds,
@@ -135,34 +118,8 @@ export default function LandingPage() {
 
   return (
     <div className="landing-welcome" onMouseMove={handlePageMouseMove} onMouseLeave={handlePageMouseLeave}>
-      <div className="welcome-bg" aria-hidden="true">
-        <motion.div
-          className="welcome-bg-parallax"
-          style={parallaxEnabled ? { x: bgParallax.springX, y: bgParallax.springY } : undefined}
-        >
-          <motion.div
-            className="welcome-bg-image"
-            animate={reduceMotion ? undefined : { scale: [1, 1.08], x: ["0%", "-2%"], y: ["0%", "1.2%"] }}
-            transition={reduceMotion ? undefined : { duration: 40, repeat: Infinity, repeatType: "mirror", ease: "easeInOut" }}
-          />
-        </motion.div>
-        <div className="welcome-bg-wash" />
-        <div className="welcome-bg-scrim" />
-        {!reduceMotion && (
-          <div className="welcome-particles">
-            {MOTES.map((m, i) => (
-              <span
-                key={i}
-                className="welcome-mote"
-                style={{
-                  left: m.left, top: m.top, width: m.size, height: m.size,
-                  animationDuration: `${m.duration}s`, animationDelay: `${m.delay}s`,
-                }}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      <AnimatedBackground src="/image22.png" />
+      <FireflyField className="landing-fireflies" />
 
       <motion.div
         className="welcome-inner"

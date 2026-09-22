@@ -4,35 +4,29 @@ import "./AnimatedBackground.css";
 
 const PARALLAX_MAX = 13; // px — cursor-driven drift, capped small on purpose
 
-// Sparse drifting motes — positions/timings fixed (not re-randomized per render),
-// independent-feeling only via varied duration/delay.
-const MOTES = [
-  { left: "8%", top: "18%", size: 3, duration: 22, delay: 0 },
-  { left: "82%", top: "12%", size: 2, duration: 26, delay: 3 },
-  { left: "18%", top: "72%", size: 4, duration: 30, delay: 1.5 },
-  { left: "65%", top: "80%", size: 2, duration: 24, delay: 5 },
-  { left: "40%", top: "30%", size: 3, duration: 28, delay: 2 },
-  { left: "92%", top: "55%", size: 2, duration: 21, delay: 4 },
-  { left: "25%", top: "48%", size: 3, duration: 27, delay: 6 },
-  { left: "55%", top: "15%", size: 2, duration: 23, delay: 1 },
-  { left: "10%", top: "85%", size: 3, duration: 29, delay: 3.5 },
-  { left: "75%", top: "35%", size: 2, duration: 25, delay: 2.5 },
-];
-
 /**
- * Shared full-bleed animated hero background — Ken Burns pan/zoom, animated mint
- * gradient wash, cursor parallax, sparse particle drift, dark scrim for text contrast.
- * Renders behind whatever content the caller layers on top (absolutely positioned,
- * z-index 0) — the caller is responsible for `position:relative` on its own container
- * and for giving its foreground content `z-index:1`+.
+ * Shared full-bleed animated hero background: base image + slow Ken Burns pan/zoom +
+ * independent mint gradient wash + cursor parallax + a dark scrim for text contrast.
+ * The firefly field is a separate, composable layer (`FireflyField`) — mount it as a
+ * child here, or on its own elsewhere.
  *
- * All effects are GPU-friendly (transform/opacity only) and fully respect
- * prefers-reduced-motion (frozen, not just slowed — parallax listener isn't even
- * attached, Ken Burns doesn't animate, particles aren't rendered).
+ * Layering: the image / wash / scrim sit at z-index 0; `children` render in a
+ * `.animated-bg-content` wrapper at z-index 1, unaffected by the background's transforms.
+ * Callers that prefer to keep foreground content as a sibling (with their own z-index) can
+ * still do that and pass no children.
  *
- * @param {string} src - Background image URL (e.g. "/welcome-bg.jpg").
+ * All motion is GPU-friendly (transform/opacity only). Under `prefers-reduced-motion` the
+ * Ken Burns pan and parallax are frozen and the parallax listener isn't attached; the
+ * gradient wash is left as a near-static layer.
+ *
+ * @param {string} src - Background image URL (e.g. "/image22.png").
+ * @param {boolean} [blur] - Blur the image layer only (login / create-farm: a sharp card
+ *   sits on top). Wash/scrim/children are unaffected. Also freezes Ken Burns on that layer
+ *   (invisible through the blur, and animating a filter's input every frame is costly).
+ * @param {string} [className] - extra class on the root.
+ * @param {React.ReactNode} [children] - foreground content, rendered on top at z-index 1.
  */
-export default function AnimatedBackground({ src }) {
+export default function AnimatedBackground({ src, blur = false, className = "", children }) {
   const reduceMotion = useReducedMotion();
   const x = useMotionValue(0);
   const y = useMotionValue(0);
@@ -58,31 +52,25 @@ export default function AnimatedBackground({ src }) {
   }, [reduceMotion, x, y]);
 
   return (
-    <div className="animated-bg" aria-hidden="true">
-      <motion.div className="animated-bg-parallax" style={{ x: springX, y: springY }}>
+    <div className={`animated-bg ${className}`.trim()} aria-hidden={children ? undefined : "true"}>
+      <motion.div
+        className={`animated-bg-parallax ${blur ? "is-blurred" : ""}`.trim()}
+        style={{ x: springX, y: springY }}
+      >
+        {/* Ken Burns is skipped when `blur` is set (login / create-farm): an 8% zoom is
+            imperceptible through the 9px blur + opaque card on top, and animating the blur
+            filter's input every frame is its single biggest raster cost. Parallax (a small
+            composited translate on the parent) still applies. */}
         <motion.div
           className="animated-bg-image"
           style={{ backgroundImage: `url('${src}')` }}
-          animate={reduceMotion ? undefined : { scale: [1, 1.08], x: ["0%", "-2%"], y: ["0%", "1.2%"] }}
-          transition={reduceMotion ? undefined : { duration: 40, repeat: Infinity, repeatType: "mirror", ease: "easeInOut" }}
+          animate={reduceMotion || blur ? undefined : { scale: [1, 1.08], x: ["0%", "-2%"], y: ["0%", "1.2%"] }}
+          transition={reduceMotion || blur ? undefined : { duration: 40, repeat: Infinity, repeatType: "mirror", ease: "easeInOut" }}
         />
       </motion.div>
       <div className="animated-bg-wash" />
       <div className="animated-bg-scrim" />
-      {!reduceMotion && (
-        <div className="animated-bg-particles">
-          {MOTES.map((m, i) => (
-            <span
-              key={i}
-              className="animated-bg-mote"
-              style={{
-                left: m.left, top: m.top, width: m.size, height: m.size,
-                animationDuration: `${m.duration}s`, animationDelay: `${m.delay}s`,
-              }}
-            />
-          ))}
-        </div>
-      )}
+      {children && <div className="animated-bg-content">{children}</div>}
     </div>
   );
 }
