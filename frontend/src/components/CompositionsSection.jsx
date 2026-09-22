@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Check, Loader2, Play, Plus, Trash2, X } from "lucide-react";
 import { stockApi } from "../api/endpoints";
+import { getServerErrorMessage } from "../api/errors";
 import { useAuth } from "../context/AuthContext";
 import ResourceCombobox from "./ResourceCombobox";
 
@@ -81,18 +82,28 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
   const [yieldEditFor, setYieldEditFor] = useState(null);
   const [yieldDraft, setYieldDraft] = useState("");
   const [yieldBusy, setYieldBusy] = useState(false);
+  const [yieldError, setYieldError] = useState("");
 
-  const startYieldEdit = (c) => { setYieldEditFor(c.id); setYieldDraft(c.base_output_quantity ?? ""); };
+  const startYieldEdit = (c) => { setYieldEditFor(c.id); setYieldDraft(c.base_output_quantity ?? ""); setYieldError(""); };
   const saveYield = async (c) => {
-    if (yieldDraft !== "" && Number(yieldDraft) <= 0) return;
+    // A bare `return` here was a dead button on a phone — nothing moved and nothing said why.
+    if (yieldDraft !== "" && Number(yieldDraft) <= 0) {
+      setYieldError("Le rendement doit être supérieur à 0.");
+      return;
+    }
+    if (yieldBusy) return;
+    setYieldError("");
     setYieldBusy(true);
     try {
       await stockApi.updateComposition(c.id, {
         base_output_quantity: yieldDraft === "" ? null : Number(yieldDraft),
       });
       setYieldEditFor(null);
-      load();
+      await load();
       onChanged?.();
+    } catch (err) {
+      // The draft stays on screen and the editor stays open — the typed value isn't lost.
+      setYieldError(getServerErrorMessage(err, "Le rendement n'a pas pu être enregistré."));
     } finally {
       setYieldBusy(false);
     }
@@ -249,7 +260,7 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
                             type="number" min="0" step="any" autoFocus
                             value={yieldDraft}
                             onChange={(e) => setYieldDraft(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === "Enter") saveYield(c); if (e.key === "Escape") setYieldEditFor(null); }}
+                            onKeyDown={(e) => { if (e.key === "Enter") saveYield(c); if (e.key === "Escape") { setYieldEditFor(null); setYieldError(""); } }}
                             placeholder="par lot"
                             style={{ width: 90 }}
                           />
@@ -257,9 +268,10 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
                           <button type="button" className="icon-button" onClick={() => saveYield(c)} aria-label="Enregistrer" disabled={yieldBusy}>
                             {yieldBusy ? <Loader2 size={12} className="spin" /> : <Check size={12} strokeWidth={2.2} />}
                           </button>
-                          <button type="button" className="icon-button" onClick={() => setYieldEditFor(null)} aria-label="Annuler">
+                          <button type="button" className="icon-button" onClick={() => { setYieldEditFor(null); setYieldError(""); }} aria-label="Annuler">
                             <X size={12} strokeWidth={2.2} />
                           </button>
+                          {yieldError && <span className="field-error" role="alert">{yieldError}</span>}
                         </span>
                       ) : canManage ? (
                         <button

@@ -152,11 +152,18 @@ export default function PurchaseOrdersPage() {
   };
 
   const confirmCancel = async () => {
+    if (actionBusy) return;
+    const orderCode = cancellingOrder.order_code;
+    setActionError("");
     setActionBusy(true);
     try {
-      await financeApi.cancelPurchaseOrder(cancellingOrder.order_code);
+      await financeApi.cancelPurchaseOrder(orderCode);
       setCancellingOrder(null);
-      loadOrders();
+      await loadOrders();
+    } catch (err) {
+      // Same treatment as the "marquer comme reçue" handler right above: the order stays in
+      // the list either way, so silence here is indistinguishable from a cancel that worked.
+      setActionError(getServerErrorMessage(err, `La commande ${orderCode} n'a pas pu être annulée.`));
     } finally {
       setActionBusy(false);
     }
