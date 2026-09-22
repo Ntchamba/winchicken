@@ -6,6 +6,11 @@
   position:relative;overflow:hidden;min-height:100vh;padding:48px 20px 64px;
   display:flex;align-items:center;justify-content:center;background:#0d1b29;
 }
+/* Firefly layer: above the blurred image (both z-index 0, this one later in the DOM),
+   below the sharp opaque card (z-index 1). Not itself blurred — a container filter here
+   would re-rasterize every frame as the dots animate. */
+.auth-fireflies{z-index:0}
+
 .auth-card{position:relative;z-index:1;width:min(420px,100%);padding:34px 32px}
 .auth-title{margin:14px 0 4px;font-family:'Space Grotesk',sans-serif;font-size:24px;text-align:center;letter-spacing:-.03em;color:#10242c}
 .auth-subtitle{margin:0 0 24px;color:var(--muted);font-size:13.5px;text-align:center}
@@ -15,6 +20,18 @@
 .auth-switch{margin:18px 0 0;text-align:center;font-size:13px;color:var(--muted)}
 .auth-switch a{color:var(--mint);font-weight:600;text-decoration:none}
 .auth-switch a:hover{text-decoration:underline}
+
+/* Pre-login "Réinitialiser la ferme" entry point — deliberately quiet: an edge-case recovery
+   action, not a second primary choice competing with "Se connecter". Muted, small, plain
+   underline; hover hints at its destructive nature without shouting. */
+.auth-reset-hint{margin:16px 0 0;text-align:center}
+.auth-reset-link{
+  border:0;background:none;padding:2px 4px;cursor:pointer;
+  font-size:12.5px;color:var(--muted);text-decoration:underline;text-underline-offset:2px;
+  transition:color .15s ease;
+}
+.auth-reset-link:hover{color:var(--danger)}
+.auth-reset-link:focus-visible{outline:2px solid var(--mint);outline-offset:2px;border-radius:4px}
 
 /* Brief explanatory notice when /create-farm redirects here because a farm already
    exists — router state, not persisted, so it only ever shows once per redirect. */

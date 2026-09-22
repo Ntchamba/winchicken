@@ -1,10 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { ChevronLeft, Loader2 } from "lucide-react";
-import { authApi } from "../api/endpoints";
+import { authApi, farmApi } from "../api/endpoints";
+import { getServerErrorMessage } from "../api/errors";
 import { useAuth } from "../context/AuthContext";
 import AnimatedBackground from "../components/AnimatedBackground";
+import FireflyField from "../components/FireflyField";
+import FactoryResetModal from "../components/FactoryResetModal";
 import TransitionScreen from "../components/TransitionScreen";
+import useDocumentTitle from "../hooks/useDocumentTitle";
 import "../styles/house-protocol-theme-light.css";
 import "./auth-pages.css";
 
@@ -17,17 +21,26 @@ const TRANSITION_MESSAGES = {
 };
 
 export default function LoginPage() {
+  useDocumentTitle("Connexion");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState("");
   const [transitionTarget, setTransitionTarget] = useState(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  // The "Réinitialiser la ferme" link is only meaningful once a farm exists (before that,
+  // /login can't authenticate anyone anyway). Mirrors LandingPage's own farm/exists check.
+  const [farmExists, setFarmExists] = useState(false);
   const { loginWithTokens } = useAuth();
   const navigate = useNavigate();
   // Brief explanatory notice when redirected here from /create-farm because a farm
   // already exists (router state, not persisted — gone on the next navigation).
   const location = useLocation();
   const noticeMessage = location.state?.noticeMessage;
+
+  useEffect(() => {
+    farmApi.exists().then(({ data }) => setFarmExists(data.exists)).catch(() => setFarmExists(false));
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -39,8 +52,12 @@ export default function LoginPage() {
       // Login already succeeded and is saved (tokens issued, user session live) at this
       // point — the transition screen only delays this page's own navigation.
       setTransitionTarget(data.is_configured ? "/dashboard" : "/onboarding/protocol");
-    } catch {
-      setServerError("Email ou mot de passe incorrect.");
+    } catch (err) {
+      // A 401 here is SimpleJWT's own already-specific message ("Aucun compte actif n'a été
+      // trouvé avec les identifiants fournis"); getServerErrorMessage only needs to add the
+      // network-unreachable case on top — a backend outage used to look identical to a wrong
+      // password (see docs/deviations.md Part 13), which hid this project's real Part B bug.
+      setServerError(getServerErrorMessage(err, "Email ou mot de passe incorrect."));
     } finally {
       setSubmitting(false);
     }
@@ -58,7 +75,8 @@ export default function LoginPage() {
 
   return (
     <div className="auth-shell">
-      <AnimatedBackground src="/welcome-bg.jpg" />
+      <AnimatedBackground src="/image22.png" blur />
+      <FireflyField className="auth-fireflies" />
       <Link to="/" className="auth-back-link">
         <ChevronLeft size={15} strokeWidth={2} /> Retour à l'accueil
       </Link>
@@ -83,10 +101,16 @@ export default function LoginPage() {
           {submitting ? <Loader2 size={16} className="spin" /> : "Se connecter"}
         </button>
 
-        <p className="auth-switch">
-          Pas encore de compte ? <Link to="/create-farm">Créer la ferme</Link>
-        </p>
+        {farmExists && (
+          <p className="auth-reset-hint">
+            <button type="button" className="auth-reset-link" onClick={() => setResetOpen(true)}>
+              Réinitialiser la ferme
+            </button>
+          </p>
+        )}
       </form>
+
+      <FactoryResetModal open={resetOpen} onClose={() => setResetOpen(false)} mode="pre-login" />
     </div>
   );
 }
