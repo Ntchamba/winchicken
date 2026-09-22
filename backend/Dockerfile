@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 FROM python:3.12-slim AS runtime
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl libpq5 \
+    && apt-get install -y --no-install-recommends curl libpq5 postgresql-client \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 1000 appuser
 

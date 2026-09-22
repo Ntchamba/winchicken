@@ -32,12 +32,14 @@ services:
     restart: unless-stopped
     volumes:
       - ./backend:/app
-      # Docker-managed, not host-bind-mounted: the factory-reset audit log
+      # Docker-managed, not host-bind-mounted (2026-08-26): the factory-reset audit log
       # (backend/config/settings.py LOGGING -> /app/logs/factory_reset.log) lives here.
       # A named volume sidesteps host/container uid mismatches entirely — Docker owns it,
       # so the container's non-root `appuser` (Dockerfile) can always write to it regardless
       # of what uid owns the bind-mounted ./backend tree on any given host. See
-      # docs/deviations.md for the incident this fixes.
+      # docs/deviations.md for the incident this fixes: the app crashed at startup for every
+      # request (Part B) because the bind-mounted ./backend/logs the app tried to log into
+      # was owned by a uid appuser couldn't write to.
       - winchicken_backend_logs:/app/logs
     ports:
       - "8000:8000"
@@ -52,7 +54,14 @@ services:
       DB_PORT: "5432"
       CORS_ALLOWED_ORIGINS: http://localhost:5173
       REDIS_URL: redis://redis:6379/0
-      SMS_PROVIDER: console
+      SMS_PROVIDER: twilio
+      # Container OS timezone, point 2 of the farm-local-time fix (see settings.py
+      # FARM_TIME_ZONE). Django's TIME_ZONE only governs Django; anything reading the OS
+      # clock — `date`, container/celery log timestamps, Python's date.today(), pg_dump
+      # filenames — stays UTC unless TZ is set here, which leaves two disagreeing clocks in
+      # one container. Same env override as FARM_TIME_ZONE so a deployment moves both
+      # together; keep the two values equal.
+      TZ: ${TZ:-Africa/Douala}
     depends_on:
       db:
         condition: service_healthy
@@ -82,7 +91,107 @@ services:
       DB_HOST: db
       DB_PORT: "5432"
       REDIS_URL: redis://redis:6379/0
-      SMS_PROVIDER: console
+      SMS_PROVIDER: twilio
+      # Container OS timezone, point 2 of the farm-local-time fix (see settings.py
+      # FARM_TIME_ZONE). Django's TIME_ZONE only governs Django; anything reading the OS
+      # clock — `date`, container/celery log timestamps, Python's date.today(), pg_dump
+      # filenames — stays UTC unless TZ is set here, which leaves two disagreeing clocks in
+      # one container. Same env override as FARM_TIME_ZONE so a deployment moves both
+      # together; keep the two values equal.
+      TZ: ${TZ:-Africa/Douala}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Celery Beat — the periodic scheduler (2026-08-31). Without this process nothing dispatches
+  # the entries in config.celery.app.conf.beat_schedule: `daily-stock-consumption` (midnight)
+  # and `check-scheduled-alerts` (every minute → fires SCHEDULED AlertRule task reminders at
+  # their configured trigger_time). Dedicated one-process service rather than `worker -B`
+  # because -B is single-point-of-failure and misbehaves if the worker is ever scaled >1.
+  # `--pidfile=` (empty) so a container restart doesn't trip over a stale pidfile on the
+  # bind mount.
+  beat:
+    build: ./backend
+    restart: unless-stopped
+    # --schedule in /tmp (writable) not the bind-mounted /app, which the non-root appuser
+    # can't write to — same host/container uid mismatch that moved logs/ to a named volume.
+    command: celery -A config beat -l info --pidfile= --schedule=/tmp/celerybeat-schedule
+    # The base image HEALTHCHECK curls :8000/api/health/, which beat doesn't serve (same as
+    # `worker`/`backup`). "beat is alive" isn't a container-level check — watch the log for
+    # "Sending due task" instead.
+    healthcheck:
+      disable: true
+    volumes:
+      - ./backend:/app
+      - winchicken_backend_logs:/app/logs
+    environment:
+      SECRET_KEY: dev-secret-key-change-in-production
+      DEBUG: "True"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      DB_NAME: winchicken
+      DB_USER: winchicken
+      DB_PASSWORD: winchicken
+      DB_HOST: db
+      DB_PORT: "5432"
+      REDIS_URL: redis://redis:6379/0
+      SMS_PROVIDER: twilio
+      # Container OS timezone, point 2 of the farm-local-time fix (see settings.py
+      # FARM_TIME_ZONE). Django's TIME_ZONE only governs Django; anything reading the OS
+      # clock — `date`, container/celery log timestamps, Python's date.today(), pg_dump
+      # filenames — stays UTC unless TZ is set here, which leaves two disagreeing clocks in
+      # one container. Same env override as FARM_TIME_ZONE so a deployment moves both
+      # together; keep the two values equal.
+      TZ: ${TZ:-Africa/Douala}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Automated backups (2026-08-26, docs/deviations.md Part 15) — a dedicated lightweight
+  # service rather than cron inside `web`/`worker`: cron needs a foreground-process wrapper to
+  # behave under Docker (syslog, PID 1 signal handling) for what's really just "sleep, then run
+  # one command," so a plain shell loop is simpler and just as correct here. Interval is
+  # BACKUP_INTERVAL_SECONDS (default 86400 = nightly) rather than a calendar-time cron schedule
+  # ("2am every night") — this app has no requirement on *when* during the day a backup runs,
+  # only that one runs roughly every day and old ones are pruned (retention lives in
+  # backup_db.py itself), so cadence-since-container-start is sufficient and much simpler.
+  # Reuses the `web`/`worker` image (already has pg_dump after the Dockerfile change) and the
+  # same bind-mounted ./backend:/app — backups/ lands in backend/backups/ on the host, exactly
+  # like logs/, so `ls backend/backups/` is how you verify it's running (see README).
+  backup:
+    build: ./backend
+    restart: unless-stopped
+    command: sh -c 'while true; do python manage.py backup_db; sleep "$${BACKUP_INTERVAL_SECONDS:-86400}"; done'
+    # The base image's HEALTHCHECK (backend/Dockerfile) curls :8000/api/health/, which this
+    # service never serves (same reasoning as `worker` overriding it with a celery-specific
+    # check) — disabled outright rather than given a fake check, since "did the last backup
+    # loop iteration succeed" isn't something a container-level healthcheck can express; verify
+    # via `ls backend/backups/` instead (see README).
+    healthcheck:
+      disable: true
+    volumes:
+      - ./backend:/app
+    environment:
+      SECRET_KEY: dev-secret-key-change-in-production
+      DEBUG: "True"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      DB_NAME: winchicken
+      DB_USER: winchicken
+      DB_PASSWORD: winchicken
+      DB_HOST: db
+      DB_PORT: "5432"
+      REDIS_URL: redis://redis:6379/0
+      SMS_PROVIDER: twilio
+      # Same farm-local clock as web/worker/beat. This service names its dumps by date
+      # (backup_db.py), so on a UTC container clock every dump taken between local midnight
+      # and 01:00 is filed under the previous day — precisely when you are least able to
+      # afford guessing which file is which.
+      TZ: ${TZ:-Africa/Douala}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-7}
     depends_on:
       db:
         condition: service_healthy
