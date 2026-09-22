@@ -100,8 +100,7 @@ const HELP_EXAMPLES = [
  *
  * Ships with a `STARTER_TEMPLATE` reference schedule, but it is only ever applied via the
  * explicit "Load starter template" button — never pre-filled automatically (cahier des charges
- * 7.3 "no default data" rule; see root README.md "Autonomous decisions" for why this button
- * exists instead of auto-loading).
+ * 7.3 "no default data" rule).
  *
  * @param {Object} [initialHeader] - `{ buildingName, chicksPlaced, growthCycle, growthCycleUnit, batchName }`
  *   seed values for the house/batch header fields.

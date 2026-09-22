@@ -34,8 +34,8 @@ function timeAgo(isoDate) {
 
 /**
  * Dashboard overview page (/dashboard) — stat cards, house list, recent alerts, quick actions.
- * Added mid-build (see root README.md "Autonomous decisions") and wired to real API data as-is;
- * the caller is responsible for shaping `houses`/`alerts`/`stats` from the raw API responses.
+ * Wired to real API data; the caller is responsible for shaping `houses`/`alerts`/`stats` from
+ * the raw API responses.
  *
  * @param {string} [farmName] - Displayed in the greeting subtitle ("Here's how {farmName} is doing…").
  * @param {Object[]} [houses] - `[{ houseCode, name, type, day, cycle, count, capacity, status }]`
@@ -47,7 +47,7 @@ function timeAgo(isoDate) {
  *   Precomputed stat-card values; falls back to deriving `activeBatches`/`totalBirds`/`openAlerts`
  *   from `houses`/`alerts` when null. `weeklyMortalityPct` has no such fallback — it renders as
  *   "—" when not provided, since no farm-wide weekly-mortality aggregate endpoint exists (see
- *   root README.md "Autonomous decisions" and docs/deviations.md).
+ *   docs/deviations.md).
  * @param {(path: string) => void} [onNavigate] - Called with a route path (or, for two quick
  *   actions, a page-relative action id like "new-batch"/"protocol") when a card/button is clicked.
  */

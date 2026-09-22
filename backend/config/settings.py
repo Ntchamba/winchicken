@@ -114,7 +114,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-    # Per-account/IP rate limiting (CLAUDE.md "Rate limiting per account/provider").
+    # Per-account/IP rate limiting.
     # 'sms_webhook' is applied explicitly on the provider delivery-status view
     # (apps.alerts.views.SmsDeliveryWebhookView), not globally, since that endpoint
     # is called by the SMS provider, not a logged-in account.
