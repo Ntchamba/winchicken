@@ -12,6 +12,7 @@ urlpatterns = [
     path('api/', include('apps.maintenance.urls')),
     path('api/', include('apps.finance.urls')),
     path('api/', include('apps.alerts.urls')),
+    path('api/', include('apps.search.urls')),
     # OpenAPI schema + Swagger UI. Deliberately NOT added to any AllowAny/public
     # endpoint list: both views inherit the project-wide default permission
     # (IsAuthenticated, REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES']) since
