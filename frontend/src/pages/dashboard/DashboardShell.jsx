@@ -1,40 +1,44 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "../../components/DashboardLayout";
-import { batchesApi, housesApi } from "../../api/endpoints";
+import { HousesProvider, useHousesContext } from "../../context/HousesContext";
 import { useAuth } from "../../context/AuthContext";
+import useSidebarNotifications from "../../hooks/useSidebarNotifications";
 
 const ROLE_LABELS = {
   ADMIN: "Administrateur", SECONDARY_ADMIN: "Administrateur secondaire", FARM_MANAGER: "Gérant de ferme",
   FARMER: "Fermier", WORKER: "Ouvrier", TECHNICIAN: "Technicien", CASHIER: "Caissier",
 };
 
-// PoultryHouse has no productionType of its own (only PoultryBatch does) — the sidebar's
-// Egg-vs-Bird icon is derived from each house's active batch, defaulting to Broiler for a
-// house with no active batch yet (a house-code lookup, not an assumption about the farm).
-const TYPE_LABELS = { BROILER: "Broiler", PULLET: "Pullet", LAYER: "Layer" };
-
 export default function DashboardShell() {
+  return (
+    <HousesProvider>
+      <DashboardShellContent />
+    </HousesProvider>
+  );
+}
+
+// Split from DashboardShell (2026-08-25) so it can sit inside HousesProvider and read
+// useHousesContext() — the provider itself has to wrap this, not be inside it.
+function DashboardShellContent() {
   const { user, logout } = useAuth();
-  const [houses, setHouses] = useState([]);
+  const { houses, refetch } = useHousesContext();
   const location = useLocation();
   const navigate = useNavigate();
 
+  const canSeeFinancePendingCount = ["ADMIN", "FARM_MANAGER"].includes(user.role);
+  const { unreadCount, stockLowCount, financePendingCount, openCasesCount, refetch: refetchCounts } =
+    useSidebarNotifications(canSeeFinancePendingCount);
+
+  // Kept alongside the on-demand refetch (called directly by ProtocolEditModal via
+  // useHousesContext, see HousesContext's docstring) as a belt-and-suspenders refresh on
+  // navigation — cheap, and catches any change made through a path that doesn't call refetch
+  // itself. refetchCounts (2026-08-26) rides the same trigger — one shared refresh mechanism
+  // for the house list and the bell/badge counts, not two independent ones.
   useEffect(() => {
-    Promise.all([housesApi.list(), batchesApi.list()]).then(([housesRes, batchesRes]) => {
-      const houseResults = housesRes.data.results || housesRes.data;
-      const batchResults = batchesRes.data.results || batchesRes.data;
-      const activeTypeByHouse = Object.fromEntries(
-        batchResults.filter((b) => b.status === "ACTIVE").map((b) => [b.house_code, b.production_type])
-      );
-      setHouses(
-        houseResults.map((h) => ({
-          houseCode: h.house_code,
-          name: h.name,
-          type: TYPE_LABELS[activeTypeByHouse[h.house_code]] || "Broiler",
-        }))
-      );
-    });
+    refetch();
+    refetchCounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
   const handleLogout = () => {
@@ -47,13 +51,22 @@ export default function DashboardShell() {
       houses={houses}
       user={{ name: user.name, role: ROLE_LABELS[user.role] || user.role }}
       activePath={location.pathname}
+      activeHash={location.hash}
       canManageHouses={["ADMIN", "FARM_MANAGER"].includes(user.role)}
+      canSeeSalaires={["ADMIN", "FARM_MANAGER"].includes(user.role)}
       canSeeEmployees={["ADMIN", "SECONDARY_ADMIN"].includes(user.role)}
       canSeeCashier={["ADMIN", "CASHIER"].includes(user.role)}
+      canSeePurchaseOrders={["ADMIN", "FARM_MANAGER", "CASHIER"].includes(user.role)}
+      canSeeAudit={user.role === "ADMIN"}
+      unreadCount={unreadCount}
+      stockLowCount={stockLowCount}
+      financePendingCount={financePendingCount}
+      openCasesCount={openCasesCount}
+      onCountsChanged={refetchCounts}
       onNavigate={(path) => navigate(path)}
       onLogout={handleLogout}
     >
-      <Outlet context={{ houses }} />
+      <Outlet context={{ houses, refreshHouses: refetch }} />
     </DashboardLayout>
   );
 }
