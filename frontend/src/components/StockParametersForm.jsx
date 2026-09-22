@@ -140,6 +140,11 @@ export default function StockParametersForm({
   const [addingSupplierForRow, setAddingSupplierForRow] = useState(null);
   const [newSupplierName, setNewSupplierName] = useState("");
   const [supplierBusy, setSupplierBusy] = useState(false);
+  const [supplierError, setSupplierError] = useState("");
+  // Re-entrancy guard, not `supplierBusy`: the inline name field confirms on both Enter
+  // and the check button, and a React state flag only blocks the second call once the
+  // update has flushed (see the cashier double-submit incident).
+  const supplierInFlight = useRef(false);
 
   // Each row carries its own "Date" cell, seeded with the local day the rows were built
   // (`buildStockRows`) or the row was added (`makeRow`). This screen is one a worker leaves
@@ -241,6 +246,9 @@ export default function StockParametersForm({
         const { [category.id]: _dropped, ...rest } = prev;
         return rest;
       });
+    } catch (err) {
+      // The category stays on screen on failure, which reads as "nothing happened" — say why.
+      setCategoryError(getServerErrorMessage(err, "Impossible de supprimer la catégorie."));
     } finally {
       setCategoryBusy(false);
       setConfirmDeleteCategory(null);
@@ -249,7 +257,14 @@ export default function StockParametersForm({
 
   const addSupplierInline = async (rowId) => {
     const name = newSupplierName.trim();
-    if (!name || !farmId) return;
+    if (!farmId) return;
+    if (!name) {
+      setSupplierError("Saisissez le nom du fournisseur.");
+      return;
+    }
+    if (supplierInFlight.current) return;
+    supplierInFlight.current = true;
+    setSupplierError("");
     setSupplierBusy(true);
     try {
       const { data: created } = await stockApi.addSupplier(farmId, { name });
@@ -258,7 +273,11 @@ export default function StockParametersForm({
       setAddingSupplierForRow(null);
       setNewSupplierName("");
       onSuppliersChanged?.();
+    } catch (err) {
+      // The inline field stays open with the typed name intact — the only copy of it.
+      setSupplierError(getServerErrorMessage(err, "Impossible d'ajouter le fournisseur."));
     } finally {
+      supplierInFlight.current = false;
       setSupplierBusy(false);
     }
   };
@@ -523,9 +542,15 @@ export default function StockParametersForm({
                   <button type="button" className="icon-button" onClick={() => addSupplierInline(row.id)} aria-label="Confirmer" disabled={supplierBusy}>
                     <Check size={13} strokeWidth={2.2} />
                   </button>
-                  <button type="button" className="icon-button" onClick={() => setAddingSupplierForRow(null)} aria-label="Annuler">
+                  <button
+                    type="button"
+                    className="icon-button"
+                    onClick={() => { setAddingSupplierForRow(null); setSupplierError(""); }}
+                    aria-label="Annuler"
+                  >
                     <X size={13} strokeWidth={2.2} />
                   </button>
+                  {supplierError && <span className="field-error">{supplierError}</span>}
                 </span>
               ) : (
                 <select
