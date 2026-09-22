@@ -22,6 +22,8 @@ frontend/dist/
 frontend/.vite/
 
 # Env files (real secrets/local overrides — .env.example stays tracked)
+# Root .env holds the docker-compose overrides (TZ, BACKUP_*, TWILIO_*) — never tracked.
+.env
 backend/.env
 frontend/.env
 
