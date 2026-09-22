@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Check, ChevronDown, ChevronUp, History, Loader2, Wrench } from "lucide-react";
 import { maintenanceApi } from "../api/endpoints";
+import { getServerErrorMessage } from "../api/errors";
 
 const DESCRIPTION_CLAMP = 120;
 
@@ -52,18 +53,31 @@ export default function IncidentsPanel({ houseCode, reloadKey }) {
   const [loaded, setLoaded] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [resolvingId, setResolvingId] = useState(null);
+  // {id, message} — rendered under the incident whose "Résolu" failed. Without it the card
+  // simply stays in the open list, which reads as a tap that never registered, and the
+  // answer to that is to tap again (or re-report the same case).
+  const [resolveError, setResolveError] = useState(null);
+  const [loadError, setLoadError] = useState("");
 
   const load = () => {
     const scope = houseCode ? { house_code: houseCode } : {};
     const open = tab === "open";
     setLoaded(false);
-    Promise.all([
+    setLoadError("");
+    return Promise.all([
       maintenanceApi.cases({ ...scope, resolved: open ? "false" : "true" }),
       maintenanceApi.faults({ ...scope, status: open ? "OPEN" : "RESOLVED" }),
     ]).then(([casesRes, faultsRes]) => {
       setCases(casesRes.data.results || casesRes.data);
       setFaults(faultsRes.data.results || faultsRes.data);
       setLoaded(true);
+    }).catch((err) => {
+      // Without this the panel sits on "Chargement…" forever and the rejection is unhandled —
+      // a farm with open incidents looks exactly like a farm with none.
+      setCases([]);
+      setFaults([]);
+      setLoaded(true);
+      setLoadError(getServerErrorMessage(err, "Les cas signalés n'ont pas pu être chargés."));
     });
   };
 
@@ -90,10 +104,16 @@ export default function IncidentsPanel({ houseCode, reloadKey }) {
   ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   const handleResolve = async (item) => {
+    if (resolvingId !== null) return;
+    setResolveError(null);
     setResolvingId(item.id);
     try {
       await item.resolve();
-      load();
+      await load();
+    } catch (err) {
+      // A WORKER/FARMER hitting an unusual case gets DRF's own 403 detail here, which is more
+      // useful than a generic line: it says the action is not theirs, not that it failed.
+      setResolveError({ id: item.id, message: getServerErrorMessage(err, "Ce cas n'a pas pu être marqué comme résolu.") });
     } finally {
       setResolvingId(null);
     }
@@ -128,9 +148,11 @@ export default function IncidentsPanel({ houseCode, reloadKey }) {
         </button>
       </div>
 
+      {loadError && <p className="field-error" role="alert" style={{ margin: "0 0 10px" }}>{loadError}</p>}
+
       {!loaded ? (
         <p className="empty-state">Chargement…</p>
-      ) : items.length === 0 ? (
+      ) : items.length === 0 && !loadError ? (
         <p className="empty-state">{tab === "open" ? "Aucun cas signalé ouvert." : "Aucun cas résolu pour le moment."}</p>
       ) : (
         <div className="incidents-list">
@@ -169,6 +191,11 @@ export default function IncidentsPanel({ houseCode, reloadKey }) {
                     {resolvingId === item.id ? <Loader2 size={14} className="spin" /> : <Check size={14} strokeWidth={2.2} />}
                     Résolu
                   </button>
+                )}
+                {resolveError?.id === item.id && (
+                  <p className="field-error" role="alert" style={{ margin: "6px 0 0", flexBasis: "100%" }}>
+                    {resolveError.message}
+                  </p>
                 )}
               </div>
             );
