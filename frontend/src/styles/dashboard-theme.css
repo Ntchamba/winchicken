@@ -224,9 +224,13 @@
 .incidents-tab.active{border-color:var(--mint-fill);background:var(--mint-fill);color:#082019}
 .incidents-list{display:flex;flex-direction:column;gap:12px}
 .incident-card{
-  display:flex;gap:14px;padding:18px 20px;border-radius:16px;background:#fff;
+  display:flex;flex-wrap:wrap;gap:14px;padding:18px 20px;border-radius:16px;background:#fff;
   border:1px solid rgba(214,67,63,.25);border-left:4px solid var(--danger);box-shadow:0 8px 22px rgba(214,67,63,.06);
 }
+/* A failed "Résolu" renders inside the card, so it has to take its own line — as a third flex
+   item on the same row it squeezed the body down to a four-line column (observed live). Nothing
+   else in the card wraps: the icon is fixed-width and the body has flex:1;min-width:0. */
+.incident-error{flex-basis:100%;width:100%;margin:2px 0 0}
 .incident-card.incident-fault{border-left-color:var(--warning,#b9790c);border-color:rgba(185,121,12,.25);box-shadow:0 8px 22px rgba(185,121,12,.06)}
 .incident-icon{display:grid;place-items:center;width:38px;height:38px;flex-shrink:0;border-radius:12px;background:rgba(214,67,63,.1);color:var(--danger)}
 .incident-fault .incident-icon{background:rgba(185,121,12,.12);color:var(--warning,#b9790c)}

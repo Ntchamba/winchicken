@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { housesApi, protocolImportApi, stockApi } from "../api/endpoints";
 import { getServerErrorMessage } from "../api/errors";
+import ConfirmDialog from "./ConfirmDialog";
 import ResourceCombobox from "./ResourceCombobox";
 import UnitField from "./UnitField";
 import { DEFAULT_CATEGORIES, ICON_OPTIONS, iconFor, makeRow } from "../utils/protocolRows";
@@ -210,6 +211,9 @@ export default function HouseProtocolForm({
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
   const [newCategoryIcon, setNewCategoryIcon] = useState(ICON_OPTIONS[0].name);
   const [categoryError, setCategoryError] = useState("");
+  // Same reason as StockParametersForm's: `categoryError` only renders inside the "ajouter une
+  // catégorie" branch, so the delete path needs its own state with a reachable render site.
+  const [categoryDeleteError, setCategoryDeleteError] = useState("");
   const [categoryBusy, setCategoryBusy] = useState(false);
   const [confirmDeleteCategory, setConfirmDeleteCategory] = useState(null);
 
@@ -402,6 +406,8 @@ export default function HouseProtocolForm({
   };
 
   const deleteCategory = async (category) => {
+    if (categoryBusy) return;
+    setCategoryDeleteError("");
     setCategoryBusy(true);
     try {
       if (mode === "management" && houseCode) {
@@ -416,12 +422,13 @@ export default function HouseProtocolForm({
         const { [category.id]: _dropped, ...rest } = prev;
         return rest;
       });
+      setConfirmDeleteCategory(null);
     } catch (err) {
-      // The tab stays put on failure, which reads as a delete that never registered.
-      setCategoryError(getServerErrorMessage(err, "Impossible de supprimer la catégorie."));
+      // Dialog stays open with the reason — the tab staying put on its own reads as a delete
+      // that never registered.
+      setCategoryDeleteError(getServerErrorMessage(err, "Impossible de supprimer la catégorie."));
     } finally {
       setCategoryBusy(false);
-      setConfirmDeleteCategory(null);
     }
   };
 
@@ -774,18 +781,14 @@ export default function HouseProtocolForm({
       </div>
 
       {confirmDeleteCategory && (
-        <div className="card schedule-card" style={{ marginBottom: 18, borderColor: "var(--danger)" }}>
-          <p style={{ margin: "0 0 12px", fontSize: 14 }}>
-            Supprimer la catégorie « {confirmDeleteCategory.label} » supprimera aussi toutes ses lignes de protocole
-            ({(schedules[confirmDeleteCategory.id] || []).length} ligne(s)). Cette action est définitive. Continuer ?
-          </p>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button className="delete-button" style={{ width: "auto", padding: "0 16px" }} onClick={() => deleteCategory(confirmDeleteCategory)} disabled={categoryBusy}>
-              {categoryBusy ? <Loader2 size={16} className="spin" /> : "Supprimer la catégorie"}
-            </button>
-            <button className="add-button" onClick={() => setConfirmDeleteCategory(null)}>Annuler</button>
-          </div>
-        </div>
+        <ConfirmDialog
+          message={`Supprimer la catégorie « ${confirmDeleteCategory.label} » supprimera aussi toutes ses lignes de protocole (${(schedules[confirmDeleteCategory.id] || []).length} ligne(s)). Cette action est définitive. Continuer ?`}
+          confirmLabel="Supprimer la catégorie"
+          onConfirm={() => deleteCategory(confirmDeleteCategory)}
+          onCancel={() => { setConfirmDeleteCategory(null); setCategoryDeleteError(""); }}
+          busy={categoryBusy}
+          error={categoryDeleteError}
+        />
       )}
 
       <div className="card schedule-card">

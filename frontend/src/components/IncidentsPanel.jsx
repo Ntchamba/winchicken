@@ -193,9 +193,7 @@ export default function IncidentsPanel({ houseCode, reloadKey }) {
                   </button>
                 )}
                 {resolveError?.id === item.id && (
-                  <p className="field-error" role="alert" style={{ margin: "6px 0 0", flexBasis: "100%" }}>
-                    {resolveError.message}
-                  </p>
+                  <p className="field-error incident-error" role="alert">{resolveError.message}</p>
                 )}
               </div>
             );

@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { stockApi } from "../api/endpoints";
 import { getServerErrorMessage } from "../api/errors";
+import ConfirmDialog from "./ConfirmDialog";
 import UnitField from "./UnitField";
 import { compositionByOutput } from "../utils/compositions";
 import "../styles/house-protocol-theme-light.css";
@@ -134,6 +135,10 @@ export default function StockParametersForm({
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
   const [newCategoryIcon, setNewCategoryIcon] = useState(STOCK_ICON_OPTIONS[0].name);
   const [categoryError, setCategoryError] = useState("");
+  // Separate from `categoryError`, which only ever renders inside the "ajouter une catégorie"
+  // branch: the delete confirmation is a different branch, so reusing that state set a message
+  // nothing on screen could show (found live, 2026-09-22).
+  const [categoryDeleteError, setCategoryDeleteError] = useState("");
   const [categoryBusy, setCategoryBusy] = useState(false);
   const [confirmDeleteCategory, setConfirmDeleteCategory] = useState(null);
 
@@ -232,6 +237,8 @@ export default function StockParametersForm({
   };
 
   const deleteCategory = async (category) => {
+    if (categoryBusy) return;
+    setCategoryDeleteError("");
     setCategoryBusy(true);
     try {
       if (farmId && typeof category.id === "number") {
@@ -246,12 +253,13 @@ export default function StockParametersForm({
         const { [category.id]: _dropped, ...rest } = prev;
         return rest;
       });
+      setConfirmDeleteCategory(null);
     } catch (err) {
-      // The category stays on screen on failure, which reads as "nothing happened" — say why.
-      setCategoryError(getServerErrorMessage(err, "Impossible de supprimer la catégorie."));
+      // The dialog stays OPEN so the reason is visible where the tap happened; closing it in
+      // `finally` is what made this failure silent.
+      setCategoryDeleteError(getServerErrorMessage(err, "Impossible de supprimer la catégorie."));
     } finally {
       setCategoryBusy(false);
-      setConfirmDeleteCategory(null);
     }
   };
 
@@ -447,18 +455,14 @@ export default function StockParametersForm({
       </div>
 
       {confirmDeleteCategory && (
-        <div className="card schedule-card" style={{ marginBottom: 18, borderColor: "var(--danger)" }}>
-          <p style={{ margin: "0 0 12px", fontSize: 14 }}>
-            Supprimer la catégorie « {confirmDeleteCategory.label} » supprimera aussi tous ses articles
-            ({(data[confirmDeleteCategory.id] || []).length} article(s)). Cette action est définitive. Continuer ?
-          </p>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button className="delete-button" style={{ width: "auto", padding: "0 16px" }} onClick={() => deleteCategory(confirmDeleteCategory)} disabled={categoryBusy}>
-              {categoryBusy ? <Loader2 size={16} className="spin" /> : "Supprimer la catégorie"}
-            </button>
-            <button className="add-button" onClick={() => setConfirmDeleteCategory(null)}>Annuler</button>
-          </div>
-        </div>
+        <ConfirmDialog
+          message={`Supprimer la catégorie « ${confirmDeleteCategory.label} » supprimera aussi tous ses articles (${(data[confirmDeleteCategory.id] || []).length} article(s)). Cette action est définitive. Continuer ?`}
+          confirmLabel="Supprimer la catégorie"
+          onConfirm={() => deleteCategory(confirmDeleteCategory)}
+          onCancel={() => { setConfirmDeleteCategory(null); setCategoryDeleteError(""); }}
+          busy={categoryBusy}
+          error={categoryDeleteError}
+        />
       )}
 
       <div className="card schedule-card">

@@ -28,7 +28,10 @@ vi.mock("../../api/endpoints", () => ({
   },
 }));
 
-const CATEGORIES = [{ id: 1, label: "Aliment", icon: "Wheat", kind: "FEED" }];
+const CATEGORIES = [
+  { id: 1, label: "Aliment", icon: "Wheat", kind: "FEED" },
+  { id: 2, label: "Litière", icon: "Layers", kind: "OTHER" },
+];
 const ROW = {
   id: 1, itemCode: "IT-1", item: "Aliment démarrage", feedStage: "STARTER", coldChain: false,
   threshold: 0, unit: "kg", price: 0, supplier: null, itemType: "", quantity: 10,
@@ -38,7 +41,7 @@ const ROW = {
 const renderForm = () =>
   render(
     <StockParametersForm
-      initialData={{ 1: [ROW] }}
+      initialData={{ 1: [ROW], 2: [] }}
       initialCategories={CATEGORIES}
       initialSuppliers={[]}
       warehouse={{}}
@@ -93,5 +96,38 @@ describe("StockParametersForm — inline supplier creation", () => {
     confirm.click();
 
     await waitFor(() => expect(stockApi.addSupplier).toHaveBeenCalledTimes(1));
+  });
+});
+
+// The first version of this fix set `categoryError`, whose only render site is inside the
+// "ajouter une catégorie" branch — a branch the delete flow never opens. The state was set and
+// nothing on screen could show it, so the live app still failed silently. These pin the render
+// site, not just the handler.
+describe("StockParametersForm — deleting a category that the server refuses", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  test("the reason appears in the confirmation dialog, which stays open", async () => {
+    const user = userEvent.setup();
+    stockApi.removeCategory.mockRejectedValue({ response: { data: { detail: "Cette catégorie contient des mouvements." } } });
+    renderForm();
+
+    await user.click(screen.getByLabelText("Supprimer la catégorie Litière"));
+    await user.click(await screen.findByRole("button", { name: "Supprimer la catégorie" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Cette catégorie contient des mouvements.");
+    expect(screen.getByRole("button", { name: "Supprimer la catégorie" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Supprimer la catégorie Litière")).toBeInTheDocument();
+  });
+
+  test("a successful delete closes the dialog and drops the tab", async () => {
+    const user = userEvent.setup();
+    stockApi.removeCategory.mockResolvedValue({ data: {} });
+    renderForm();
+
+    await user.click(screen.getByLabelText("Supprimer la catégorie Litière"));
+    await user.click(await screen.findByRole("button", { name: "Supprimer la catégorie" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Supprimer la catégorie Litière")).not.toBeInTheDocument());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

@@ -257,8 +257,9 @@ export default function PurchaseOrdersPage() {
           message={`Annuler la commande ${cancellingOrder.order_code} (${cancellingOrder.itemName}) ? Cette action est définitive — la commande ne pourra plus être reçue ensuite.`}
           confirmLabel="Annuler la commande"
           onConfirm={confirmCancel}
-          onCancel={() => setCancellingOrder(null)}
+          onCancel={() => { setCancellingOrder(null); setActionError(""); }}
           busy={actionBusy}
+          error={actionError}
         />
       )}
 
@@ -285,10 +286,10 @@ export default function PurchaseOrdersPage() {
                   <td>
                     {canManage && order.status === "PENDING" && (
                       <div style={{ display: "flex", gap: 6 }}>
-                        <button className="add-button" style={{ marginTop: 0, padding: "6px 10px", fontSize: 12 }} onClick={() => setReceivingOrder(order)}>
+                        <button className="add-button" style={{ marginTop: 0, padding: "6px 10px", fontSize: 12 }} onClick={() => { setActionError(""); setReceivingOrder(order); }}>
                           Marquer comme reçue
                         </button>
-                        <button className="delete-button" style={{ width: "auto", padding: "0 10px" }} onClick={() => setCancellingOrder(order)} aria-label="Annuler la commande">
+                        <button className="delete-button" style={{ width: "auto", padding: "0 10px" }} onClick={() => { setActionError(""); setCancellingOrder(order); }} aria-label="Annuler la commande">
                           <X size={14} strokeWidth={2} />
                         </button>
                       </div>
