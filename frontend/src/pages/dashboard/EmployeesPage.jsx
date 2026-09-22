@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Pencil, Trash2, UserPlus, Loader2, FileSpreadsheet, Download } from "lucide-react";
 import { employeesApi } from "../../api/endpoints";
 import { getServerErrorMessage } from "../../api/errors";
@@ -28,6 +28,13 @@ export default function EmployeesPage() {
   const [saved, setSaved] = useState("");
   const [rateEdits, setRateEdits] = useState({});
   const [savingRateId, setSavingRateId] = useState(null);
+  // Feedback for the per-row actions (taux horaire, suppression), shown under the row that
+  // triggered it — the page-level `error`/`saved` lines live down in the form card, far
+  // enough away on a phone to read as nothing having happened. {id, tone, message}.
+  const [rowFeedback, setRowFeedback] = useState(null);
+  // One row mutates at a time; a ref, not state, so a second tap in the same tick is
+  // blocked before React has flushed anything.
+  const rowInFlight = useRef(null);
 
   const importInputRef = useRef(null);
   const [importing, setImporting] = useState(false);
@@ -110,24 +117,48 @@ export default function EmployeesPage() {
   // create/update form, so it gets its own inline editor per row rather than a form field that
   // would silently be ignored on save.
   const saveRate = async (employeeId) => {
+    if (rowInFlight.current !== null) return;
     const raw = rateEdits[employeeId];
+    const employee = employees.find((e) => e.id === employeeId);
+    rowInFlight.current = employeeId;
+    setRowFeedback(null);
     setSavingRateId(employeeId);
     try {
       await employeesApi.setHourlyRate(employeeId, raw === "" ? null : raw);
       await load();
       setRateEdits((prev) => { const next = { ...prev }; delete next[employeeId]; return next; });
+      setRowFeedback({
+        id: employeeId,
+        tone: "ok",
+        message: raw === ""
+          ? `Taux horaire retiré pour ${employee?.name || "cet employé"}.`
+          : `Taux horaire enregistré : ${raw} FCFA/h pour ${employee?.name || "cet employé"}.`,
+      });
+    } catch (err) {
+      // The typed rate stays in `rateEdits`, so the value isn't lost on a failed save.
+      setRowFeedback({ id: employeeId, tone: "error", message: getServerErrorMessage(err, "Le taux horaire n'a pas pu être enregistré.") });
     } finally {
+      rowInFlight.current = null;
       setSavingRateId(null);
     }
   };
 
   const remove = async (id) => {
+    if (rowInFlight.current !== null) return;
+    const employee = employees.find((e) => e.id === id);
+    rowInFlight.current = id;
+    setRowFeedback(null);
     setBusyId(id);
     try {
       await employeesApi.remove(id);
       setConfirmDeleteId(null);
-      load();
+      await load();
+      setRowFeedback({ id: null, tone: "ok", message: `Compte supprimé : ${employee?.name || "employé"}.` });
+    } catch (err) {
+      // The row stays on screen on failure, which is indistinguishable from a no-op.
+      setRowFeedback({ id, tone: "error", message: getServerErrorMessage(err, "Ce compte n'a pas pu être supprimé.") });
     } finally {
+      rowInFlight.current = null;
       setBusyId(null);
     }
   };
@@ -188,8 +219,13 @@ export default function EmployeesPage() {
         </div>
       )}
 
+      {rowFeedback?.id === null && (
+        <p className="save-confirmation" role="status" style={{ margin: "0 0 12px" }}>{rowFeedback.message}</p>
+      )}
+
       {employees.map((employee) => (
-        <div key={employee.id} className="list-row">
+        <Fragment key={employee.id}>
+        <div className="list-row">
           <div className="list-row-main">
             <div>
               <p className="list-row-name">{employee.name}</p>
@@ -230,6 +266,16 @@ export default function EmployeesPage() {
             )}
           </div>
         </div>
+        {rowFeedback?.id === employee.id && (
+          <p
+            className={rowFeedback.tone === "error" ? "field-error" : "save-confirmation"}
+            role={rowFeedback.tone === "error" ? "alert" : "status"}
+            style={{ margin: "-4px 0 12px" }}
+          >
+            {rowFeedback.message}
+          </p>
+        )}
+        </Fragment>
       ))}
       {employees.length === 0 && <p className="empty-state">Aucun compte employé pour le moment.</p>}
 
