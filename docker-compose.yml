@@ -164,7 +164,20 @@ services:
   backup:
     build: ./backend
     restart: unless-stopped
-    command: sh -c 'while true; do python manage.py backup_db; sleep "$${BACKUP_INTERVAL_SECONDS:-86400}"; done'
+    # A failed run is announced and retried in minutes, not slept off for a day. The first
+    # version swallowed the exit code and slept the full interval either way, which is exactly
+    # how this stack went a month with no backup while the container reported `running` with
+    # 0 restarts: the image predated a requirements change, every run raised ModuleNotFoundError,
+    # and nothing said so (2026-09-22).
+    command: >
+      sh -c 'while true; do
+        if python manage.py backup_db; then
+          sleep "$${BACKUP_INTERVAL_SECONDS:-86400}";
+        else
+          echo "BACKUP FAILED — retrying in $${BACKUP_RETRY_SECONDS:-300}s" >&2;
+          sleep "$${BACKUP_RETRY_SECONDS:-300}";
+        fi;
+      done'
     # The base image's HEALTHCHECK (backend/Dockerfile) curls :8000/api/health/, which this
     # service never serves (same reasoning as `worker` overriding it with a celery-specific
     # check) — disabled outright rather than given a fake check, since "did the last backup
@@ -174,6 +187,12 @@ services:
       disable: true
     volumes:
       - ./backend:/app
+      # Same named volume as web/beat, for the same reason: settings.py LOGGING opens
+      # /app/logs/factory_reset.log at import time, and under rootless Docker the
+      # bind-mounted ./backend/logs is owned by a uid appuser cannot write to. Without this
+      # the service still runs (the logging config falls back to stderr and warns) but every
+      # backup run prints a permission-denied warning that reads like a broken backup.
+      - winchicken_backend_logs:/app/logs
     environment:
       SECRET_KEY: dev-secret-key-change-in-production
       DEBUG: "True"
@@ -191,6 +210,7 @@ services:
       # afford guessing which file is which.
       TZ: ${TZ:-Africa/Douala}
       BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETRY_SECONDS: ${BACKUP_RETRY_SECONDS:-300}
       BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-7}
     depends_on:
       db:
