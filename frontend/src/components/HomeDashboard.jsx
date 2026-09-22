@@ -1,12 +1,18 @@
 import { Bird, Egg, TriangleAlert, Package, Syringe, Thermometer, Clock, Wallet, Plus, ChevronRight, Home } from "lucide-react";
+import GrowthCurves from "./GrowthCurves";
+import WeighingSection from "./WeighingSection";
+import QuickEntryPanel from "./QuickEntryPanel";
+import FarmHealthBadge from "./FarmHealthBadge";
+import IncidentsPanel from "./IncidentsPanel";
+import Upcoming48hWidget from "./Upcoming48hWidget";
 import "../styles/house-protocol-theme-light.css";
 import "../styles/dashboard-theme.css";
+import "../styles/protocol-edit-modal.css";
 
 const QUICK_ACTIONS = [
   { icon: Plus, label: "Nouvelle bande", hint: "Attribuer un bâtiment et une race", path: "new-batch" },
-  { icon: Bird, label: "Protocole du bâtiment", hint: "Plans d'alimentation, de santé, de vaccination", path: "protocol" },
   { icon: Package, label: "Paramètres de stock", hint: "Seuils, unités, prix", path: "/dashboard/stock" },
-  { icon: Wallet, label: "Aperçu financier", hint: "Dépenses, ventes, marge par bande", path: "/dashboard/finance" },
+  { icon: Wallet, label: "Aperçu financier", hint: "Dépenses, ventes, marge par bande", path: "/dashboard/finances" },
 ];
 
 const ALERT_ICONS = { LOW_STOCK: Package, VACCINE_DUE: Syringe, CONSUMPTION_DEVIATION: TriangleAlert, SANITARY_VOID_END: Clock };
@@ -48,10 +54,23 @@ function timeAgo(isoDate) {
  *   from `houses`/`alerts` when null. `weeklyMortalityPct` has no such fallback — it renders as
  *   "—" when not provided, since no farm-wide weekly-mortality aggregate endpoint exists (see
  *   root README.md "Autonomous decisions" and docs/deviations.md).
- * @param {(path: string) => void} [onNavigate] - Called with a route path (or, for two quick
- *   actions, a page-relative action id like "new-batch"/"protocol") when a card/button is clicked.
+ * @param {(path: string) => void} [onNavigate] - Called with a route path (or, for one quick
+ *   action, a page-relative action id like "new-batch") when a card/button is clicked.
+ * @param {Object[]} [growthSeries] - `[{batchCode, batchName, points}]` from
+ *   GET /api/batches/growth-curves/ — passed straight through to `GrowthCurves` (2026-08-25,
+ *   replaces the protocol form as this screen's primary content; see root README.md).
+ * @param {Object[]} [activeBatchList] - `[{batchCode, name, houseCode, houseName}]` — every
+ *   active batch, rendered as a small list with a "Modifier" button per row (opens the protocol
+ *   editor for that batch's house).
+ * @param {(houseCode: string) => void} [onModifyBatch] - Called with a house code when a
+ *   "Modifier" button is clicked.
+ * @param {() => void} [onDailyLogged] - Called after the quick-entry panel successfully saves a
+ *   day's mortality/eggs, so the caller can refetch `growthSeries`.
  */
-export default function HomeDashboard({ farmName = "Winchicken", houses = [], alerts = [], stats = null, onNavigate }) {
+export default function HomeDashboard({
+  farmName = "Winchicken", houses = [], alerts = [], stats = null, onNavigate,
+  growthSeries = [], activeBatchList = [], onModifyBatch, onDailyLogged,
+}) {
   const activeBatches = stats?.activeBatches ?? houses.filter((h) => h.status === "active").length;
   const totalBirds = stats?.totalBirds ?? houses.reduce((sum, h) => sum + (h.count || 0), 0);
   const weeklyMortalityPct = stats?.weeklyMortalityPct;
@@ -78,6 +97,10 @@ export default function HomeDashboard({ farmName = "Winchicken", houses = [], al
         <span>Voici comment se porte {farmName} aujourd'hui, tous bâtiments confondus.</span>
       </div>
 
+      <FarmHealthBadge />
+
+      <IncidentsPanel />
+
       <div className="stat-grid">
         <div className="stat-card">
           <p className="stat-label">Bandes actives</p>
@@ -103,6 +126,42 @@ export default function HomeDashboard({ farmName = "Winchicken", houses = [], al
         </div>
       </div>
 
+      <Upcoming48hWidget onNavigate={onNavigate} />
+
+      <div className="section-row"><h2>Croissance et survie — toutes bandes actives</h2></div>
+      <GrowthCurves series={growthSeries} scope="all" />
+
+      <div className="section-row"><h2>Pesée</h2></div>
+      <WeighingSection batches={activeBatchList} onLogged={onDailyLogged} />
+
+      <div className="section-row"><h2>Saisie rapide du jour</h2></div>
+      <QuickEntryPanel
+        batches={activeBatchList.map((b) => ({ batch_code: b.batchCode, name: b.name }))}
+        onLogged={onDailyLogged}
+      />
+
+      {activeBatchList.length > 0 && (
+        <>
+          <div className="section-row"><h2>Bandes actives</h2></div>
+          <div className="house-list" style={{ marginBottom: 18 }}>
+            {activeBatchList.map((b) => (
+              <div key={b.batchCode} className="house-item batch-modifier-row" style={{ cursor: "default" }}>
+                <div className="house-item-main">
+                  <span className="house-avatar"><Bird size={18} strokeWidth={1.8} /></span>
+                  <div>
+                    <p className="house-name">{b.name || b.batchCode}</p>
+                    <p className="house-sub">{b.houseName} · {b.batchCode}</p>
+                  </div>
+                </div>
+                <button className="batch-modifier-button" onClick={() => onModifyBatch?.(b.houseCode)}>
+                  Modifier
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className="section-row">
         <h2>Bâtiments</h2>
         <button className="section-link" onClick={() => onNavigate?.("/dashboard/houses")}>
@@ -110,7 +169,7 @@ export default function HomeDashboard({ farmName = "Winchicken", houses = [], al
         </button>
       </div>
       {houses.length === 0 ? (
-        <p className="empty-state">1 bâtiment configuré — démarrez une bande pour le voir ici.</p>
+        <p className="empty-state">Aucun bâtiment configuré — démarrez une bande pour le voir ici.</p>
       ) : (
         <div className="house-list">
           {houses.map((house) => {
