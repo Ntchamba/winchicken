@@ -12,6 +12,7 @@ import UnusualCaseReportForm from "../../components/UnusualCaseReportForm";
 import CycleTimeline from "../../components/CycleTimeline";
 import IncidentsPanel from "../../components/IncidentsPanel";
 import { batchesApi, housesApi } from "../../api/endpoints";
+import { getServerErrorMessage } from "../../api/errors";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import "../../styles/house-protocol-theme-light.css";
 import "../../styles/dashboard-theme.css";
@@ -39,6 +40,10 @@ export default function HouseDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingProtocol, setEditingProtocol] = useState(false);
+  // Kept per-dialog rather than as one page-level banner: both dialogs stay open on
+  // failure, so the message belongs inside the one the user is looking at.
+  const [closeError, setCloseError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
 
   const loadBatch = useCallback(() => {
     batchesApi.list(houseCode).then(({ data }) => {
@@ -73,25 +78,32 @@ export default function HouseDetailPage() {
   }, [loadBatch, loadGrowthCurve, loadTasksNow]);
 
   const handleClose = async () => {
-    if (!batch) return;
+    if (!batch || closing) return;
+    setCloseError("");
     setClosing(true);
     try {
       await batchesApi.close(batch.batch_code);
       setConfirmClose(false);
       navigate(0);
+    } catch (err) {
+      // navigate(0) never runs on failure, so without this the dialog just sits there.
+      setCloseError(getServerErrorMessage(err, "Cette bande n'a pas pu être clôturée."));
     } finally {
       setClosing(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!batch) return;
+    if (!batch || deleting) return;
+    setDeleteError("");
     setDeleting(true);
     try {
       await batchesApi.remove(batch.batch_code);
       setConfirmDelete(false);
       refreshHouses();
       navigate(0);
+    } catch (err) {
+      setDeleteError(getServerErrorMessage(err, "Cette bande n'a pas pu être supprimée."));
     } finally {
       setDeleting(false);
     }
@@ -152,8 +164,9 @@ export default function HouseDetailPage() {
           message="Clôturer cette bande est définitif et génère le rapport financier de clôture. Continuer ?"
           confirmLabel="Confirmer la clôture"
           onConfirm={handleClose}
-          onCancel={() => setConfirmClose(false)}
+          onCancel={() => { setConfirmClose(false); setCloseError(""); }}
           busy={closing}
+          error={closeError}
         />
       )}
 
@@ -162,8 +175,9 @@ export default function HouseDetailPage() {
           message="Supprimer cette bande est définitif et supprime aussi tout son historique lié : journaux quotidiens, alertes, cas signalés, vaccinations, mouvements de stock, dépenses et ventes. Continuer ?"
           confirmLabel="Supprimer définitivement"
           onConfirm={handleDelete}
-          onCancel={() => setConfirmDelete(false)}
+          onCancel={() => { setConfirmDelete(false); setDeleteError(""); }}
           busy={deleting}
+          error={deleteError}
         />
       )}
 

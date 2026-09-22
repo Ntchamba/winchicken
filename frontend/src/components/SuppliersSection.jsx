@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Plus, Pencil, Trash2, Loader2, Check, X } from "lucide-react";
 import { stockApi } from "../api/endpoints";
+import { getServerErrorMessage } from "../api/errors";
 import { useAuth } from "../context/AuthContext";
 
 const CAN_MANAGE = new Set(["ADMIN", "FARM_MANAGER", "FARMER"]);
@@ -48,10 +49,16 @@ export default function SuppliersSection({ suppliers = [], farmId, onChanged }) 
   };
 
   const remove = async (id) => {
+    if (busy) return;
+    setError("");
     setBusy(true);
     try {
       await stockApi.removeSupplier(id);
       onChanged?.();
+    } catch (err) {
+      // A supplier still referenced by a stock item comes back as a PROTECT/409 from the API;
+      // the row stays either way, so the reason has to be said out loud.
+      setError(getServerErrorMessage(err, "Ce fournisseur n'a pas pu être supprimé."));
     } finally {
       setBusy(false);
     }

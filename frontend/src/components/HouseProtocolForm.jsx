@@ -416,6 +416,9 @@ export default function HouseProtocolForm({
         const { [category.id]: _dropped, ...rest } = prev;
         return rest;
       });
+    } catch (err) {
+      // The tab stays put on failure, which reads as a delete that never registered.
+      setCategoryError(getServerErrorMessage(err, "Impossible de supprimer la catégorie."));
     } finally {
       setCategoryBusy(false);
       setConfirmDeleteCategory(null);

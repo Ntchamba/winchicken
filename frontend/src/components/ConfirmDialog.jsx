@@ -11,8 +11,11 @@ import { Loader2 } from "lucide-react";
  * @param {() => void} onConfirm
  * @param {() => void} onCancel
  * @param {boolean} [busy] - Shows a spinner and disables the confirm button.
+ * @param {string} [error] - Why the confirmed action failed. The caller keeps the dialog open
+ *   and passes it here, so the failure appears where the tap happened — a destructive action
+ *   that silently does nothing is indistinguishable from one that worked.
  */
-export default function ConfirmDialog({ message, confirmLabel = "Confirmer", onConfirm, onCancel, busy = false }) {
+export default function ConfirmDialog({ message, confirmLabel = "Confirmer", onConfirm, onCancel, busy = false, error = "" }) {
   return (
     <div className="card schedule-card" style={{ marginBottom: 18, borderColor: "var(--danger)" }}>
       <p style={{ margin: "0 0 12px", fontSize: 14 }}>{message}</p>
@@ -22,6 +25,7 @@ export default function ConfirmDialog({ message, confirmLabel = "Confirmer", onC
         </button>
         <button className="add-button" onClick={onCancel} disabled={busy}>Annuler</button>
       </div>
+      {error && <p className="field-error" role="alert" style={{ margin: "10px 0 0" }}>{error}</p>}
     </div>
   );
 }
