@@ -346,7 +346,7 @@ README.
     sidebar, and `/demo` — roughly 25 frontend files touched. Terminology kept consistent
     with the cahier des charges and with wording already established elsewhere in the
     app (role names: Fermier, Ouvrier, Technicien, Caissier, Gérant de ferme,
-    Administrateur, Administrateur secondaire; "Se connecter", "Créer la ferme",
+    Administrateur, Administrateur secondaire; "Se connecter", "Créer une ferme",
     "Suivant", "Retour", "Sauter", "Ajouter une ligne", "Ajouter un article",
     "Enregistrer"). Layout, routing, and behavior untouched — text only.
 

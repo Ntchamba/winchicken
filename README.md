@@ -35,7 +35,7 @@ docker compose exec web python manage.py migrate
 docker compose exec web python manage.py createsuperuser   # optional, for /admin/ only
 ```
 
-Open **http://localhost:5173/** and click **"Créer la ferme"** — this
+Open **http://localhost:5173/** and click through to **"Créer une ferme"** — this
 creates the single `Farm` row and its administrator account, then walks
 you through onboarding (houses/protocol → stock → employees, employees
 step skippable). No demo data or credentials are seeded; the account you
@@ -474,7 +474,7 @@ job (Postgres 16 service → `pytest`) and a frontend job (`npm ci` →
   `docs/deviations.md` Part 16.
 
 - **Civility field + personal task-reminder SMS.** Added `User.civility` (M/Mme,
-  required on both account-creation forms — "Créer la ferme" and the
+  required on both account-creation forms — "Créer une ferme" and the
   employee form, onboarding step 3 and `/dashboard/employees`). Existing
   accounts from before this migration backfill to `M` (a model-level default,
   not a null) so the reminder template never renders with a missing civility;
