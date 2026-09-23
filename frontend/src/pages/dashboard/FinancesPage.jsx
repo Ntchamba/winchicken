@@ -1,16 +1,21 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
+import { useLocation, useOutletContext } from "react-router-dom";
+import HubPage from "../../components/HubPage";
 import VentesSection from "../../components/finances/VentesSection";
 import AchatsSection from "../../components/finances/AchatsSection";
 import SalairesSection from "../../components/finances/SalairesSection";
 import GlobaleSection from "../../components/finances/GlobaleSection";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
+import { FINANCES_BASE, visibleFinanceSections } from "./financeSections";
 import "../../styles/dashboard-theme.css";
-import QuickLinksBar from "../../components/QuickLinksBar";
 
 /**
- * Single-page "Finances" view (2026-08-27, Finances restructure Part A) — one route,
+ * Finances hub (2026-09-23): the index route of FinancesLayout. Globale — the farm-wide
+ * summary — is the landing content, under a HubPage tree whose branches are the destinations
+ * in FINANCE_SECTIONS, each its own route. Sections not yet moved to a route stay stacked
+ * below, still reachable by `#hash` from the sidebar.
+ *
+ * History: single-page "Finances" view (2026-08-27, Finances restructure Part A) — one route,
  * `/dashboard/finances`, four sections stacked vertically. Clicking a sidebar sub-item
  * (DashboardLayout.jsx's accordion) navigates to `/dashboard/finances#<section>`, which this
  * page turns into a smooth in-page scroll rather than a route change — the hash never causes a
@@ -27,8 +32,10 @@ import QuickLinksBar from "../../components/QuickLinksBar";
 export default function FinancesPage() {
   useDocumentTitle("Finances");
   const location = useLocation();
-  const { user } = useAuth();
-  const canSeeSalaires = ["ADMIN", "FARM_MANAGER"].includes(user.role);
+  const { canSeeSalaires } = useOutletContext();
+  const sections = visibleFinanceSections(canSeeSalaires).map(({ key, path, label, Icon, message }) => ({
+    key, title: label, Icon, to: `${FINANCES_BASE}/${path}`, message,
+  }));
   const [financesVersion, setFinancesVersion] = useState(0);
   const bumpFinancesVersion = () => setFinancesVersion((v) => v + 1);
 
@@ -44,31 +51,33 @@ export default function FinancesPage() {
   }, [location.hash]);
 
   return (
-    <div className="page-wrap">
-      <QuickLinksBar />
-      <div className="breadcrumb">Tableau de bord / <strong>Finances</strong></div>
+    <>
+      <h1 className="finances-section-title">Finances</h1>
+      {sections.length > 0 && (
+        <HubPage ariaLabel="Sections des finances" core={{ label: "Vue globale" }} sections={sections} />
+      )}
+
+      <section id="globale" style={{ marginBottom: 40, scrollMarginTop: 24 }}>
+        <h2 className="finances-section-title">Globale</h2>
+        <GlobaleSection refreshKey={financesVersion} />
+      </section>
 
       <section id="ventes" style={{ marginBottom: 40, scrollMarginTop: 24 }}>
-        <h1 className="finances-section-title">Ventes</h1>
+        <h2 className="finances-section-title">Ventes</h2>
         <VentesSection />
       </section>
 
       <section id="achats" style={{ marginBottom: 40, scrollMarginTop: 24 }}>
-        <h1 className="finances-section-title">Achats</h1>
+        <h2 className="finances-section-title">Achats</h2>
         <AchatsSection refreshKey={financesVersion} />
       </section>
 
       {canSeeSalaires && (
         <section id="salaires" style={{ marginBottom: 40, scrollMarginTop: 24 }}>
-          <h1 className="finances-section-title">Salaires</h1>
+          <h2 className="finances-section-title">Salaires</h2>
           <SalairesSection onPaymentRecorded={bumpFinancesVersion} />
         </section>
       )}
-
-      <section id="globale" style={{ marginBottom: 12, scrollMarginTop: 24 }}>
-        <h1 className="finances-section-title">Globale</h1>
-        <GlobaleSection refreshKey={financesVersion} />
-      </section>
-    </div>
+    </>
   );
 }

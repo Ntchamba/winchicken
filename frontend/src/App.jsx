@@ -24,6 +24,7 @@ import HouseTasksPage from "./pages/dashboard/HouseTasksPage";
 import HouseWeighingPage from "./pages/dashboard/HouseWeighingPage";
 import HouseProtocolPage from "./pages/dashboard/HouseProtocolPage";
 import FinancesPage from "./pages/dashboard/FinancesPage";
+import FinancesLayout from "./pages/dashboard/FinancesLayout";
 import StockPage from "./pages/dashboard/StockPage";
 import PurchaseOrdersPage from "./pages/dashboard/PurchaseOrdersPage";
 import EmployeesPage from "./pages/dashboard/EmployeesPage";
@@ -64,7 +65,9 @@ export default function App() {
               <Route path="weighing" element={<HouseWeighingPage />} />
             </Route>
             <Route path="houses/:houseCode/protocol" element={<HouseProtocolPage />} />
-            <Route path="finances" element={<FinancesPage />} />
+            <Route path="finances" element={<FinancesLayout />}>
+              <Route index element={<FinancesPage />} />
+            </Route>
             <Route path="stock" element={<StockPage />} />
             <Route path="purchase-orders" element={<PurchaseOrdersPage />} />
             <Route path="employees" element={<EmployeesPage />} />

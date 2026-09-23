@@ -10,16 +10,17 @@ import IncidentShortcut from "./IncidentShortcut";
 import MyHoursShortcut from "./MyHoursShortcut";
 import packageJson from "../../package.json";
 
-// "Finances" accordion sub-items (2026-08-27, Finances restructure Part A) — all four resolve
-// to sections within the single /dashboard/finances page via a URL hash anchor, never a
-// separate route (see FinancesPage.jsx, which scrolls to the matching section id on hash
-// change) — clicking one never navigates away from /dashboard/finances.
+// "Finances" accordion sub-items (2026-08-27, Finances restructure Part A). Since the
+// 2026-09-23 hub-and-spoke split an item with a `path` is its own route (Globale is the hub,
+// /dashboard/finances); one with a `hash` is still a section scrolled to on the hub page.
 const FINANCES_SECTIONS = [
   { hash: "ventes", label: "Ventes" },
   { hash: "achats", label: "Achats" },
   { hash: "salaires", label: "Salaires" },
-  { hash: "globale", label: "Globale" },
+  { key: "globale", path: "/dashboard/finances", label: "Globale" },
 ];
+const financeItemKey = (section) => section.key || section.hash;
+const financeItemTarget = (section) => section.path || `/dashboard/finances#${section.hash}`;
 
 /**
  * Sidebar + content shell for every /dashboard/* route. Rendered by DashboardShell.jsx, which
@@ -216,11 +217,15 @@ export default function DashboardLayout({
               </button>
               {financesOpen && (
                 <div className="sidebar-submenu">
-                  {FINANCES_SECTIONS.filter((section) => section.hash !== "salaires" || canSeeSalaires).map((section) => (
+                  {FINANCES_SECTIONS.filter((section) => financeItemKey(section) !== "salaires" || canSeeSalaires).map((section) => (
                     <button
-                      key={section.hash}
-                      className={`sidebar-sublink ${isActive("/dashboard/finances") && activeHash === `#${section.hash}` ? "active" : ""}`}
-                      onClick={() => go(`/dashboard/finances#${section.hash}`)}
+                      key={financeItemKey(section)}
+                      className={`sidebar-sublink ${
+                        section.path
+                          ? activePath === section.path && !activeHash ? "active" : ""
+                          : isActive("/dashboard/finances") && activeHash === `#${section.hash}` ? "active" : ""
+                      }`}
+                      onClick={() => go(financeItemTarget(section))}
                     >
                       {section.label}
                     </button>
