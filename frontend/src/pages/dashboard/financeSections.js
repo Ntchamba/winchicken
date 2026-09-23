@@ -1,5 +1,6 @@
-import { LayoutGrid, TrendingUp } from "lucide-react";
+import { LayoutGrid, ShoppingCart, TrendingUp } from "lucide-react";
 import VentesSection from "../../components/finances/VentesSection";
+import AchatsSection from "../../components/finances/AchatsSection";
 
 export const FINANCES_BASE = "/dashboard/finances";
 
@@ -11,6 +12,7 @@ export const FINANCES_BASE = "/dashboard/finances";
  */
 export const FINANCE_SECTIONS = [
   { key: "ventes", path: "ventes", label: "Ventes", Icon: TrendingUp, message: "Chiffre d'affaires par période", Component: VentesSection },
+  { key: "achats", path: "achats", label: "Achats", Icon: ShoppingCart, message: "Achats et charges par période", Component: AchatsSection },
 ];
 
 export const visibleFinanceSections = (canSeeSalaires) =>

@@ -15,7 +15,7 @@ import packageJson from "../../package.json";
 // /dashboard/finances); one with a `hash` is still a section scrolled to on the hub page.
 const FINANCES_SECTIONS = [
   { key: "ventes", path: "/dashboard/finances/ventes", label: "Ventes" },
-  { hash: "achats", label: "Achats" },
+  { key: "achats", path: "/dashboard/finances/achats", label: "Achats" },
   { hash: "salaires", label: "Salaires" },
   { key: "globale", path: "/dashboard/finances", label: "Globale" },
 ];
