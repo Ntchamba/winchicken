@@ -1,0 +1,22 @@
+/* Additions HubPage needs on top of the "Bilan global" tree (global-overview.css), which it
+   reuses as-is. Branches are <a> elements here rather than <button>s. */
+
+.hub-tree {
+  margin-bottom: 24px;
+}
+
+.hub-node {
+  text-decoration: none;
+  color: inherit;
+}
+
+.hub-node:focus-visible {
+  outline: 3px solid #17b892;
+  outline-offset: 3px;
+}
+
+/* A hub core carries a name (a batch, "Finances"), not a verdict word — let a long one wrap
+   inside the disc instead of overflowing it. */
+.hub-tree .tree-core-label {
+  overflow-wrap: anywhere;
+}

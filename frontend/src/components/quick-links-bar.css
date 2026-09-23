@@ -53,3 +53,9 @@
     display: none;
   }
 }
+
+/* A hub's own destinations sit directly above the global links; the tighter gap reads the two
+   rows as one bar. */
+.quick-links--sections {
+  margin-bottom: 8px;
+}

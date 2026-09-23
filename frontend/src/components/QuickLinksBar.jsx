@@ -27,29 +27,55 @@ const linkClass = (inIconNav, extra = "") =>
  * The link matching the current page is rendered as plain text rather than a link — a
  * shortcut to the page you are already on is noise, and removing it keeps the row shorter
  * where it matters most (phone width, where the row scrolls sideways).
+ *
+ * @param {{to: string, label: string, Icon: import("react").ComponentType}[]} [sections] -
+ *   Destinations of the hub the page belongs to (a house's Cas signalés / Évolution / …),
+ *   rendered as a second row above the global links. Matched exactly, so the hub's own entry
+ *   is not "current" on every one of its destinations. The same list the hub builds its
+ *   branches from, so the two can never offer different sets.
+ * @param {string} [sectionsLabel] - aria-label for that row (French).
  */
-export default function QuickLinksBar() {
+export default function QuickLinksBar({ sections = [], sectionsLabel = "Sections" }) {
   const { pathname } = useLocation();
 
   return (
-    <nav className="quick-links" aria-label="Accès rapide">
-      {LINKS.map(({ to, label, Icon, inIconNav }) => {
-        const current = pathname === to || pathname.startsWith(`${to}/`);
-        if (current) {
+    <>
+      {sections.length > 0 && (
+        <nav className="quick-links quick-links--sections" aria-label={sectionsLabel}>
+          {sections.map(({ to, label, Icon }) => (
+            pathname === to ? (
+              <span className="quick-link quick-link--current" key={to} aria-current="page">
+                <Icon size={15} strokeWidth={2} />
+                {label}
+              </span>
+            ) : (
+              <NavLink className="quick-link" to={to} key={to} end>
+                <Icon size={15} strokeWidth={2} />
+                {label}
+              </NavLink>
+            )
+          ))}
+        </nav>
+      )}
+      <nav className="quick-links" aria-label="Accès rapide">
+        {LINKS.map(({ to, label, Icon, inIconNav }) => {
+          const current = pathname === to || pathname.startsWith(`${to}/`);
+          if (current) {
+            return (
+              <span className={linkClass(inIconNav, "quick-link--current")} key={to} aria-current="page">
+                <Icon size={15} strokeWidth={2} />
+                {label}
+              </span>
+            );
+          }
           return (
-            <span className={linkClass(inIconNav, "quick-link--current")} key={to} aria-current="page">
+            <NavLink className={linkClass(inIconNav)} to={to} key={to}>
               <Icon size={15} strokeWidth={2} />
               {label}
-            </span>
+            </NavLink>
           );
-        }
-        return (
-          <NavLink className={linkClass(inIconNav)} to={to} key={to}>
-            <Icon size={15} strokeWidth={2} />
-            {label}
-          </NavLink>
-        );
-      })}
-    </nav>
+        })}
+      </nav>
+    </>
   );
 }
