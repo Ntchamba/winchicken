@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { alertsApi, financeApi, maintenanceApi, stockApi } from "../api/endpoints";
-
-// Reads either a paginated envelope's `count` or a plain array's `length` — the same
-// `data.results || data` uncertainty every other list consumer in this app already handles,
-// just reduced to a number instead of an array.
-function countOf(data) {
-  return typeof data.count === "number" ? data.count : (data.results || data).length;
-}
+import { alertsApi, financeApi, stockApi } from "../api/endpoints";
+import { countOpenIncidents } from "../api/incidents";
 
 /**
  * Sidebar bell/badge counts (2026-08-26): unread alert count (notification bell badge),
@@ -18,8 +12,8 @@ function countOf(data) {
  * `openCasesCount` (2026-08-27, Part B pulse treatment) — no dedicated backend count endpoint
  * for this exists (unlike the other three, which each have their own `.../count/` view); rather
  * than add one for a frontend-scoped task, this sums the same two farm-wide, unresolved-only
- * queries `IncidentsPanel.jsx` already makes (`?resolved=false` / `?status=OPEN`) so the sidebar
- * badge always agrees with "Cas signalés" itself, no separate backend endpoint required.
+ * queries `IncidentsPanel.jsx` already makes (`?resolved=false` / `?status=OPEN`), through
+ * `countOpenIncidents` (api/incidents.js) — the house hub's count uses the same helper.
  *
  * @param {boolean} canSeeFinancePendingCount - Only Admin/Farm Manager can call
  *   /purchase-orders/pending-count/ (403 otherwise, mirroring FinanceSummaryView's access
@@ -33,13 +27,12 @@ export default function useSidebarNotifications(canSeeFinancePendingCount) {
   const [openCasesCount, setOpenCasesCount] = useState(0);
 
   const refetch = useCallback(async () => {
-    const [unreadRes, stockRes, casesRes, faultsRes] = await Promise.all([
-      alertsApi.unreadCount(), stockApi.lowCount(),
-      maintenanceApi.cases({ resolved: "false" }), maintenanceApi.faults({ status: "OPEN" }),
+    const [unreadRes, stockRes, openCases] = await Promise.all([
+      alertsApi.unreadCount(), stockApi.lowCount(), countOpenIncidents(),
     ]);
     setUnreadCount(unreadRes.data.count);
     setStockLowCount(stockRes.data.count);
-    setOpenCasesCount(countOf(casesRes.data) + countOf(faultsRes.data));
+    setOpenCasesCount(openCases);
 
     if (canSeeFinancePendingCount) {
       const financeRes = await financeApi.pendingPayablesCount();

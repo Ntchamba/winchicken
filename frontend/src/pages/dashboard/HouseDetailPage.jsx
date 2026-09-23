@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
+import HubPage from "../../components/HubPage";
 import GrowthCurves from "../../components/GrowthCurves";
 import WeighingSection from "../../components/WeighingSection";
 import QuickEntryPanel from "../../components/QuickEntryPanel";
@@ -8,33 +9,35 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import TasksNowPanel from "../../components/TasksNowPanel";
 import AssignmentsPanel from "../../components/AssignmentsPanel";
 import WeeklyKpiCharts from "../../components/WeeklyKpiCharts";
-import UnusualCaseReportForm from "../../components/UnusualCaseReportForm";
 import CycleTimeline from "../../components/CycleTimeline";
-import IncidentsPanel from "../../components/IncidentsPanel";
 import { batchesApi, housesApi } from "../../api/endpoints";
 import { getServerErrorMessage } from "../../api/errors";
+import { countOpenIncidents } from "../../api/incidents";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
+import { HOUSE_SECTIONS, houseBasePath } from "./houseSections";
 import "../../styles/house-protocol-theme-light.css";
 import "../../styles/dashboard-theme.css";
-import QuickLinksBar from "../../components/QuickLinksBar";
 
 // batch.status is the raw BatchStatus backend enum (ACTIVE/CLOSED) — displayed only
 // through this French label map, never shown raw.
 const BATCH_STATUS_LABELS = { ACTIVE: "En cours", CLOSED: "Clôturée" };
 
+/**
+ * House hub (`/dashboard/houses/:houseCode`, index route of HouseLayout): the house and batch
+ * header with its actions, then one branch per destination (HOUSE_SECTIONS). Each branch's
+ * figure comes from the same query its destination lists, so the two cannot disagree.
+ */
 export default function HouseDetailPage() {
   const { houseCode } = useParams();
-  const { houses, refreshHouses } = useOutletContext();
+  const { house, batch, loadBatch, refreshHouses } = useOutletContext();
   const navigate = useNavigate();
-  const house = houses.find((h) => h.houseCode === houseCode);
   useDocumentTitle(house?.name || "Bâtiment");
 
-  const [batch, setBatch] = useState(null);
+  const [openCases, setOpenCases] = useState(null);
   const [weeklyKpi, setWeeklyKpi] = useState(null);
   const [growthSeries, setGrowthSeries] = useState([]);
   const [tasksNow, setTasksNow] = useState({ dayOfCycle: null, tasks: [] });
   const [assignmentsKey, setAssignmentsKey] = useState(0);
-  const [incidentsKey, setIncidentsKey] = useState(0);
   const [closing, setClosing] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -45,16 +48,17 @@ export default function HouseDetailPage() {
   const [closeError, setCloseError] = useState("");
   const [deleteError, setDeleteError] = useState("");
 
-  const loadBatch = useCallback(() => {
-    batchesApi.list(houseCode).then(({ data }) => {
-      const results = data.results || data;
-      const active = results.find((b) => b.status === "ACTIVE") || results[0];
-      setBatch(active || null);
-      if (active) {
-        batchesApi.weeklyKpi(active.batch_code).then((res) => setWeeklyKpi(res.data));
-      }
-    });
+  // Each stored with what it was loaded for, so another house/batch never shows stale figures.
+  const batchCode = batch?.batch_code;
+  useEffect(() => {
+    if (batchCode) batchesApi.weeklyKpi(batchCode).then((res) => setWeeklyKpi({ batchCode, data: res.data }));
+  }, [batchCode]);
+  const currentWeeklyKpi = weeklyKpi && weeklyKpi.batchCode === batchCode ? weeklyKpi.data : null;
+
+  useEffect(() => {
+    countOpenIncidents(houseCode).then((count) => setOpenCases({ houseCode, count })).catch(() => {});
   }, [houseCode]);
+  const openCasesCount = openCases?.houseCode === houseCode ? openCases.count : null;
 
   const loadGrowthCurve = useCallback(() => {
     batchesApi.growthCurves({ house_code: houseCode }).then(({ data }) => setGrowthSeries(data));
@@ -72,10 +76,24 @@ export default function HouseDetailPage() {
   }, [loadTasksNow]);
 
   useEffect(() => {
-    loadBatch();
     loadGrowthCurve();
     loadTasksNow();
-  }, [loadBatch, loadGrowthCurve, loadTasksNow]);
+  }, [loadGrowthCurve, loadTasksNow]);
+
+  // Per-destination figures for the hub branches, keyed like HOUSE_SECTIONS.
+  const branchFigures = {
+    cases: openCasesCount == null
+      ? {}
+      : {
+        value: openCasesCount,
+        unit: openCasesCount === 1 ? "cas ouvert" : "cas ouverts",
+        message: openCasesCount === 0 ? "Aucun cas en attente" : "Voir et résoudre",
+        tier: openCasesCount > 0 ? "watch" : "good",
+      },
+  };
+  const hubSections = HOUSE_SECTIONS.map(({ key, path, label, Icon }) => ({
+    key, title: label, Icon, to: `${houseBasePath(houseCode)}/${path}`, ...branchFigures[key],
+  }));
 
   const handleClose = async () => {
     if (!batch || closing) return;
@@ -110,19 +128,7 @@ export default function HouseDetailPage() {
   };
 
   return (
-    <div className="page-wrap">
-      <QuickLinksBar />
-      <div className="breadcrumb">
-        Tableau de bord / <strong>{house?.name || houseCode}</strong>
-        {houses.length > 1 && (
-          <select value={houseCode} onChange={(e) => navigate(`/dashboard/houses/${e.target.value}`)}>
-            {houses.map((h) => (
-              <option key={h.houseCode} value={h.houseCode}>{h.name}</option>
-            ))}
-          </select>
-        )}
-      </div>
-
+    <>
       <div className="card house-card" style={{ marginBottom: 18 }}>
         <div className="section-heading">
           <div>
@@ -181,9 +187,16 @@ export default function HouseDetailPage() {
         />
       )}
 
-      {!batch && <p className="empty-state">Ce bâtiment n'a pas encore de bande.</p>}
+      {batch === null && <p className="empty-state">Ce bâtiment n'a pas encore de bande.</p>}
 
-      <IncidentsPanel houseCode={houseCode} reloadKey={incidentsKey} />
+      <HubPage
+        ariaLabel="Sections du bâtiment"
+        core={{
+          label: batch ? (batch.name || batch.batch_code) : batch === null ? "Aucune bande" : "…",
+          detail: tasksNow.dayOfCycle != null ? `Jour ${tasksNow.dayOfCycle} du cycle` : undefined,
+        }}
+        sections={hubSections}
+      />
 
       {/* Outside the `batch &&` block on purpose: a house between two batches still carries its
           assignments, and they were exactly as invisible as the ones FIX 4 is about. */}
@@ -203,16 +216,8 @@ export default function HouseDetailPage() {
 
           <div className="section-row"><h2>Saisie rapide du jour</h2></div>
           <QuickEntryPanel batches={[{ batch_code: batch.batch_code, name: batch.name }]} onLogged={loadGrowthCurve} />
-          <div style={{ marginBottom: 18 }}>
-            {/* Refreshes "Cas signalés" above: the form used to collapse silently while the
-                list stayed as it was, which reads as a report that never went through. */}
-            <UnusualCaseReportForm
-              batchCode={batch.batch_code}
-              onReported={() => setIncidentsKey((key) => key + 1)}
-            />
-          </div>
 
-          {weeklyKpi && <WeeklyKpiCharts weeklyKpi={weeklyKpi} />}
+          {currentWeeklyKpi && <WeeklyKpiCharts weeklyKpi={currentWeeklyKpi} />}
         </>
       )}
 
@@ -226,6 +231,6 @@ export default function HouseDetailPage() {
           refreshHouses();
         }}
       />
-    </div>
+    </>
   );
 }

@@ -17,6 +17,8 @@ import GlobalOverviewPage from "./pages/dashboard/GlobalOverviewPage";
 import DashboardHomePage from "./pages/dashboard/DashboardHomePage";
 import HousesListPage from "./pages/dashboard/HousesListPage";
 import HouseDetailPage from "./pages/dashboard/HouseDetailPage";
+import HouseLayout from "./pages/dashboard/HouseLayout";
+import HouseCasesPage from "./pages/dashboard/HouseCasesPage";
 import HouseProtocolPage from "./pages/dashboard/HouseProtocolPage";
 import FinancesPage from "./pages/dashboard/FinancesPage";
 import StockPage from "./pages/dashboard/StockPage";
@@ -51,7 +53,10 @@ export default function App() {
             <Route index element={<DashboardHomePage />} />
             <Route path="overview" element={<GlobalOverviewPage />} />
             <Route path="houses" element={<HousesListPage />} />
-            <Route path="houses/:houseCode" element={<HouseDetailPage />} />
+            <Route path="houses/:houseCode" element={<HouseLayout />}>
+              <Route index element={<HouseDetailPage />} />
+              <Route path="cases" element={<HouseCasesPage />} />
+            </Route>
             <Route path="houses/:houseCode/protocol" element={<HouseProtocolPage />} />
             <Route path="finances" element={<FinancesPage />} />
             <Route path="stock" element={<StockPage />} />

@@ -1,0 +1,26 @@
+/* House hub and its destinations (HouseLayout, HouseDetailPage, House*Page). */
+
+/* The breadcrumb gained a third level and a link; at phone width it must wrap rather than
+   push the house <select> off-screen. */
+.page-wrap > .breadcrumb {
+  flex-wrap: wrap;
+}
+
+.breadcrumb a {
+  color: var(--mint);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.breadcrumb a:hover,
+.breadcrumb a:focus-visible {
+  text-decoration: underline;
+}
+
+/* A destination's page title: an h1 for the document outline, sized like the section
+   headings around it rather than like the hub's house name. */
+.house-section-title {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 22px;
+}
