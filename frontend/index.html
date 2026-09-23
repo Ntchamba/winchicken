@@ -22,6 +22,24 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Safety net for a connection lost between the page and its scripts (the service worker
+         can only swap the page itself): a script that fails to load would leave a blank page.
+         Probe the server rather than trust navigator.onLine — a phone on the farm Wi-Fi is
+         "online" while the farm server is down — and if it is unreachable, go to the offline
+         screen, which comes back here once it can. -->
+    <script>
+      window.addEventListener("error", function (event) {
+        var el = event.target;
+        if (!el || el.tagName !== "SCRIPT" || window.__winchickenOffline) return;
+        window.__winchickenOffline = true;
+        fetch("/manifest.webmanifest", { cache: "no-store" }).then(
+          function () { window.__winchickenOffline = false; },
+          function () {
+            location.replace("/offline.html?retour=" + encodeURIComponent(location.pathname + location.search + location.hash));
+          }
+        );
+      }, true);
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

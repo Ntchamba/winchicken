@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { pushApi } from "../api/endpoints";
+import { registerServiceWorker } from "../pwa/serviceWorker";
 
 /**
  * Desktop notifications via the Web Push API (2026-08-31). Registers `/sw.js`, subscribes the
@@ -33,7 +34,7 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 async function getRegistration() {
-  return navigator.serviceWorker.register("/sw.js");
+  return registerServiceWorker();
 }
 
 export default function useWebPush() {
