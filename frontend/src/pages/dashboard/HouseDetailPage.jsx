@@ -5,8 +5,6 @@ import WeighingSection from "../../components/WeighingSection";
 import QuickEntryPanel from "../../components/QuickEntryPanel";
 import ProtocolEditModal from "../../components/ProtocolEditModal";
 import ConfirmDialog from "../../components/ConfirmDialog";
-import TasksNowPanel from "../../components/TasksNowPanel";
-import AssignmentsPanel from "../../components/AssignmentsPanel";
 import CycleTimeline from "../../components/CycleTimeline";
 import { batchesApi, housesApi } from "../../api/endpoints";
 import { getServerErrorMessage } from "../../api/errors";
@@ -37,7 +35,6 @@ export default function HouseDetailPage() {
   const [openCases, setOpenCases] = useState(null);
   const [growthSeries, setGrowthSeries] = useState([]);
   const [tasksNow, setTasksNow] = useState({ dayOfCycle: null, tasks: [] });
-  const [assignmentsKey, setAssignmentsKey] = useState(0);
   const [closing, setClosing] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -62,13 +59,6 @@ export default function HouseDetailPage() {
     housesApi.tasksNow(houseCode).then(({ data }) => setTasksNow(data));
   }, [houseCode]);
 
-  // An assignment changed in the tasks panel must also refresh the assignments card: two views
-  // of the same rows must never be able to disagree.
-  const handleAssigned = useCallback(() => {
-    loadTasksNow();
-    setAssignmentsKey((k) => k + 1);
-  }, [loadTasksNow]);
-
   useEffect(() => {
     loadGrowthCurve();
     loadTasksNow();
@@ -81,6 +71,8 @@ export default function HouseDetailPage() {
     return null;
   };
   const survival = latest("survivalPct");
+  const tasksToDo = tasksNow.tasks.filter((task) => !task.done).length;
+  const tasksDone = tasksNow.tasks.length - tasksToDo;
   // Per-destination figures for the hub branches, keyed like HOUSE_SECTIONS.
   const branchFigures = {
     cases: openCasesCount == null
@@ -94,6 +86,11 @@ export default function HouseDetailPage() {
     evolution: survival
       ? { value: `${formatNumber(survival.survivalPct, 1)} %`, unit: "survie", message: `Au jour ${survival.dayOfCycle} · croissance, indice de consommation, mortalité` }
       : { message: "Croissance, indice de consommation, mortalité" },
+    tasks: {
+      value: tasksToDo,
+      unit: "à faire aujourd'hui",
+      message: `${tasksDone} faite${tasksDone === 1 ? "" : "s"} · alimentation, nettoyage, soins`,
+    },
   };
   const hubSections = HOUSE_SECTIONS.map(({ key, path, label, Icon }) => ({
     key, title: label, Icon, to: `${houseBasePath(houseCode)}/${path}`, ...branchFigures[key],
@@ -202,10 +199,6 @@ export default function HouseDetailPage() {
         sections={hubSections}
       />
 
-      {/* Outside the `batch &&` block on purpose: a house between two batches still carries its
-          assignments, and they were exactly as invisible as the ones FIX 4 is about. */}
-      <AssignmentsPanel houseCode={houseCode} reloadKey={assignmentsKey} onChanged={loadTasksNow} />
-
       {batch && (
         <>
           <CycleTimeline houseCode={houseCode} />
@@ -213,12 +206,8 @@ export default function HouseDetailPage() {
           <div className="section-row"><h2>Pesée</h2></div>
           <WeighingSection batches={[{ batchCode: batch.batch_code, name: batch.name }]} onLogged={loadGrowthCurve} />
 
-          <div className="section-row"><h2>Tâches à effectuer maintenant</h2></div>
-          <TasksNowPanel tasksNow={tasksNow} houseCode={houseCode} onAssigned={handleAssigned} />
-
           <div className="section-row"><h2>Saisie rapide du jour</h2></div>
           <QuickEntryPanel batches={[{ batch_code: batch.batch_code, name: batch.name }]} onLogged={loadGrowthCurve} />
-
         </>
       )}
 
