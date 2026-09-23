@@ -13,8 +13,9 @@ function formatWeight(kg) {
  * (2026-08-25). Upserts only `DailyLog.avg_sample_weight` for a batch+date via the same
  * PUT /api/batches/{batchCode}/daily-logs/quick-entry/ endpoint `QuickEntryPanel` uses
  * (mortality/eggs sent as `null` — untouched), so a weighing never clobbers a mortality/eggs
- * entry already recorded for that date, and vice versa. Positioned directly below the growth
- * curves on both dashboard locations.
+ * entry already recorded for that date, and vice versa. Rendered on the house "Pesée" page
+ * (HouseWeighingPage), directly above the weight curve it feeds; the global dashboard links
+ * there rather than rendering it (2026-09-23), so the multi-batch mode below is unused today.
  *
  * @param {{batchCode: string, name: string, houseCode?: string, houseName?: string}[]} batches
  *   - More than one (global view) requires picking a batch before date/weight — the global

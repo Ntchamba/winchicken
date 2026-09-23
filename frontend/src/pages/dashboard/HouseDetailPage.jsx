@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import HubPage from "../../components/HubPage";
-import WeighingSection from "../../components/WeighingSection";
-import QuickEntryPanel from "../../components/QuickEntryPanel";
 import ProtocolEditModal from "../../components/ProtocolEditModal";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import CycleTimeline from "../../components/CycleTimeline";
@@ -71,6 +69,7 @@ export default function HouseDetailPage() {
     return null;
   };
   const survival = latest("survivalPct");
+  const weighing = latest("weightKg");
   const tasksToDo = tasksNow.tasks.filter((task) => !task.done).length;
   const tasksDone = tasksNow.tasks.length - tasksToDo;
   // Per-destination figures for the hub branches, keyed like HOUSE_SECTIONS.
@@ -89,8 +88,11 @@ export default function HouseDetailPage() {
     tasks: {
       value: tasksToDo,
       unit: "à faire aujourd'hui",
-      message: `${tasksDone} faite${tasksDone === 1 ? "" : "s"} · alimentation, nettoyage, soins`,
+      message: `${tasksDone} faite${tasksDone === 1 ? "" : "s"} · saisie du jour, alimentation, soins`,
     },
+    weighing: weighing
+      ? { value: `${formatNumber(weighing.weightKg, 2)} kg`, unit: "poids moyen", message: `Dernière pesée au jour ${weighing.dayOfCycle}` }
+      : { message: "Aucune pesée enregistrée" },
   };
   const hubSections = HOUSE_SECTIONS.map(({ key, path, label, Icon }) => ({
     key, title: label, Icon, to: `${houseBasePath(houseCode)}/${path}`, ...branchFigures[key],
@@ -199,17 +201,7 @@ export default function HouseDetailPage() {
         sections={hubSections}
       />
 
-      {batch && (
-        <>
-          <CycleTimeline houseCode={houseCode} />
-
-          <div className="section-row"><h2>Pesée</h2></div>
-          <WeighingSection batches={[{ batchCode: batch.batch_code, name: batch.name }]} onLogged={loadGrowthCurve} />
-
-          <div className="section-row"><h2>Saisie rapide du jour</h2></div>
-          <QuickEntryPanel batches={[{ batch_code: batch.batch_code, name: batch.name }]} onLogged={loadGrowthCurve} />
-        </>
-      )}
+      {batch && <CycleTimeline houseCode={houseCode} />}
 
       <ProtocolEditModal
         houseCode={editingProtocol ? houseCode : null}

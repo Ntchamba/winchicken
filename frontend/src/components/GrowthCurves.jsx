@@ -22,6 +22,8 @@ function mergeByDay(series, field) {
   });
 }
 
+const ALL_METRICS = ["weight", "survival"];
+
 /**
  * Shared growth-curve charts (weight kg + survival %, both vs day-of-cycle) used by both the
  * farm-wide global view (one overlaid line per active batch) and the per-house view (a single
@@ -31,8 +33,10 @@ function mergeByDay(series, field) {
  * @param {{batchCode: string, batchName: string, points: {dayOfCycle: number, weightKg: ?number, survivalPct: ?number}[]}[]} series
  * @param {"all"|"single"} [scope] - "single" hides the legend (redundant with one line) and
  *   adjusts the empty-state message; "all" (default) shows a legend labeled by batch name.
+ * @param {("weight"|"survival")[]} [metrics] - Which curves to draw (both by default). The
+ *   house "Pesée" page shows the weight curve alone, next to the weighing form.
  */
-export default function GrowthCurves({ series = [], scope = "all" }) {
+export default function GrowthCurves({ series = [], scope = "all", metrics = ALL_METRICS }) {
   if (series.length === 0) {
     return (
       <p className="empty-state">
@@ -52,8 +56,8 @@ export default function GrowthCurves({ series = [], scope = "all" }) {
 
   return (
     <>
-      <div className="section-row"><h2>Poids moyen (kg) — jour du cycle</h2></div>
-      {hasAnyWeight ? (
+      {metrics.includes("weight") && <div className="section-row"><h2>Poids moyen (kg) — jour du cycle</h2></div>}
+      {!metrics.includes("weight") ? null : hasAnyWeight ? (
         <div className="card schedule-card" style={{ marginBottom: 18, height: 260 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={weightData}>
@@ -83,8 +87,8 @@ export default function GrowthCurves({ series = [], scope = "all" }) {
         </p>
       )}
 
-      <div className="section-row"><h2>Survie (%) — jour du cycle</h2></div>
-      <div className="card schedule-card" style={{ marginBottom: 18, height: 260 }}>
+      {metrics.includes("survival") && <div className="section-row"><h2>Survie (%) — jour du cycle</h2></div>}
+      {metrics.includes("survival") && <div className="card schedule-card" style={{ marginBottom: 18, height: 260 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={survivalData}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" />
@@ -106,7 +110,7 @@ export default function GrowthCurves({ series = [], scope = "all" }) {
             ))}
           </LineChart>
         </ResponsiveContainer>
-      </div>
+      </div>}
     </>
   );
 }

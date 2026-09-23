@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useOutletContext, useParams } from "react-router-dom";
 import TasksNowPanel from "../../components/TasksNowPanel";
 import AssignmentsPanel from "../../components/AssignmentsPanel";
+import QuickEntryPanel from "../../components/QuickEntryPanel";
 import { housesApi } from "../../api/endpoints";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 
@@ -10,6 +11,10 @@ import useDocumentTitle from "../../hooks/useDocumentTitle";
  * medication, whatever the protocol lines say — split into to-do and done, then the house's
  * standing assignments. Layout only: the rows are TasksNowPanel's, completion is its
  * TaskCompleteButton and the data is the same GET /houses/{code}/tasks-now/ as before.
+ *
+ * "Saisie du jour" (mortality, eggs) sits at the top: it is the other thing a worker records
+ * every day in this house, and this is the page they open for the day's work. Weight is
+ * recorded on "Pesée", next to the curve it feeds.
  */
 export default function HouseTasksPage() {
   const { houseCode } = useParams();
@@ -43,6 +48,9 @@ export default function HouseTasksPage() {
       {batch === null && <p className="empty-state">Ce bâtiment n'a pas encore de bande.</p>}
       {batch && (
         <>
+          <div className="section-row"><h2>Saisie du jour</h2></div>
+          <QuickEntryPanel batches={[{ batch_code: batch.batch_code, name: batch.name }]} />
+
           <div className="section-row"><h2>À faire ({pending.length})</h2></div>
           {pending.length === 0 && done.length > 0 ? (
             <p className="empty-state" style={{ marginBottom: 18 }}>Toutes les tâches du jour sont faites.</p>

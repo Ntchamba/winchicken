@@ -1,6 +1,5 @@
-import { Bird, Egg, TriangleAlert, Package, Syringe, Thermometer, Clock, Wallet, Plus, ChevronRight, Home } from "lucide-react";
+import { Bird, Egg, TriangleAlert, Package, Syringe, Thermometer, Clock, Wallet, Plus, ChevronRight, Home, Scale } from "lucide-react";
 import GrowthCurves from "./GrowthCurves";
-import WeighingSection from "./WeighingSection";
 import QuickEntryPanel from "./QuickEntryPanel";
 import FarmHealthBadge from "./FarmHealthBadge";
 import IncidentsPanel from "./IncidentsPanel";
@@ -8,6 +7,7 @@ import Upcoming48hWidget from "./Upcoming48hWidget";
 import "../styles/house-protocol-theme-light.css";
 import "../styles/dashboard-theme.css";
 import "../styles/protocol-edit-modal.css";
+import "./weighing-links.css";
 
 const QUICK_ACTIONS = [
   { icon: Plus, label: "Nouvelle bande", hint: "Attribuer un bâtiment et une race", path: "new-batch" },
@@ -131,8 +131,28 @@ export default function HomeDashboard({
       <div className="section-row"><h2>Croissance et survie — toutes bandes actives</h2></div>
       <GrowthCurves series={growthSeries} scope="all" />
 
+      {/* Weighing moved to each house's "Pesée" page (2026-09-23), next to the curve it feeds;
+          this keeps the one-tap path to it from here instead of a second copy of the form. */}
       <div className="section-row"><h2>Pesée</h2></div>
-      <WeighingSection batches={activeBatchList} onLogged={onDailyLogged} />
+      {activeBatchList.length === 0 ? (
+        <p className="empty-state">Aucune bande active à peser.</p>
+      ) : (
+        <div className="weighing-links">
+          {activeBatchList.map((b) => (
+            <button
+              key={b.batchCode}
+              type="button"
+              className="weighing-link"
+              onClick={() => onNavigate?.(`/dashboard/houses/${b.houseCode}/weighing`)}
+            >
+              <Scale size={16} strokeWidth={1.9} aria-hidden="true" />
+              <span>Peser {b.name || b.batchCode}</span>
+              <span className="weighing-link-house">{b.houseName}</span>
+              <ChevronRight size={15} strokeWidth={2} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="section-row"><h2>Saisie rapide du jour</h2></div>
       <QuickEntryPanel
