@@ -19,6 +19,7 @@ import HousesListPage from "./pages/dashboard/HousesListPage";
 import HouseDetailPage from "./pages/dashboard/HouseDetailPage";
 import HouseLayout from "./pages/dashboard/HouseLayout";
 import HouseCasesPage from "./pages/dashboard/HouseCasesPage";
+import HouseEvolutionPage from "./pages/dashboard/HouseEvolutionPage";
 import HouseProtocolPage from "./pages/dashboard/HouseProtocolPage";
 import FinancesPage from "./pages/dashboard/FinancesPage";
 import StockPage from "./pages/dashboard/StockPage";
@@ -56,6 +57,7 @@ export default function App() {
             <Route path="houses/:houseCode" element={<HouseLayout />}>
               <Route index element={<HouseDetailPage />} />
               <Route path="cases" element={<HouseCasesPage />} />
+              <Route path="evolution" element={<HouseEvolutionPage />} />
             </Route>
             <Route path="houses/:houseCode/protocol" element={<HouseProtocolPage />} />
             <Route path="finances" element={<FinancesPage />} />

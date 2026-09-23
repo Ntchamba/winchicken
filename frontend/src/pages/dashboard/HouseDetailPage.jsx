@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import HubPage from "../../components/HubPage";
-import GrowthCurves from "../../components/GrowthCurves";
 import WeighingSection from "../../components/WeighingSection";
 import QuickEntryPanel from "../../components/QuickEntryPanel";
 import ProtocolEditModal from "../../components/ProtocolEditModal";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import TasksNowPanel from "../../components/TasksNowPanel";
 import AssignmentsPanel from "../../components/AssignmentsPanel";
-import WeeklyKpiCharts from "../../components/WeeklyKpiCharts";
 import CycleTimeline from "../../components/CycleTimeline";
 import { batchesApi, housesApi } from "../../api/endpoints";
 import { getServerErrorMessage } from "../../api/errors";
@@ -17,6 +15,9 @@ import useDocumentTitle from "../../hooks/useDocumentTitle";
 import { HOUSE_SECTIONS, houseBasePath } from "./houseSections";
 import "../../styles/house-protocol-theme-light.css";
 import "../../styles/dashboard-theme.css";
+
+// Farm-locale decimals ("1,16"). The shared chart kit's formatNumber takes over once it lands.
+const formatNumber = (value, digits) => Number(value).toLocaleString("fr-FR", { maximumFractionDigits: digits });
 
 // batch.status is the raw BatchStatus backend enum (ACTIVE/CLOSED) — displayed only
 // through this French label map, never shown raw.
@@ -34,7 +35,6 @@ export default function HouseDetailPage() {
   useDocumentTitle(house?.name || "Bâtiment");
 
   const [openCases, setOpenCases] = useState(null);
-  const [weeklyKpi, setWeeklyKpi] = useState(null);
   const [growthSeries, setGrowthSeries] = useState([]);
   const [tasksNow, setTasksNow] = useState({ dayOfCycle: null, tasks: [] });
   const [assignmentsKey, setAssignmentsKey] = useState(0);
@@ -48,13 +48,7 @@ export default function HouseDetailPage() {
   const [closeError, setCloseError] = useState("");
   const [deleteError, setDeleteError] = useState("");
 
-  // Each stored with what it was loaded for, so another house/batch never shows stale figures.
-  const batchCode = batch?.batch_code;
-  useEffect(() => {
-    if (batchCode) batchesApi.weeklyKpi(batchCode).then((res) => setWeeklyKpi({ batchCode, data: res.data }));
-  }, [batchCode]);
-  const currentWeeklyKpi = weeklyKpi && weeklyKpi.batchCode === batchCode ? weeklyKpi.data : null;
-
+  // Stored with the house it was loaded for, so another house never shows stale figures.
   useEffect(() => {
     countOpenIncidents(houseCode).then((count) => setOpenCases({ houseCode, count })).catch(() => {});
   }, [houseCode]);
@@ -80,6 +74,13 @@ export default function HouseDetailPage() {
     loadTasksNow();
   }, [loadGrowthCurve, loadTasksNow]);
 
+  // Latest logged value of a growth-curve field — the same series Évolution and Pesée draw.
+  const latest = (field) => {
+    const points = growthSeries[0]?.points || [];
+    for (let i = points.length - 1; i >= 0; i -= 1) if (points[i][field] != null) return points[i];
+    return null;
+  };
+  const survival = latest("survivalPct");
   // Per-destination figures for the hub branches, keyed like HOUSE_SECTIONS.
   const branchFigures = {
     cases: openCasesCount == null
@@ -90,6 +91,9 @@ export default function HouseDetailPage() {
         message: openCasesCount === 0 ? "Aucun cas en attente" : "Voir et résoudre",
         tier: openCasesCount > 0 ? "watch" : "good",
       },
+    evolution: survival
+      ? { value: `${formatNumber(survival.survivalPct, 1)} %`, unit: "survie", message: `Au jour ${survival.dayOfCycle} · croissance, indice de consommation, mortalité` }
+      : { message: "Croissance, indice de consommation, mortalité" },
   };
   const hubSections = HOUSE_SECTIONS.map(({ key, path, label, Icon }) => ({
     key, title: label, Icon, to: `${houseBasePath(houseCode)}/${path}`, ...branchFigures[key],
@@ -206,8 +210,6 @@ export default function HouseDetailPage() {
         <>
           <CycleTimeline houseCode={houseCode} />
 
-          <GrowthCurves series={growthSeries} scope="single" />
-
           <div className="section-row"><h2>Pesée</h2></div>
           <WeighingSection batches={[{ batchCode: batch.batch_code, name: batch.name }]} onLogged={loadGrowthCurve} />
 
@@ -217,7 +219,6 @@ export default function HouseDetailPage() {
           <div className="section-row"><h2>Saisie rapide du jour</h2></div>
           <QuickEntryPanel batches={[{ batch_code: batch.batch_code, name: batch.name }]} onLogged={loadGrowthCurve} />
 
-          {currentWeeklyKpi && <WeeklyKpiCharts weeklyKpi={currentWeeklyKpi} />}
         </>
       )}
 

@@ -1,4 +1,4 @@
-import { AlertTriangle, Warehouse } from "lucide-react";
+import { AlertTriangle, TrendingUp, Warehouse } from "lucide-react";
 
 /**
  * The house view's destinations, in display order. One list feeds both the hub's branches
@@ -7,6 +7,7 @@ import { AlertTriangle, Warehouse } from "lucide-react";
  */
 export const HOUSE_SECTIONS = [
   { key: "cases", path: "cases", label: "Cas signalés", Icon: AlertTriangle },
+  { key: "evolution", path: "evolution", label: "Évolution", Icon: TrendingUp },
 ];
 
 export const houseBasePath = (houseCode) => `/dashboard/houses/${houseCode}`;
