@@ -10,17 +10,15 @@ import IncidentShortcut from "./IncidentShortcut";
 import MyHoursShortcut from "./MyHoursShortcut";
 import packageJson from "../../package.json";
 
-// "Finances" accordion sub-items (2026-08-27, Finances restructure Part A). Since the
-// 2026-09-23 hub-and-spoke split an item with a `path` is its own route (Globale is the hub,
-// /dashboard/finances); one with a `hash` is still a section scrolled to on the hub page.
+// "Finances" accordion sub-items (2026-08-27, Finances restructure Part A). Each is its own
+// route since the 2026-09-23 hub-and-spoke split: Globale is the hub (/dashboard/finances),
+// the other three its destinations. They used to be `#hash` sections of one page.
 const FINANCES_SECTIONS = [
   { key: "ventes", path: "/dashboard/finances/ventes", label: "Ventes" },
   { key: "achats", path: "/dashboard/finances/achats", label: "Achats" },
-  { hash: "salaires", label: "Salaires" },
+  { key: "salaires", path: "/dashboard/finances/salaires", label: "Salaires" },
   { key: "globale", path: "/dashboard/finances", label: "Globale" },
 ];
-const financeItemKey = (section) => section.key || section.hash;
-const financeItemTarget = (section) => section.path || `/dashboard/finances#${section.hash}`;
 
 /**
  * Sidebar + content shell for every /dashboard/* route. Rendered by DashboardShell.jsx, which
@@ -36,7 +34,8 @@ const financeItemTarget = (section) => section.path || `/dashboard/finances#${se
  *   the house name/identifier alone, since there's no batch name to show.
  * @param {Object} [user] - `{ name, role }` — display name and human-readable role label.
  * @param {string} [activePath] - Current route pathname, used to highlight the matching link.
- * @param {string} [activeHash] - Current `location.hash` (e.g. "#ventes"), used to highlight the
+ * @param {string} [activeHash] - Current `location.hash`. Only closes the mobile drawer on change
+ *   now; the Finances sub-items are routes since 2026-09-23. Originally used to highlight the
  *   active "Finances" sub-item (2026-08-27, Finances restructure) — threaded down from
  *   DashboardShellContent's own `useLocation()` rather than this component reading routing
  *   state itself, matching this file's existing "routing stays owned by the caller" convention
@@ -217,15 +216,11 @@ export default function DashboardLayout({
               </button>
               {financesOpen && (
                 <div className="sidebar-submenu">
-                  {FINANCES_SECTIONS.filter((section) => financeItemKey(section) !== "salaires" || canSeeSalaires).map((section) => (
+                  {FINANCES_SECTIONS.filter((section) => section.key !== "salaires" || canSeeSalaires).map((section) => (
                     <button
-                      key={financeItemKey(section)}
-                      className={`sidebar-sublink ${
-                        section.path
-                          ? activePath === section.path && !activeHash ? "active" : ""
-                          : isActive("/dashboard/finances") && activeHash === `#${section.hash}` ? "active" : ""
-                      }`}
-                      onClick={() => go(financeItemTarget(section))}
+                      key={section.key}
+                      className={`sidebar-sublink ${activePath === section.path ? "active" : ""}`}
+                      onClick={() => go(section.path)}
                     >
                       {section.label}
                     </button>
