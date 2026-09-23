@@ -1,4 +1,5 @@
-import { LayoutGrid } from "lucide-react";
+import { LayoutGrid, TrendingUp } from "lucide-react";
+import VentesSection from "../../components/finances/VentesSection";
 
 export const FINANCES_BASE = "/dashboard/finances";
 
@@ -8,7 +9,9 @@ export const FINANCES_BASE = "/dashboard/finances";
  * them can offer a different set. `restricted` entries are shown only to roles that may see
  * them (Salaires: Admin / Farm Manager, enforced server-side too).
  */
-export const FINANCE_SECTIONS = [];
+export const FINANCE_SECTIONS = [
+  { key: "ventes", path: "ventes", label: "Ventes", Icon: TrendingUp, message: "Chiffre d'affaires par période", Component: VentesSection },
+];
 
 export const visibleFinanceSections = (canSeeSalaires) =>
   FINANCE_SECTIONS.filter((section) => !section.restricted || canSeeSalaires);

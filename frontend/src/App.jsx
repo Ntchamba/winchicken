@@ -25,6 +25,8 @@ import HouseWeighingPage from "./pages/dashboard/HouseWeighingPage";
 import HouseProtocolPage from "./pages/dashboard/HouseProtocolPage";
 import FinancesPage from "./pages/dashboard/FinancesPage";
 import FinancesLayout from "./pages/dashboard/FinancesLayout";
+import FinanceDestinationPage from "./pages/dashboard/FinanceDestinationPage";
+import { FINANCE_SECTIONS } from "./pages/dashboard/financeSections";
 import StockPage from "./pages/dashboard/StockPage";
 import PurchaseOrdersPage from "./pages/dashboard/PurchaseOrdersPage";
 import EmployeesPage from "./pages/dashboard/EmployeesPage";
@@ -67,6 +69,9 @@ export default function App() {
             <Route path="houses/:houseCode/protocol" element={<HouseProtocolPage />} />
             <Route path="finances" element={<FinancesLayout />}>
               <Route index element={<FinancesPage />} />
+              {FINANCE_SECTIONS.map((section) => (
+                <Route key={section.key} path={section.path} element={<FinanceDestinationPage section={section} />} />
+              ))}
             </Route>
             <Route path="stock" element={<StockPage />} />
             <Route path="purchase-orders" element={<PurchaseOrdersPage />} />

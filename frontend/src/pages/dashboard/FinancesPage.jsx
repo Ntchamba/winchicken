@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useOutletContext } from "react-router-dom";
 import HubPage from "../../components/HubPage";
-import VentesSection from "../../components/finances/VentesSection";
 import AchatsSection from "../../components/finances/AchatsSection";
 import SalairesSection from "../../components/finances/SalairesSection";
 import GlobaleSection from "../../components/finances/GlobaleSection";
@@ -60,11 +59,6 @@ export default function FinancesPage() {
       <section id="globale" style={{ marginBottom: 40, scrollMarginTop: 24 }}>
         <h2 className="finances-section-title">Globale</h2>
         <GlobaleSection refreshKey={financesVersion} />
-      </section>
-
-      <section id="ventes" style={{ marginBottom: 40, scrollMarginTop: 24 }}>
-        <h2 className="finances-section-title">Ventes</h2>
-        <VentesSection />
       </section>
 
       <section id="achats" style={{ marginBottom: 40, scrollMarginTop: 24 }}>

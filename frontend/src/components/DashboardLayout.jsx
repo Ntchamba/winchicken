@@ -14,7 +14,7 @@ import packageJson from "../../package.json";
 // 2026-09-23 hub-and-spoke split an item with a `path` is its own route (Globale is the hub,
 // /dashboard/finances); one with a `hash` is still a section scrolled to on the hub page.
 const FINANCES_SECTIONS = [
-  { hash: "ventes", label: "Ventes" },
+  { key: "ventes", path: "/dashboard/finances/ventes", label: "Ventes" },
   { hash: "achats", label: "Achats" },
   { hash: "salaires", label: "Salaires" },
   { key: "globale", path: "/dashboard/finances", label: "Globale" },
