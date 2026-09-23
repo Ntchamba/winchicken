@@ -4,6 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import useWebPush from "../../hooks/useWebPush";
 import FactoryResetModal from "../../components/FactoryResetModal";
+import InstallAppCard from "../../components/InstallAppCard";
 import "../../styles/dashboard-theme.css";
 import QuickLinksBar from "../../components/QuickLinksBar";
 
@@ -41,6 +42,8 @@ export default function SettingsPage() {
           Ferme : {user.farm_name} — contactez un administrateur pour modifier les informations du compte.
         </p>
       </div>
+
+      <InstallAppCard />
 
       <div className="card house-card" style={{ marginTop: 18 }}>
         <h2 style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 6px" }}>

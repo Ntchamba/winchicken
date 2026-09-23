@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import { registerServiceWorker, serviceWorkerSupported } from './pwa/serviceWorker.js'
+// Side effect: catches the one-shot `beforeinstallprompt` before Paramètres is ever opened.
+import './pwa/installPrompt.js'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
