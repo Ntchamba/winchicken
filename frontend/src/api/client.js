@@ -1,4 +1,5 @@
 import axios from "axios";
+import { reportServerReachable } from "../pwa/connectivity";
 
 export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
@@ -59,6 +60,21 @@ client.interceptors.response.use(
       window.location.href = "/";
       return Promise.reject(refreshError);
     }
+  }
+);
+
+// Connectivity for the "connexion perdue" banner (src/pwa/connectivity.js): any response —
+// even a 4xx/5xx — means the server answered; no response at all (and not a cancel) means it
+// did not. Observes only; the error still reaches the caller unchanged.
+client.interceptors.response.use(
+  (response) => {
+    reportServerReachable(true);
+    return response;
+  },
+  (error) => {
+    if (error.response) reportServerReachable(true);
+    else if (!axios.isCancel(error)) reportServerReachable(false);
+    return Promise.reject(error);
   }
 );
 

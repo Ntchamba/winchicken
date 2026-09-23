@@ -1,0 +1,43 @@
+/* "Connexion perdue" banner (ConnectionBanner.jsx). Amber, not red: nothing is broken, the
+   connection is just gone for now. Sticks under the phone top bar so it stays in view. */
+.connection-banner {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #fdf3d7;
+  border-bottom: 1px solid #d9a326;
+  color: #5c4610;
+}
+
+.connection-banner svg { flex-shrink: 0; }
+
+.connection-banner p {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
+  line-height: 1.4;
+}
+
+.connection-banner button {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid #b9790c;
+  border-radius: 10px;
+  background: #fff;
+  color: #5c4610;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.connection-banner button:disabled { opacity: .7; cursor: wait; }
+
+@media (max-width: 900px) {
+  /* Below the sticky .dashboard-topbar rather than behind it. */
+  .connection-banner { top: 56px; }
+}

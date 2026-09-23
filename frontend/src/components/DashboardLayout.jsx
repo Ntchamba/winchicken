@@ -8,6 +8,7 @@ import NotificationBell from "./NotificationBell";
 import SidebarSearch from "./SidebarSearch";
 import IncidentShortcut from "./IncidentShortcut";
 import MyHoursShortcut from "./MyHoursShortcut";
+import ConnectionBanner from "./ConnectionBanner";
 import packageJson from "../../package.json";
 
 // "Finances" accordion sub-items (2026-08-27, Finances restructure Part A). Each is its own
@@ -403,6 +404,7 @@ export default function DashboardLayout({
             </button>
           </nav>
         </header>
+        <ConnectionBanner />
         <main className="dashboard-content">{children}</main>
       </div>
     </div>
