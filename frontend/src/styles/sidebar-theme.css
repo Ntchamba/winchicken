@@ -144,6 +144,30 @@
   .sidebar-brand-row{padding-right:52px}
 }
 
+/* Phone icon navigation (2026-09-23) — see DashboardLayout.jsx. Phones only (≤600px): a
+   768px tablet keeps the labelled drawer behind the menu button. "Autres" opens that drawer,
+   so the menu button and brand step aside here instead of leaving two ways to open it. */
+.mobile-icon-nav{display:none}
+
+@media(max-width:600px){
+  .dashboard-topbar{padding:4px 8px}
+  .topbar-menu-button,.topbar-brand{display:none}
+  .mobile-icon-nav{display:flex;align-items:center;justify-content:space-between;gap:2px;width:100%}
+  .mobile-icon-link{
+    position:relative;display:grid;place-items:center;flex:1 1 0;min-width:44px;height:48px;
+    border:0;border-radius:11px;background:none;color:rgba(255,255,255,.78);cursor:pointer;transition:.15s;
+  }
+  .mobile-icon-link:hover,.mobile-icon-link:focus-visible{background:rgba(23,184,146,.16);color:#5eead4}
+  .mobile-icon-link.active,.mobile-icon-link[aria-expanded="true"]{background:rgba(23,184,146,.24);color:#5eead4}
+  .mobile-icon-link:focus-visible{outline:2px solid #5eead4;outline-offset:-2px}
+  .mobile-icon-badge{
+    position:absolute;top:4px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;
+    border-radius:99px;font-size:11px;font-weight:700;line-height:16px;text-align:center;color:#fff;
+  }
+  .mobile-icon-badge.danger{background:var(--danger)}
+  .mobile-icon-badge.warning{background:var(--warning,#b9790c)}
+}
+
 @media(max-width:900px) and (prefers-reduced-motion:reduce){
   .sidebar{transition:none}
 }

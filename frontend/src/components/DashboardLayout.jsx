@@ -1,4 +1,4 @@
-import { Calendar, ClipboardCheck, FileClock, Home, Wallet, Package, Users, Wallet2, Plus, Settings, LogOut, Bird, Egg, Menu, X, HelpCircle, Truck, ChevronDown, LayoutGrid } from "lucide-react";
+import { Calendar, ClipboardCheck, FileClock, Home, Wallet, Package, Users, Wallet2, Plus, Settings, LogOut, Bird, Egg, Menu, X, HelpCircle, Truck, ChevronDown, LayoutGrid, Warehouse } from "lucide-react";
 import { useEffect, useState } from "react";
 import "../styles/house-protocol-theme-light.css";
 import "../styles/dashboard-theme.css";
@@ -336,6 +336,72 @@ export default function DashboardLayout({
             <img src="/logo-mark.png" alt="" aria-hidden="true" />
             WINCHICKEN
           </span>
+          {/* Phone-only icon navigation (2026-09-23). Shown by CSS at ≤600px only, where it
+              replaces the menu button and brand above; tablets keep the labelled drawer. The
+              five destinations a worker uses daily get one tap each, and "Autres" opens the
+              existing drawer for everything else — no second copy of those links. Labels are
+              visually hidden but stay in aria-label, so a screen reader still names each icon. */}
+          <nav className="mobile-icon-nav" aria-label="Navigation principale">
+            <button
+              type="button"
+              className={`mobile-icon-link ${isActive("/dashboard/overview") ? "active" : ""}`}
+              aria-label="Bilan"
+              aria-current={isActive("/dashboard/overview") ? "page" : undefined}
+              onClick={() => go("/dashboard/overview")}
+            >
+              <LayoutGrid size={22} strokeWidth={1.8} aria-hidden="true" />
+            </button>
+            {canSeeFinance && (
+              <button
+                type="button"
+                className={`mobile-icon-link ${isActive("/dashboard/finances") ? "active" : ""}`}
+                aria-label={financePendingCount > 0 ? `Finance, ${financePendingCount} en attente` : "Finance"}
+                aria-current={isActive("/dashboard/finances") ? "page" : undefined}
+                onClick={() => go("/dashboard/finances")}
+              >
+                <Wallet size={22} strokeWidth={1.8} aria-hidden="true" />
+                {financePendingCount > 0 && <span className="mobile-icon-badge warning" aria-hidden="true">{financePendingCount}</span>}
+              </button>
+            )}
+            <button
+              type="button"
+              className={`mobile-icon-link ${isActive("/dashboard/stock") ? "active" : ""}`}
+              aria-label={stockLowCount > 0 ? `Stock, ${stockLowCount} en alerte` : "Stock"}
+              aria-current={isActive("/dashboard/stock") ? "page" : undefined}
+              onClick={() => go("/dashboard/stock")}
+            >
+              <Package size={22} strokeWidth={1.8} aria-hidden="true" />
+              {stockLowCount > 0 && <span className="mobile-icon-badge danger" aria-hidden="true">{stockLowCount}</span>}
+            </button>
+            <button
+              type="button"
+              className={`mobile-icon-link ${isActive("/dashboard/houses") ? "active" : ""}`}
+              aria-label="Bâtiment"
+              aria-current={isActive("/dashboard/houses") ? "page" : undefined}
+              onClick={() => go("/dashboard/houses")}
+            >
+              <Warehouse size={22} strokeWidth={1.8} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className={`mobile-icon-link ${isActive("/dashboard/calendar") ? "active" : ""}`}
+              aria-label="Calendrier"
+              aria-current={isActive("/dashboard/calendar") ? "page" : undefined}
+              onClick={() => go("/dashboard/calendar")}
+            >
+              <Calendar size={22} strokeWidth={1.8} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="mobile-icon-link"
+              aria-label="Autres"
+              aria-expanded={mobileOpen}
+              aria-controls="dashboard-sidebar"
+              onClick={() => setMobileOpen((v) => !v)}
+            >
+              <Menu size={22} strokeWidth={1.8} aria-hidden="true" />
+            </button>
+          </nav>
         </header>
         <main className="dashboard-content">{children}</main>
       </div>

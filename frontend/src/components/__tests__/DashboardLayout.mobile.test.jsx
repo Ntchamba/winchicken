@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import DashboardLayout from "../DashboardLayout";
@@ -114,7 +114,8 @@ describe("DashboardLayout mobile drawer", () => {
 
     // The six the audit named as unreachable on a phone.
     expect(screen.getByRole("button", { name: /finances/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /stock/i })).toBeInTheDocument();
+    // Scoped to the drawer: the phone icon bar has its own "Stock" button (2026-09-23).
+    expect(within(sidebar()).getByRole("button", { name: /stock/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /employés/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /paramètres/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /mes heures/i })).toBeInTheDocument();
@@ -136,5 +137,58 @@ describe("DashboardLayout mobile drawer", () => {
     );
 
     expect(sidebar().className).not.toMatch(/\bopen\b/);
+  });
+});
+
+// 2026-09-23: on a phone (≤600px, CSS-only; verified live at 375px) the top bar carries an
+// icon-only nav. jsdom has no media queries, so this covers names and behaviour only.
+describe("DashboardLayout phone icon navigation", () => {
+  const iconNav = () => within(screen.getByRole("navigation", { name: "Navigation principale" }));
+
+  test("every icon has a French accessible name", () => {
+    renderLayout();
+    const names = iconNav().getAllByRole("button").map((b) => b.getAttribute("aria-label"));
+    expect(names).toEqual(["Bilan", "Finance", "Stock", "Bâtiment", "Calendrier", "Autres"]);
+  });
+
+  test.each([
+    ["Bilan", "/dashboard/overview"],
+    ["Finance", "/dashboard/finances"],
+    ["Stock", "/dashboard/stock"],
+    ["Bâtiment", "/dashboard/houses"],
+    ["Calendrier", "/dashboard/calendar"],
+  ])("%s navigates to %s", async (name, path) => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+    renderLayout({ onNavigate });
+    await user.click(iconNav().getByRole("button", { name: new RegExp(`^${name}`) }));
+    expect(onNavigate).toHaveBeenCalledWith(path);
+  });
+
+  test("Autres opens the existing drawer with the remaining items", async () => {
+    const user = userEvent.setup();
+    renderLayout();
+    const autres = iconNav().getByRole("button", { name: "Autres" });
+    expect(autres).toHaveAttribute("aria-expanded", "false");
+    await user.click(autres);
+    expect(sidebar().className).toMatch(/\bopen\b/);
+    expect(autres).toHaveAttribute("aria-expanded", "true");
+    expect(within(sidebar()).getByRole("button", { name: /employés/i })).toBeInTheDocument();
+  });
+
+  test("the active icon is marked as the current page", () => {
+    renderLayout({ activePath: "/dashboard/stock" });
+    expect(iconNav().getByRole("button", { name: "Stock" })).toHaveAttribute("aria-current", "page");
+    expect(iconNav().getByRole("button", { name: "Bilan" })).not.toHaveAttribute("aria-current");
+  });
+
+  test("badge counts are announced in the name", () => {
+    renderLayout({ stockLowCount: 3 });
+    expect(iconNav().getByRole("button", { name: "Stock, 3 en alerte" })).toBeInTheDocument();
+  });
+
+  test("Finance is hidden when the role cannot see it", () => {
+    renderLayout({ canSeeFinance: false });
+    expect(iconNav().queryByRole("button", { name: /^finance/i })).toBeNull();
   });
 });

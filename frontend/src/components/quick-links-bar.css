@@ -45,3 +45,11 @@
   color: #0b5137;
   cursor: default;
 }
+
+/* Phones: the top bar's icon nav already carries these five, so the row keeps only what it
+   doesn't (Tâches du jour, Alertes). Same 600px breakpoint as .mobile-icon-nav. */
+@media (max-width: 600px) {
+  .quick-link--in-icon-nav {
+    display: none;
+  }
+}
