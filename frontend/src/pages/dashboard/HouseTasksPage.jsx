@@ -21,7 +21,9 @@ export default function HouseTasksPage() {
   const { house, batch } = useOutletContext();
   useDocumentTitle(`Tâches — ${house?.name || houseCode}`);
 
-  const [tasksNow, setTasksNow] = useState({ dayOfCycle: null, tasks: [] });
+  // `null` until the first response: rendering the empty list meanwhile read as "À faire (0)"
+  // and "Aucune tâche prévue pour aujourd'hui" on a slow phone connection.
+  const [tasksNow, setTasksNow] = useState(null);
   const [assignmentsKey, setAssignmentsKey] = useState(0);
 
   const loadTasksNow = useCallback(() => {
@@ -39,8 +41,8 @@ export default function HouseTasksPage() {
     loadTasksNow();
   }, [loadTasksNow]);
 
-  const pending = tasksNow.tasks.filter((task) => !task.done);
-  const done = tasksNow.tasks.filter((task) => task.done);
+  const pending = tasksNow ? tasksNow.tasks.filter((task) => !task.done) : [];
+  const done = tasksNow ? tasksNow.tasks.filter((task) => task.done) : [];
 
   return (
     <>
@@ -51,8 +53,10 @@ export default function HouseTasksPage() {
           <div className="section-row"><h2>Saisie du jour</h2></div>
           <QuickEntryPanel batches={[{ batch_code: batch.batch_code, name: batch.name }]} />
 
-          <div className="section-row"><h2>À faire ({pending.length})</h2></div>
-          {pending.length === 0 && done.length > 0 ? (
+          <div className="section-row"><h2>À faire{tasksNow ? ` (${pending.length})` : ""}</h2></div>
+          {!tasksNow ? (
+            <p className="empty-state" style={{ marginBottom: 18 }}>Chargement des tâches…</p>
+          ) : pending.length === 0 && done.length > 0 ? (
             <p className="empty-state" style={{ marginBottom: 18 }}>Toutes les tâches du jour sont faites.</p>
           ) : (
             <TasksNowPanel tasksNow={{ ...tasksNow, tasks: pending }} houseCode={houseCode} onAssigned={handleAssigned} />
