@@ -10,9 +10,10 @@ from django.utils import timezone
 
 from apps.alerts.models import (
     Alert, AlertRule, AlertRuleType, NotificationChannel, NotificationPreference,
-    ScheduleFrequency, TriggerMode,
+    ScheduleFrequency, SmsMessage, TriggerMode,
 )
 from apps.alerts.tasks import send_sms_task
+from apps.core.formatting import fr_number
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +48,11 @@ def trigger_alert(farm, rule_type, message, severity='warning', batch=None, salt
         if not pref.user.phone:
             continue
         idempotency_key = _idempotency_key(rule_type, batch.batch_code if batch else 'farm', pref.user.phone, salt)
-        sms, created = alert.sms_messages.get_or_create(
+        # Looked up across all alerts, not this new one's: the key is unique table-wide, so a
+        # repeat of the same occurrence used to try a second insert and fail the whole save.
+        sms, created = SmsMessage.objects.get_or_create(
             idempotency_key=idempotency_key,
-            defaults={'recipient': pref.user.phone},
+            defaults={'alert': alert, 'recipient': pref.user.phone},
         )
         if created:
             transaction.on_commit(lambda sms_id=sms.id: send_sms_task.delay(sms_id))
@@ -60,14 +63,15 @@ def trigger_alert(farm, rule_type, message, severity='warning', batch=None, salt
 def check_low_stock(item):
     from apps.stock.calculations import current_quantity
 
-    if current_quantity(item) >= item.alert_threshold:
+    quantity = current_quantity(item)  # once: it is two aggregate queries per read
+    if quantity >= item.alert_threshold:
         return
     trigger_alert(
         farm=item.farm,
         rule_type=AlertRuleType.LOW_STOCK,
-        message=f'{item.name} sous le seuil ({current_quantity(item)}{item.unit} < {item.alert_threshold}{item.unit})',
+        message=f'{item.name} sous le seuil ({fr_number(quantity)} {item.unit} < {fr_number(item.alert_threshold)} {item.unit})',
         severity='danger',
-        salt=str(current_quantity(item)),
+        salt=str(quantity),
     )
 
 
@@ -81,7 +85,7 @@ def check_consumption_deviation(daily_log):
     trigger_alert(
         farm=batch.house.farm,
         rule_type=AlertRuleType.CONSUMPTION_DEVIATION,
-        message=f'Ratio eau/aliment {ratio:.2f} hors norme 1,6-2,2 — {batch.batch_code}',
+        message=f'Ratio eau/aliment {fr_number(ratio)} hors norme 1,6-2,2 — {batch.batch_code}',
         severity='warning',
         batch=batch,
         salt=str(daily_log.log_date),
@@ -210,8 +214,8 @@ def _queue_reminder_sms(alert, recipient, message):
         recipient.phone,
         salt=f'{alert.rule_id}:{alert.triggered_at.date()}',
     )
-    sms, created = alert.sms_messages.get_or_create(
-        idempotency_key=key, defaults={'recipient': recipient.phone},
+    sms, created = SmsMessage.objects.get_or_create(
+        idempotency_key=key, defaults={'alert': alert, 'recipient': recipient.phone},
     )
     if created:
         transaction.on_commit(lambda sms_id=sms.id: send_sms_task.delay(sms_id))
