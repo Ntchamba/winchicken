@@ -33,6 +33,7 @@ export default function useHouses() {
           return {
             houseCode: h.house_code,
             name: h.name,
+            maxCapacity: h.max_capacity,
             type: TYPE_LABELS[batch?.production_type] || "Broiler",
             activeBatchName: batch?.name || "",
             activeBatchCode: batch?.batch_code || null,

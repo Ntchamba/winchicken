@@ -5,19 +5,7 @@ import ProtocolEditModal from "../../components/ProtocolEditModal";
 import { alertsApi, batchesApi } from "../../api/endpoints";
 import { useAuth } from "../../context/AuthContext";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
-
-function dayInCycle(batch) {
-  const start = new Date(batch.start_date);
-  const days = Math.floor((Date.now() - start.getTime()) / 86400000) + 1;
-  return Math.max(1, days);
-}
-
-function cycleLength(batch) {
-  if (!batch.planned_end_date) return null;
-  const start = new Date(batch.start_date);
-  const end = new Date(batch.planned_end_date);
-  return Math.round((end.getTime() - start.getTime()) / 86400000);
-}
+import { enrichHouses } from "../../utils/dashboardHouses";
 
 export default function DashboardHomePage() {
   useDocumentTitle("Tableau de bord");
@@ -34,21 +22,7 @@ export default function DashboardHomePage() {
     batchesApi.list().then(({ data }) => {
       const batches = data.results || data;
       const active = batches.filter((b) => b.status === "ACTIVE");
-      const byHouse = Object.fromEntries(active.map((b) => [b.house_code, b]));
-      setEnrichedHouses(
-        houses.map((house) => {
-          const batch = byHouse[house.houseCode];
-          if (!batch) return { ...house, status: "void", day: null, cycle: null, count: 0, capacity: 0 };
-          return {
-            ...house,
-            status: "active",
-            day: dayInCycle(batch),
-            cycle: cycleLength(batch),
-            count: batch.current_count,
-            capacity: batch.current_count,
-          };
-        })
-      );
+      setEnrichedHouses(enrichHouses(houses, batches));
       setActiveBatches(
         active.map((b) => ({
           batchCode: b.batch_code,
