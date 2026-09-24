@@ -85,6 +85,12 @@ class FarmStockItemsView(APIView):
         name = (request.data.get('name') or '').strip()
         if not name:
             return Response({'detail': "Le nom de l'article est requis."}, status=status.HTTP_400_BAD_REQUEST)
+        # One article per name: "Créer « Provende »" for a name the farm already has links the
+        # row to that article instead of creating a twin (the form offered it after a reload,
+        # and the Excel import matches articles by name).
+        existing_item = StockItem.objects.filter(farm=farm, name__iexact=name).first()
+        if existing_item is not None:
+            return Response(StockItemSerializer(existing_item).data, status=status.HTTP_200_OK)
 
         category = None
         cat_id = request.data.get('category')
@@ -118,6 +124,16 @@ class FarmStockItemsView(APIView):
 
         categories = {c.id: c for c in StockCategory.objects.filter(farm=farm)}
         supplier_ids = set(Supplier.objects.filter(farm=farm).values_list('id', flat=True))
+
+        seen_names = set()
+        for entry in items_data:
+            key = (entry.get('name') or '').strip().lower()
+            if key in seen_names:
+                return Response(
+                    {'detail': f"L'article « {entry['name'].strip()} » figure deux fois : chaque article doit avoir un nom unique."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            seen_names.add(key)
 
         with transaction.atomic():
             existing = {i.item_code: i for i in StockItem.objects.filter(farm=farm)}

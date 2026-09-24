@@ -182,9 +182,11 @@ export default function HouseProtocolForm({
   // defaulted from that row's own Catégorie). `category_hint` → StockCategory.kind server-side.
   const createStockItem = async (name, categoryLabel, unit) => {
     const hint = categoryLabel || categories.find((c) => c.id === activeCategoryId)?.label;
-    const { data } = await stockApi.addItem(farmId, { name, unit: unit || "kg", category_hint: hint });
-    setStockItemList((prev) => [...prev, data]);
-    setCreatedInlineCodes((prev) => new Set(prev).add(data.item_code));
+    const { data, status } = await stockApi.addItem(farmId, { name, unit: unit || "kg", category_hint: hint });
+    setStockItemList((prev) => (prev.some((s) => s.item_code === data.item_code) ? prev : [...prev, data]));
+    // 200 = the farm already had an article of that name and the server returned it: it is not
+    // this form's to re-unit (the inline unit selector would rewrite an article already in use).
+    if (status === 201) setCreatedInlineCodes((prev) => new Set(prev).add(data.item_code));
     return data;
   };
 

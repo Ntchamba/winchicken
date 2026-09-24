@@ -5,6 +5,8 @@ import { housesApi } from "../../api/endpoints";
 import { buildProtocolSchedules } from "../../utils/protocolRows";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import { fetchAllPages } from "../../api/pagination";
+import { useAuth } from "../../context/AuthContext";
+import useStockItemOptions from "../../hooks/useStockItemOptions";
 
 // Kept as a plain full-page route (2026-08-25) even after the "Modifier" buttons on the
 // global/per-house dashboard views moved to `ProtocolEditModal` — this stays useful as a
@@ -19,6 +21,10 @@ export default function HouseProtocolPage() {
   const [categories, setCategories] = useState(null);
   const [schedules, setSchedules] = useState(null);
   const [saving, setSaving] = useState(false);
+  const { user } = useAuth();
+  // Without these the Consommation selector knew no article (and offered to create duplicates)
+  // and "Créer « … »" posted to /farms/undefined/.
+  const stockItems = useStockItemOptions(user?.farm);
 
   useEffect(() => {
     Promise.all([
@@ -53,6 +59,8 @@ export default function HouseProtocolPage() {
       initialSchedules={schedules}
       mode="management"
       houseCode={houseCode}
+      farmId={user?.farm}
+      stockItems={stockItems}
       saving={saving}
       onSave={handleSave}
     />

@@ -8,6 +8,7 @@ import { onboardingApi } from "../../api/endpoints";
 import { useAuth } from "../../context/AuthContext";
 import { useOnboarding } from "../../context/OnboardingContext";
 import { todayISO } from "../../utils/localDate";
+import useStockItemOptions from "../../hooks/useStockItemOptions";
 
 function buildOnboardingRequest(payload, productionType) {
   return {
@@ -63,6 +64,9 @@ export default function OnboardingProtocolPage() {
   const [pendingHeader, setPendingHeader] = useState(houseHeader || {});
   const navigate = useNavigate();
   const { user, refreshMe } = useAuth();
+  // The farm's existing articles, so the Consommation selector finds "Provende" after a reload
+  // instead of offering to create it a second time.
+  const stockItems = useStockItemOptions(user?.farm);
   // Farm already configured (stock/employees already exist) -> this is the
   // "+ Nouvelle bande" flow, not first-time onboarding. Skip straight to the
   // dashboard instead of forcing the stock/employees steps again, which
@@ -202,6 +206,7 @@ export default function OnboardingProtocolPage() {
         mode="onboarding"
         saving={saving}
         farmId={user.farm}
+        stockItems={stockItems}
         onSave={handleSave}
         onAddAnother={isAddingHouse ? undefined : handleAddAnother}
         submitLabel={isAddingHouse ? "Créer la bande" : undefined}

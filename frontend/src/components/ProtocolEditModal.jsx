@@ -8,6 +8,7 @@ import { useHousesContext } from "../context/HousesContext";
 import { buildProtocolSchedules } from "../utils/protocolRows";
 import "../styles/protocol-edit-modal.css";
 import { fetchAllPages } from "../api/pagination";
+import { toStockItemOption } from "../hooks/useStockItemOptions";
 
 const EASE_EXPO = [0.16, 1, 0.3, 1];
 const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
@@ -93,7 +94,7 @@ export default function ProtocolEditModal({ houseCode, onClose, onSaved }) {
       const batches = batchesRes.data.results || batchesRes.data;
       const batch = batches.find((b) => b.status === "ACTIVE") || null;
       setCategories(cats);
-      setStockItems((stockRes.data.items || []).map((i) => ({ item_code: i.item_code, name: i.name, unit: i.unit })));
+      setStockItems((stockRes.data.items || []).map(toStockItemOption));
       setSchedules(buildProtocolSchedules(cats, protocolRes.data));
       setActiveBatch(batch);
       setInitialHeader({
