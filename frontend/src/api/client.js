@@ -5,9 +5,15 @@ export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/ap
 
 const client = axios.create({ baseURL: API_URL });
 
+// A corrupted entry (or storage the browser refuses) reads as "logged out": throwing here would
+// throw from the request interceptor and fail every API call, the login included.
 export function getTokens() {
-  const raw = localStorage.getItem("winchicken_tokens");
-  return raw ? JSON.parse(raw) : null;
+  try {
+    const raw = localStorage.getItem("winchicken_tokens");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function setTokens(tokens) {
@@ -37,7 +43,11 @@ client.interceptors.response.use(
     }
     original._retried = true;
     try {
-      refreshPromise = refreshPromise || client.post("/auth/refresh/", { refresh: tokens.refresh });
+      // `_retried` on the refresh call itself: an expired refresh token makes it 401 too, and
+      // without the flag that 401 re-entered this interceptor, awaited `refreshPromise` — i.e.
+      // itself — and never settled, leaving the app on its loading screen for good.
+      refreshPromise =
+        refreshPromise || client.post("/auth/refresh/", { refresh: tokens.refresh }, { _retried: true });
       const { data } = await refreshPromise;
       refreshPromise = null;
       setTokens({ ...tokens, access: data.access });
