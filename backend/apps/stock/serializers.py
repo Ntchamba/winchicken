@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.core.fields import FiniteFloatField
 from apps.stock.calculations import current_quantity
 from apps.stock.models import (
     STOCK_CATEGORY_ICON_CHOICES, StockCategory, StockComposition, StockCompositionIngredient,
@@ -120,7 +121,7 @@ class StockMovementSerializer(serializers.ModelSerializer):
         max_digits=14, decimal_places=2, min_value=0, required=False, allow_null=True, write_only=True,
         help_text='"Prix total payé" for a manual IN — creates a matching Expense.',
     )
-    production_quantity = serializers.FloatField(
+    production_quantity = FiniteFloatField(
         min_value=0, required=False, allow_null=True, write_only=True,
         help_text='When this IN adds a composition\'s output item and the "décompter les '
                   'ingrédients" option is on: the output amount to treat as produced, so the '

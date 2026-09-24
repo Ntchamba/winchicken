@@ -1,4 +1,5 @@
 import datetime
+import math
 
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
@@ -59,7 +60,7 @@ def _parse_count(raw, message):
         value = float(raw)
     except (TypeError, ValueError):
         raise _Invalid(message)
-    if value < 0 or value != int(value):
+    if not math.isfinite(value) or value < 0 or value != int(value):
         raise _Invalid(message)
     return int(value)
 
@@ -71,7 +72,7 @@ def _parse_weight(raw):
         value = float(raw)
     except (TypeError, ValueError):
         raise _Invalid("Le poids moyen doit être un nombre de kilos supérieur à 0.")
-    if isinstance(raw, bool) or not value > 0:
+    if isinstance(raw, bool) or not math.isfinite(value) or not value > 0:
         raise _Invalid("Le poids moyen doit être un nombre de kilos supérieur à 0.")
     return value
 

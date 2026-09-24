@@ -64,15 +64,10 @@ def _clean(value):
 
 
 def _as_number(value):
-    """`value` -> float or None. Accepts "12", "12.5", "12,5" (French decimal), 12, 12.0."""
-    if value is None or value == '':
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        return float(str(value).strip().replace(',', '.'))
-    except (TypeError, ValueError):
-        return None
+    """`value` -> float or None — apps.core.xlsx.as_number, the one cell-number parser (this was a
+    second copy that also let "nan"/"inf" through)."""
+    from apps.core.xlsx import as_number
+    return as_number(value)
 
 
 def _norm_time(hhmm):

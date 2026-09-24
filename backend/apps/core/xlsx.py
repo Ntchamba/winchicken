@@ -5,6 +5,7 @@ matching by name, and the download response. The domain rules (category/supplier
 matching, validation) stay in each feature's own module and reuse the existing serializers.
 See docs/excel-import.md.
 """
+import math
 from io import BytesIO
 
 from django.http import HttpResponse
@@ -24,15 +25,17 @@ def clean(value):
 
 
 def as_number(value):
-    """-> float or None. Accepts 12, 12.0, "12", "12.5", "12,5" (French decimal)."""
+    """-> float or None. Accepts 12, 12.0, "12", "12.5", "12,5" (French decimal). A cell reading
+    "nan", "inf" or an overflowing "1e400" is not a number (float() would say it is)."""
     if value is None or value == '':
         return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        return float(str(value).strip().replace(',', '.'))
-    except (TypeError, ValueError):
+    if isinstance(value, bool):
         return None
+    try:
+        number = float(value) if isinstance(value, (int, float)) else float(str(value).strip().replace(',', '.'))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def as_bool(value):

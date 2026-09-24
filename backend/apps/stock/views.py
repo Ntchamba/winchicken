@@ -1,3 +1,5 @@
+import math
+
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, inline_serializer
@@ -423,6 +425,8 @@ class StockItemCoverageView(APIView):
             quantity_per_day = float(request.query_params.get('quantity_per_day', 0) or 0)
             dose_per_bird = float(raw_dose) if raw_dose not in (None, '') else None
             days = int(request.query_params.get('days', 0) or 0)
+            if not all(math.isfinite(v) for v in (quantity_per_day, dose_per_bird or 0)):
+                raise ValueError('non-finite')
         except (TypeError, ValueError):
             return Response(
                 {'detail': 'quantity_per_day, dose_per_bird et days doivent être numériques.'},
