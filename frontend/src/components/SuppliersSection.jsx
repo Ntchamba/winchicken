@@ -42,8 +42,9 @@ export default function SuppliersSection({ suppliers = [], farmId, onChanged }) 
       else await stockApi.addSupplier(farmId, draft);
       cancel();
       onChanged?.();
-    } catch {
-      setError("Impossible d'enregistrer le fournisseur.");
+    } catch (err) {
+      // The server's reason ("Saisissez une adresse e-mail valide.") — not a generic failure.
+      setError(getServerErrorMessage(err, "Impossible d'enregistrer le fournisseur."));
     } finally {
       setBusy(false);
     }
