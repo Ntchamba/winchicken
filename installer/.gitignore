@@ -1,3 +1,4 @@
 # Build output
 dist/
 launcher/target/
+launcher/target-win/
