@@ -3,9 +3,12 @@ import { Check, Loader2 } from "lucide-react";
 import { batchesApi } from "../api/endpoints";
 import "../styles/protocol-edit-modal.css";
 import { useDateDefaultingToToday } from "../hooks/useTodayISO";
+import { formatDateFR } from "../utils/localDate";
 
+// French decimals ("1,106 kg", not "1.106 kg"). Same rule as utils/chartFormat formatNumber;
+// switch to it once that module is committed.
 function formatWeight(kg) {
-  return `${kg} kg`;
+  return `${Number(kg).toLocaleString("fr-FR", { maximumFractionDigits: 3 })} kg`;
 }
 
 /**
@@ -153,7 +156,7 @@ export default function WeighingSection({ batches = [], onLogged }) {
               <p className="weighing-recent-house">{houseName}</p>
               <ul className="weighing-recent-list">
                 {entries.map((log) => (
-                  <li key={log.id}>{log.log_date} — {formatWeight(log.avg_sample_weight)} <span>({log.batchName})</span></li>
+                  <li key={log.id}>{formatDateFR(log.log_date)} — {formatWeight(log.avg_sample_weight)} <span>({log.batchName})</span></li>
                 ))}
               </ul>
             </div>
@@ -167,7 +170,7 @@ export default function WeighingSection({ batches = [], onLogged }) {
           return (
             <ul className="weighing-recent-list" style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
               {entries.map((log) => (
-                <li key={log.id}>{log.log_date} — {formatWeight(log.avg_sample_weight)}</li>
+                <li key={log.id}>{formatDateFR(log.log_date)} — {formatWeight(log.avg_sample_weight)}</li>
               ))}
             </ul>
           );
