@@ -22,6 +22,15 @@ def finalize_new_batch(batch):
     sync_weighing_reminder(batch)
 
 
+def day_of_cycle(batch, on=None):
+    """The day of `batch`'s cycle on `on` (default: today, farm-local) — 0 on the start date,
+    negative before it. The one definition: the house's task list, its timeline, the scheduled
+    reminders and the batch API (so the dashboard) all use it. The dashboard used to recompute
+    it in the browser, 1-based and from UTC, and read a day ahead of the house page.
+    """
+    return ((on or timezone.localdate()) - batch.start_date).days
+
+
 def validate_log_date(batch, log_date):
     """The French reason `log_date` cannot be logged for `batch`, or None. Shared by the quick
     entry and the plain daily-log endpoint so the two never accept different days.

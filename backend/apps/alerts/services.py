@@ -128,7 +128,9 @@ def _rule_should_fire_today(rule, today_local):
         if allowed and _weekday_token(today_local) not in allowed:
             return False
 
-    day_of_cycle = (today_local - batch.start_date).days
+    from apps.batches.services import day_of_cycle as cycle_day
+
+    day_of_cycle = cycle_day(batch, today_local)
     if day_of_cycle < 0:
         return False
 

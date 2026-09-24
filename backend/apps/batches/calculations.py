@@ -100,14 +100,15 @@ def growth_curve(batch):
     `PoultryBatch.current_count`'s own computed property, but walked day-by-day here so earlier
     points in the series are correct too, not just the final total).
     """
+    from apps.batches.services import day_of_cycle
+
     logs = sorted(batch.daily_logs.all(), key=lambda log: log.log_date)
     running_count = batch.initial_count
     points = []
     for log in logs:
         running_count = max(0, running_count - log.mortality)
-        day_of_cycle = (log.log_date - batch.start_date).days
         points.append({
-            'dayOfCycle': day_of_cycle,
+            'dayOfCycle': day_of_cycle(batch, log.log_date),
             'weightKg': log.avg_sample_weight,
             'survivalPct': round(running_count / batch.initial_count * 100, 2) if batch.initial_count else None,
         })

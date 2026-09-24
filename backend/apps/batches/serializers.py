@@ -27,13 +27,20 @@ class PoultryBatchSerializer(serializers.ModelSerializer):
     model's docstring for why it's computed rather than stored."""
 
     house_code = serializers.CharField(source='house_id', help_text='PoultryHouse.house_code this batch is hosted in.')
+    day_of_cycle = serializers.SerializerMethodField(
+        help_text="Day of the cycle today, farm-local: 0 on the start date (apps.batches.services.day_of_cycle).",
+    )
+
+    def get_day_of_cycle(self, batch) -> int:
+        from apps.batches.services import day_of_cycle
+        return day_of_cycle(batch)
 
     class Meta:
         model = PoultryBatch
         fields = [
             'batch_code', 'name', 'house_code', 'farmer', 'production_type', 'breed', 'initial_count',
             'current_count', 'start_date', 'planned_end_date', 'actual_end_date', 'status',
-            'weighing_frequency', 'created_at',
+            'weighing_frequency', 'created_at', 'day_of_cycle',
         ]
         read_only_fields = ['batch_code', 'current_count', 'actual_end_date', 'status', 'created_at']
         extra_kwargs = {

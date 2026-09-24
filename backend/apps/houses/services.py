@@ -62,8 +62,10 @@ def compute_tasks_now(house):
     if not batch:
         return None, []
 
+    from apps.batches.services import day_of_cycle as cycle_day
+
     today = timezone.localdate()
-    day_of_cycle = (today - batch.start_date).days
+    day_of_cycle = cycle_day(batch, today)
 
     # Today's completions for this batch, fetched once rather than per line — the panel and
     # "Mes tâches" both render every task, so a per-task query would be N+1 on every poll.
@@ -182,6 +184,7 @@ def compute_month_schedule(farm, start, end):
     from datetime import timedelta
 
     from apps.batches.models import BatchStatus, PoultryBatch
+    from apps.batches.services import day_of_cycle as cycle_day
     from apps.protocols.models import ProtocolTemplate
 
     entries = []
@@ -196,7 +199,7 @@ def compute_month_schedule(farm, start, end):
             continue
         day = start
         while day <= end:
-            day_of_cycle = (day - batch.start_date).days
+            day_of_cycle = cycle_day(batch, day)
             for line in lines:
                 if _protocol_line_occurrence(line, day_of_cycle) is None:
                     continue
@@ -258,7 +261,9 @@ def compute_cycle_milestones(house):
     if not batch:
         return None, None, []
 
-    day_of_cycle = (timezone.localdate() - batch.start_date).days
+    from apps.batches.services import day_of_cycle as cycle_day
+
+    day_of_cycle = cycle_day(batch)
     milestones = []
     for line in ProtocolTemplate.objects.filter(house=house).select_related('category'):
         from_day = to_days(line.from_value, line.from_unit)
