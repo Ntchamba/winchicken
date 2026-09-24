@@ -18,7 +18,10 @@ def _protocol_line_occurrence(line, day_of_cycle):
         if day_of_cycle < from_day:
             return None
         return day_of_cycle - from_day + 1, None
-    to_day = to_days(line.to_value or line.from_value, line.to_unit)
+    # No end = a single day at the start, in the start's unit. (It used to take from_value in
+    # to_unit — which defaults to DAY — so "semaine 2" with no end ran from day 14 to day 2 and
+    # was due on no day at all.)
+    to_day = to_days(line.to_value, line.to_unit) if line.to_value is not None else from_day
     if not (from_day <= day_of_cycle <= to_day):
         return None
     return day_of_cycle - from_day + 1, to_day - from_day + 1

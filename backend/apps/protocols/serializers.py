@@ -107,4 +107,21 @@ class ProtocolTemplateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "Renseignez l'article de stock consommé avant d'indiquer une quantité ou une dose."
             )
+
+        # Units can differ on each side ("De 2 semaines — À 3 jours"): compare in days, or the line
+        # is stored with an empty range and never comes due, with nothing telling the user why.
+        from apps.protocols.services import to_days
+
+        def current(name, default=None):
+            return attrs.get(name, getattr(self.instance, name, default))
+
+        to_value = current('to_value')
+        if not current('until_end', False) and to_value is not None and current('from_value') is not None:
+            start = to_days(current('from_value'), current('from_unit', 'DAY'))
+            end = to_days(to_value, current('to_unit', 'DAY'))
+            if end < start:
+                raise serializers.ValidationError(
+                    f"La fin de la période (jour {end}) est avant le début (jour {start}) : "
+                    "vérifiez les valeurs et les unités « De » et « À »."
+                )
         return attrs
