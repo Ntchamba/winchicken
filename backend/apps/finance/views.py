@@ -142,7 +142,7 @@ class FinanceTransactionsView(generics.ListAPIView):
             # category the way the Achats breakdown does.
             for o in PurchaseOrder.objects.filter(farm=farm, status=OrderStatus.RECEIVED).select_related('item__category'):
                 rows.append({
-                    'id': f'PO-{o.order_code}', 'date': o.order_date,
+                    'id': o.order_code, 'date': o.order_date,  # already "PO-{farm}-{n}"
                     'category': _ITEM_CATEGORY_TO_EXPENSE_CATEGORY.get(o.item.category.kind, ExpenseCategory.MISC),
                     'counterparty': o.supplier, 'amount': -float(o.amount), 'status': 'OUT',
                 })
