@@ -8,7 +8,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import "../../styles/dashboard-theme.css";
 import { formatMoney } from "../../utils/money";
 import QuickLinksBar from "../../components/QuickLinksBar";
-import { todayISO } from "../../utils/localDate";
+import { formatDateFR, todayISO } from "../../utils/localDate";
 
 const STATUS_LABELS = { PENDING: "En attente", RECEIVED: "Reçue", CANCELLED: "Annulée" };
 const STATUS_PILL_CLASS = { PENDING: "pending", RECEIVED: "received", CANCELLED: "cancelled" };
@@ -209,7 +209,7 @@ export default function PurchaseOrdersPage() {
                       at the model level — pre-existing, unchanged per this task's own "no schema
                       change" rule) — shown for clarity, genuinely not editable; see
                       docs/deviations.md for why this can't honor the task's "editable" wording. */}
-                  <input value={todayISO()} disabled />
+                  <input value={formatDateFR(todayISO())} disabled />
                 </label>
               </div>
               {formError && <p className="field-error" style={{ marginTop: 8 }}>{formError}</p>}
@@ -281,7 +281,7 @@ export default function PurchaseOrdersPage() {
                   <td data-label="Fournisseur">{order.supplier || "—"}</td>
                   <td data-label="Quantité">{order.quantity}</td>
                   <td data-label="Montant">{formatMoney(order.amount)}</td>
-                  <td data-label="Date">{order.order_date}</td>
+                  <td data-label="Date">{formatDateFR(order.order_date)}</td>
                   <td data-label="Statut"><span className={`status-pill ${STATUS_PILL_CLASS[order.status]}`}>{STATUS_LABELS[order.status] || order.status}</span></td>
                   <td>
                     {canManage && order.status === "PENDING" && (

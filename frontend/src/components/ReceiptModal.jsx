@@ -4,6 +4,7 @@ import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import "../styles/protocol-edit-modal.css";
 import "../styles/receipt.css";
+import { formatDateFR } from "../utils/localDate";
 
 const PRODUCT_LABELS = { BIRD: "Volaille", EGG: "Œufs", CULL: "Réforme", MANURE: "Fumier" };
 
@@ -69,7 +70,7 @@ export default function ReceiptModal({ sale, onClose }) {
               <p style={{ textAlign: "center", margin: "0 0 20px", color: "var(--muted)", fontSize: 13 }}>{user.farm_name}</p>
 
               <div className="receipt-row"><span>Reçu N°</span><strong>{sale.id}</strong></div>
-              <div className="receipt-row"><span>Date</span><strong>{sale.sale_date}</strong></div>
+              <div className="receipt-row"><span>Date</span><strong>{formatDateFR(sale.sale_date)}</strong></div>
               <div className="receipt-row"><span>Produit</span><strong>{PRODUCT_LABELS[sale.product_type] || sale.product_type}</strong></div>
               <div className="receipt-row"><span>Quantité</span><strong>{sale.quantity}</strong></div>
               <div className="receipt-row"><span>Prix unitaire</span><strong>{sale.unit_price}</strong></div>

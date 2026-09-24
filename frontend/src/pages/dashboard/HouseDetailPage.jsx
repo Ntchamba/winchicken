@@ -11,6 +11,7 @@ import useDocumentTitle from "../../hooks/useDocumentTitle";
 import { HOUSE_SECTIONS, houseBasePath } from "./houseSections";
 import "../../styles/house-protocol-theme-light.css";
 import "../../styles/dashboard-theme.css";
+import { formatDateFR } from "../../utils/localDate";
 
 // Farm-locale decimals ("1,16"). The shared chart kit's formatNumber takes over once it lands.
 const formatNumber = (value, digits) => Number(value).toLocaleString("fr-FR", { maximumFractionDigits: digits });
@@ -144,7 +145,7 @@ export default function HouseDetailPage() {
                 ) : (
                   <>Bande {batch.batch_code}</>
                 )}
-                {" "}· {batch.current_count} volailles · démarrée le {batch.start_date}
+                {" "}· {batch.current_count} volailles · démarrée le {formatDateFR(batch.start_date)}
               </p>
             )}
           </div>

@@ -3,6 +3,7 @@ import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContaine
 import { Minus, TrendingDown, TrendingUp } from "lucide-react";
 import { financeApi } from "../../api/endpoints";
 import { formatMoney } from "../../utils/money";
+import { formatDateFR } from "../../utils/localDate";
 
 const CATEGORY_COLORS = {
   FEED: "#0b8f68", LABOR: "#17b892", VETERINARY: "#5f7377", DEPRECIATION: "#b9790c", MISC: "#d6433f",
@@ -194,7 +195,7 @@ export default function GlobaleSection({ refreshKey }) {
             {transactions.results.map((row) => (
               <tr key={row.id}>
                 <td data-label="ID">{row.id}</td>
-                <td data-label="Date">{row.date}</td>
+                <td data-label="Date">{formatDateFR(row.date)}</td>
                 <td data-label="Catégorie">{CATEGORY_LABELS[row.category] || row.category}</td>
                 <td data-label="Contrepartie">{row.counterparty || "—"}</td>
                 <td className={`amount ${row.amount >= 0 ? "in" : "out"}`} data-label="Montant">{row.amount.toLocaleString()}</td>
