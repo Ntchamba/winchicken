@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Receipt, Wallet2 } from "lucide-react";
 import { financeApi } from "../../api/endpoints";
+import { fetchAllPages } from "../../api/pagination";
 import ReceiptModal from "../../components/ReceiptModal";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import { formatMoney } from "../../utils/money";
@@ -60,19 +61,24 @@ export default function CashierPage() {
   const [expenseError, setExpenseError] = useState("");
   const [expenseSaved, setExpenseSaved] = useState("");
 
+  const today = useTodayISO();
+
   // Caught like EmployeesPage's: the sale can be recorded and this refresh still fail, which
   // would leave the row out of "Ventes du jour" and read exactly like a lost sale.
-  const load = () =>
-    financeApi
-      .sales()
-      .then(({ data }) => setSales(data.results || data))
-      .catch((err) => setError(getServerErrorMessage(err, "La liste des ventes n'a pas pu être rechargée.")));
+  // The day's sales, every page: summing today's rows out of page 1 of every sale (20 rows)
+  // left "Total du jour" short from the 21st sale. Reloaded when the farm's day turns.
+  const load = useCallback(
+    () =>
+      fetchAllPages(financeApi.sales, { sale_date: today })
+        .then(setSales)
+        .catch((err) => setError(getServerErrorMessage(err, "La liste des ventes n'a pas pu être rechargée."))),
+    [today],
+  );
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const total = (Number(form.quantity) || 0) * (Number(form.unitPrice) || 0);
 
-  const today = useTodayISO();
   const todaySales = sales.filter((s) => s.sale_date === today);
   // Every Sale row already recorded today by any cashier (financeApi.sales() is farm-scoped,
   // not filtered by the logged-in cashier) — "Ventes du jour" is deliberately farm-wide, not

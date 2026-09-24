@@ -1,3 +1,5 @@
+import datetime
+
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -181,7 +183,17 @@ class SaleListCreateView(generics.ListCreateAPIView):
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        return Sale.objects.filter(farm=self.request.user.farm)
+        qs = Sale.objects.filter(farm=self.request.user.farm)
+        # ?sale_date=YYYY-MM-DD — the cashier's "Ventes du jour": summing today's rows out of page 1
+        # of every sale left the total short from the 21st sale of the day.
+        raw_date = self.request.query_params.get('sale_date')
+        if raw_date:
+            try:
+                sale_date = datetime.date.fromisoformat(raw_date)
+            except ValueError:
+                raise serializers.ValidationError({'sale_date': f'Date invalide : {raw_date} (attendu AAAA-MM-JJ).'})
+            qs = qs.filter(sale_date=sale_date)
+        return qs
 
     def perform_create(self, serializer):
         # farm/cashier come from SaleSerializer.create() itself (request context) — not passed here.

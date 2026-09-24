@@ -72,3 +72,22 @@ describe("CashierPage — Ventes du jour on a phone", () => {
     expect(footer.textContent).toBe("33\u202f000 FCFA");
   });
 });
+
+// "Total du jour" summed today's rows out of page 1 of every sale (20 rows): from the 21st sale
+// of a day it was short. The page now asks for the day's sales and reads every page.
+describe("CashierPage — Total du jour past 20 sales", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  test("25 sales today, two pages: the total counts all 25, asked for today only", async () => {
+    const sale = (id) => ({ id, sale_date: TODAY, product_type: "EGGS", quantity: 1, unit_price: 2500, total_amount: 2500, customer: `Client ${id}` });
+    const all = Array.from({ length: 25 }, (_, i) => sale(i + 1));
+    financeApi.sales.mockImplementation(({ page }) => Promise.resolve({
+      data: { count: 25, next: page === 1 ? "?page=2" : null, results: page === 1 ? all.slice(0, 20) : all.slice(20) },
+    }));
+
+    render(<CashierPage />);
+    expect(await screen.findByText("Client 25")).toBeInTheDocument();
+    expect(document.querySelector('tfoot td[data-label="Total du jour"]').textContent).toBe("62 500 FCFA");
+    expect(financeApi.sales).toHaveBeenCalledWith({ sale_date: TODAY, page: 1 });
+  });
+});

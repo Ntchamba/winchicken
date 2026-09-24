@@ -191,7 +191,7 @@ export const financeApi = {
   // can tell was recorded or lost. An aborted request has no `err.response`, which
   // getServerErrorMessage already words as "serveur inaccessible".
   addExpense: (payload) => client.post("/expenses/", payload, { timeout: 20000 }),
-  sales: () => client.get("/sales/"),
+  sales: (params) => client.get("/sales/", { params }),
   addSale: (payload) => client.post("/sales/", payload, { timeout: 20000 }),
   purchaseOrders: (params) => client.get("/purchase-orders/", { params }),
   addPurchaseOrder: (payload) => client.post("/purchase-orders/", payload),
