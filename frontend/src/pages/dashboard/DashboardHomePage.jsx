@@ -19,7 +19,7 @@ export default function DashboardHomePage() {
   const [editingHouseCode, setEditingHouseCode] = useState(null);
 
   const loadBatches = useCallback(() => {
-    batchesApi.list().then(({ data }) => {
+    batchesApi.listActive().then(({ data }) => {
       const batches = data.results || data;
       const active = batches.filter((b) => b.status === "ACTIVE");
       setEnrichedHouses(enrichHouses(houses, batches));

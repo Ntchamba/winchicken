@@ -15,7 +15,9 @@ from apps.core.services import record_audit_log
 
 
 class PoultryBatchListCreateView(generics.ListCreateAPIView):
-    """GET/POST /api/batches/ — list/create batches for the farm, filterable by ?house_code=.
+    """GET/POST /api/batches/ — list/create batches for the farm, filterable by ?house_code= and
+    ?status=. Farm-wide callers that want each house's current batch ask for ?status=ACTIVE: the
+    unfiltered list is paginated newest-first, and a long-running layer flock falls off page 1.
     Creation reserved to Admin / Farm Manager (section 8); rejected if the target house already
     has an ACTIVE batch (see `PoultryBatchSerializer.validate_house_code`).
 
@@ -37,6 +39,11 @@ class PoultryBatchListCreateView(generics.ListCreateAPIView):
         house_code = self.request.query_params.get('house_code')
         if house_code:
             qs = qs.filter(house_id=house_code)
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            if status_filter not in BatchStatus.values:
+                raise serializers.ValidationError({'status': f'Statut inconnu : {status_filter}.'})
+            qs = qs.filter(status=status_filter)
         return qs
 
     def perform_create(self, serializer):

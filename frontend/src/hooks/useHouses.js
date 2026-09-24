@@ -21,7 +21,7 @@ export default function useHouses() {
   const refetch = useCallback(async () => {
     setLoading(true);
     try {
-      const [housesRes, batchesRes] = await Promise.all([housesApi.list(), batchesApi.list()]);
+      const [housesRes, batchesRes] = await Promise.all([housesApi.list(), batchesApi.listActive()]);
       const houseResults = housesRes.data.results || housesRes.data;
       const batchResults = batchesRes.data.results || batchesRes.data;
       const activeBatchByHouse = Object.fromEntries(

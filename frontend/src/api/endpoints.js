@@ -116,6 +116,9 @@ export const onboardingApi = {
 
 export const batchesApi = {
   list: (houseCode) => client.get("/batches/", { params: houseCode ? { house_code: houseCode } : {} }),
+  // Farm-wide "each house's current batch": the unfiltered list is paginated newest-first and a
+  // long-running layer flock falls off page 1; there is at most one ACTIVE batch per house.
+  listActive: () => client.get("/batches/", { params: { status: "ACTIVE" } }),
   create: (payload) => client.post("/batches/", payload),
   updateName: (batchCode, name) => client.patch(`/batches/${batchCode}/`, { name }),
   quickEdit: (batchCode, fields) => client.patch(`/batches/${batchCode}/`, fields),
