@@ -42,20 +42,39 @@ export default function OnboardingEmployeesPage() {
   };
 
   const finish = async () => {
+    // The employee still in the form counts too: typing one and pressing "Suivant" without
+    // "Ajouter un autre employé" used to drop them without a word. A half-filled form is an
+    // error, not something to guess about.
+    const formTouched = Boolean(form.name || form.email || form.password);
+    if (formTouched && !(form.name && form.email && form.password)) {
+      setError("Le nom, l'email et le mot de passe sont obligatoires.");
+      return;
+    }
+    const pending = formTouched ? [...employees, { ...form, tempId: Date.now() }] : employees;
+    if (formTouched) {
+      setEmployees(pending);
+      setForm(EMPTY_FORM);
+    }
+
     setSaving(true);
     setError("");
+    let remaining = pending;
     try {
-      for (const employee of employees) {
+      for (const employee of pending) {
         await employeesApi.create({
           name: employee.name, civility: employee.civility, email: employee.email,
           role: employee.role, password: employee.password,
         });
+        // Created: off the list, so a retry after a later failure does not post it again
+        // (it would fail on "email déjà utilisé").
+        remaining = remaining.filter((e) => e.tempId !== employee.tempId);
       }
       await refreshMe();
       // Employees + refreshed is_configured already saved/confirmed server-side here —
       // the transition screen only delays this page's own navigation.
       setShowTransition(true);
     } catch (err) {
+      setEmployees(remaining);
       setError(getServerErrorMessage(err, "Impossible de créer l'un des employés."));
     } finally {
       setSaving(false);
