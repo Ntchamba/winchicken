@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { Clock, X } from "lucide-react";
 import { payrollApi } from "../api/endpoints";
 import { getServerErrorMessage } from "../api/errors";
@@ -55,7 +56,10 @@ export default function MyHoursShortcut() {
         Mes heures
       </button>
 
-      {open && (
+      {/* Portalled to <body>: the sidebar is position:sticky, a stacking context of its own, so a
+          modal rendered inside it sat under the page content whatever its z-index — the task
+          cards showed through "Enregistrer mes heures" (campaign 3, in the browser). */}
+      {open && createPortal(
         <div
           style={{
             position: "fixed", inset: 0, zIndex: 70, display: "flex",
@@ -90,7 +94,8 @@ export default function MyHoursShortcut() {
               </button>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

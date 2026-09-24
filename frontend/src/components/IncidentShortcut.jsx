@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, X } from "lucide-react";
 import { batchesApi } from "../api/endpoints";
 import UnusualCaseReportForm from "./UnusualCaseReportForm";
@@ -51,7 +52,10 @@ export default function IncidentShortcut({ houses, openCasesCount = 0 }) {
         {openCasesCount > 0 && <span className="sidebar-link-badge danger pulse-alert">{openCasesCount > 9 ? "9+" : openCasesCount}</span>}
       </button>
 
-      {open && (
+      {/* Portalled to <body>: the sidebar is position:sticky, a stacking context of its own, so a
+          modal rendered inside it sat under the page content whatever its z-index — the task
+          cards showed through "Enregistrer mes heures" (campaign 3, in the browser). */}
+      {open && createPortal(
         <div
           style={{
             position: "fixed", inset: 0, zIndex: 70, display: "flex",
@@ -107,7 +111,8 @@ export default function IncidentShortcut({ houses, openCasesCount = 0 }) {
               </>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
