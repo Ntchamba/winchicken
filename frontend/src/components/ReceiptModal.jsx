@@ -5,6 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import "../styles/protocol-edit-modal.css";
 import "../styles/receipt.css";
 import { formatDateFR } from "../utils/localDate";
+import { formatMoney } from "../utils/money";
 
 const PRODUCT_LABELS = { BIRD: "Volaille", EGG: "Œufs", CULL: "Réforme", MANURE: "Fumier" };
 
@@ -73,9 +74,9 @@ export default function ReceiptModal({ sale, onClose }) {
               <div className="receipt-row"><span>Date</span><strong>{formatDateFR(sale.sale_date)}</strong></div>
               <div className="receipt-row"><span>Produit</span><strong>{PRODUCT_LABELS[sale.product_type] || sale.product_type}</strong></div>
               <div className="receipt-row"><span>Quantité</span><strong>{sale.quantity}</strong></div>
-              <div className="receipt-row"><span>Prix unitaire</span><strong>{sale.unit_price}</strong></div>
+              <div className="receipt-row"><span>Prix unitaire</span><strong>{formatMoney(sale.unit_price)}</strong></div>
               {sale.customer && <div className="receipt-row"><span>Client</span><strong>{sale.customer}</strong></div>}
-              <div className="receipt-row receipt-total"><span>Total</span><strong>{sale.total_amount}</strong></div>
+              <div className="receipt-row receipt-total"><span>Total</span><strong>{formatMoney(sale.total_amount)}</strong></div>
             </div>
 
             <div style={{ padding: "0 32px 28px", display: "flex", justifyContent: "flex-end" }} className="receipt-no-print">
