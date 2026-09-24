@@ -309,6 +309,9 @@ export default function HouseProtocolForm({
         farmId,
         createCategory,
         createStockItem,
+        // Lines the file repeats keep their server id, so saving updates them in place and
+        // their task completions survive the re-import.
+        existingSchedules: schedules,
       });
 
       // A file with no usable row must not silently wipe the whole protocol — report the

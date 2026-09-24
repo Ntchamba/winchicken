@@ -14,12 +14,14 @@ import { makeRow, nextRowId } from "./protocolRows";
  * @param {?number} farmId - Missing farm id → resources are not auto-created (rows keep none).
  * @param {(label: string, icon: string) => Promise<{id: any}>} createCategory
  * @param {(name: string, categoryLabel: string, unit: string) => Promise<{item_code: string}>} createStockItem
+ * @param {?object} [existingSchedules] - The form's current `{ [categoryId]: [row] }`; a file line
+ *   matching one of its rows keeps that row's `serverId`. Omitted for a house with no lines yet.
  * @returns {Promise<{schedules: ?object, firstCategoryId: any}>} `schedules` is null when the
  *   file had no usable row — the caller must then leave the existing protocol untouched.
  */
 export async function resolveProtocolImportRows(
   data,
-  { categories, stockItemList, farmId, createCategory, createStockItem },
+  { categories, stockItemList, farmId, createCategory, createStockItem, existingSchedules = null },
 ) {
   // 1. Resolve every distinct Catégorie to a category id, creating the missing ones.
   const labelToId = {};
@@ -44,13 +46,29 @@ export async function resolveProtocolImportRows(
   // A file with no usable row must not silently wipe the whole protocol.
   if (data.rows.length === 0) return { schedules: null, firstCategoryId: null };
 
+  // 3. A file line that is the same task as an existing line (category, task name, day range)
+  // takes over that line's server id, so the save updates it in place. Without it every line
+  // was new to the PUT: the existing ones were deleted and their task completions with them
+  // (CASCADE) — done tasks read as outstanding again and a re-tap deducted the stock twice.
+  const lineKey = (catId, row) =>
+    `${catId}|${row.what.trim().toLowerCase()}|${row.fromValue}|${row.untilEnd ? "end" : row.toValue}`;
+  const unclaimed = {};
+  for (const [catId, rows] of Object.entries(existingSchedules || {})) {
+    for (const row of rows) {
+      if (!row.serverId || row.fromUnit !== "Day" || (!row.untilEnd && row.toUnit !== "Day")) continue;
+      (unclaimed[lineKey(catId, row)] ||= []).push(row.serverId);
+    }
+  }
+
   const schedules = {};
   for (const r of data.rows) {
     const catId = labelToId[r.category.trim().toLowerCase()];
     if (catId == null) continue;
     const code = r.consumption ? nameToCode[r.consumption.trim().toLowerCase()] : null;
+    const serverId = unclaimed[lineKey(catId, { ...r, toValue: r.untilEnd ? 1 : r.toValue })]?.shift();
     (schedules[catId] ||= []).push(
       makeRow({
+        ...(serverId ? { serverId } : {}),
         fromValue: r.fromValue,
         toValue: r.untilEnd ? 1 : r.toValue,
         untilEnd: r.untilEnd,
