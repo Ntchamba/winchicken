@@ -1,0 +1,175 @@
+# Production stack for a farm PC (what the Windows/macOS installer starts). Separate from
+# docker-compose.yml, which stays the development stack.
+#
+# Sized for a 4 GB PC running Docker Desktop (whose VM the installer caps at ~2 GB):
+# - no source bind mounts and no dev servers — built images only (gunicorn, nginx);
+# - one Celery process with the beat scheduler embedded (`worker -B`) instead of two. The dev
+#   stack keeps them apart because -B misbehaves when a worker is scaled out; a farm PC never
+#   scales it, and the second Python process costs ~100 MB this budget does not have;
+# - Postgres and Redis are reachable only inside the stack, never from the network;
+# - one published port (WINCHICKEN_PORT, default 8080) on every interface, so phones on the
+#   farm Wi-Fi reach http://<pc-ip>:8080.
+#
+# Secrets come from .env next to this file, written once by the installer (see
+# .env.prod.example). Start: docker compose -f docker-compose.prod.yml up -d
+# Not "winchicken": that is the dev stack's project name (the folder), and sharing it would
+# make one stack recreate the other's containers on a developer machine.
+name: winchicken-prod
+
+x-backend-env: &backend-env
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY manquant dans .env}
+  DEBUG: "False"
+  # The PC's farm-network address changes with the router; nginx is the only way in anyway.
+  ALLOWED_HOSTS: "*"
+  DB_NAME: winchicken
+  DB_USER: winchicken
+  DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD manquant dans .env}
+  DB_HOST: db
+  DB_PORT: "5432"
+  REDIS_URL: redis://redis:6379/0
+  SMS_PROVIDER: ${SMS_PROVIDER:-console}
+  SMS_PROVIDER_API_KEY: ${SMS_PROVIDER_API_KEY:-}
+  SMS_PROVIDER_SENDER_ID: ${SMS_PROVIDER_SENDER_ID:-WINCHICKEN}
+  VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+  VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+  VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@winchicken.local}
+  FARM_TIME_ZONE: ${TZ:-Africa/Douala}
+  TZ: ${TZ:-Africa/Douala}
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: winchicken
+      POSTGRES_USER: winchicken
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD manquant dans .env}
+      TZ: ${TZ:-Africa/Douala}
+    # Small-machine tuning: one farm, a handful of users.
+    command: >
+      postgres -c shared_buffers=64MB -c effective_cache_size=256MB -c work_mem=4MB
+      -c maintenance_work_mem=32MB -c max_connections=40
+    volumes:
+      - winchicken_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U winchicken -d winchicken"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 48mb --maxmemory-policy noeviction
+    volumes:
+      - winchicken_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  web:
+    image: ${WINCHICKEN_IMAGE_PREFIX:-winchicken}/backend:${WINCHICKEN_VERSION:-local}
+    build: ./backend
+    restart: unless-stopped
+    command: ["sh", "scripts/start-prod-web.sh"]
+    environment: *backend-env
+    volumes:
+      - winchicken_backend_logs:/app/logs
+      - winchicken_static:/app/staticfiles
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  worker:
+    image: ${WINCHICKEN_IMAGE_PREFIX:-winchicken}/backend:${WINCHICKEN_VERSION:-local}
+    restart: unless-stopped
+    # -B: beat embedded (see header). --pidfile= / schedule in /tmp: no stale files on restart.
+    command: celery -A config worker -B -l info --concurrency=1 --pidfile= --schedule=/tmp/celerybeat-schedule
+    environment: *backend-env
+    volumes:
+      - winchicken_backend_logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A config inspect ping -d celery@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 15s
+      start_period: 30s
+      retries: 5
+    depends_on:
+      web:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Same loop as the dev stack's backup service (one backup path, not two), into a named volume.
+  backup:
+    image: ${WINCHICKEN_IMAGE_PREFIX:-winchicken}/backend:${WINCHICKEN_VERSION:-local}
+    restart: unless-stopped
+    command: >
+      sh -c 'while true; do
+        if python manage.py backup_db; then
+          sleep "$${BACKUP_INTERVAL_SECONDS:-86400}";
+        else
+          echo "BACKUP FAILED — retrying in $${BACKUP_RETRY_SECONDS:-300}s" >&2;
+          sleep "$${BACKUP_RETRY_SECONDS:-300}";
+        fi;
+      done'
+    healthcheck:
+      disable: true
+    environment:
+      <<: *backend-env
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETRY_SECONDS: ${BACKUP_RETRY_SECONDS:-300}
+      BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-7}
+    volumes:
+      - winchicken_backend_logs:/app/logs
+      - winchicken_backups:/app/backups
+    depends_on:
+      web:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  frontend:
+    image: ${WINCHICKEN_IMAGE_PREFIX:-winchicken}/frontend:${WINCHICKEN_VERSION:-local}
+    build:
+      context: ./frontend
+      target: prod
+    restart: unless-stopped
+    ports:
+      - "${WINCHICKEN_PORT:-8080}:80"
+    volumes:
+      - winchicken_static:/srv/django-static:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+
+volumes:
+  winchicken_pgdata:
+  winchicken_redis:
+  winchicken_backend_logs:
+  winchicken_static:
+  winchicken_backups:
