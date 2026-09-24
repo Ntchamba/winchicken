@@ -87,7 +87,13 @@ class DailyLogSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
+        from apps.batches.services import validate_log_date
+
         batch = self.context['batch']
+        # Same day rules as the quick entry (closed batch, future day, before the start).
+        date_error = validate_log_date(batch, attrs['log_date']) if 'log_date' in attrs else None
+        if date_error:
+            raise serializers.ValidationError({'log_date': date_error})
         mortality = attrs.get('mortality', 0)
         if mortality > batch.current_count:
             raise serializers.ValidationError({'mortality': "Ne peut pas dépasser l'effectif actuel de la bande."})

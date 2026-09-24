@@ -4,9 +4,10 @@ convention (2026-08-25 reorg — see docs/architecture.md). Views orchestrate HT
 computation beyond a one-line expression lives here instead.
 """
 from django.db import transaction
+from django.utils import timezone
 
 from apps.batches.calculations import MORTALITY_REFERENCE_RANGE, mortality_pct
-from apps.batches.models import DailyLog
+from apps.batches.models import BatchStatus, DailyLog
 
 
 def finalize_new_batch(batch):
@@ -19,6 +20,23 @@ def finalize_new_batch(batch):
     from apps.protocols.services import expand_protocol_to_alert_rules
     expand_protocol_to_alert_rules(batch)
     sync_weighing_reminder(batch)
+
+
+def validate_log_date(batch, log_date):
+    """The French reason `log_date` cannot be logged for `batch`, or None. Shared by the quick
+    entry and the plain daily-log endpoint so the two never accept different days.
+
+    A closed batch is frozen: its closing report was computed from these logs. A future day has
+    not happened yet (the phone's own clock can be wrong). A day before the batch started would
+    land in a "week 0" and at a negative day of the growth curve.
+    """
+    if batch.status != BatchStatus.ACTIVE:
+        return "Cette bande est clôturée : ses journaux ne peuvent plus être modifiés."
+    if log_date > timezone.localdate():
+        return "Impossible d'enregistrer une journée dans le futur."
+    if log_date < batch.start_date:
+        return f"Cette date est avant le début de la bande ({batch.start_date:%d/%m/%Y})."
+    return None
 
 
 def record_quick_entry(batch, log_date, mortality=None, eggs_collected=None, avg_sample_weight=None):
@@ -42,6 +60,10 @@ def record_quick_entry(batch, log_date, mortality=None, eggs_collected=None, avg
 
     Returns `(log, cumulative_mortality_pct, reference_range, error_detail_or_None)`.
     """
+    date_error = validate_log_date(batch, log_date)
+    if date_error:
+        return None, None, None, date_error
+
     existing = DailyLog.objects.filter(batch=batch, log_date=log_date).first()
     previous_mortality = existing.mortality if existing else 0
     resolved_mortality = mortality if mortality is not None else previous_mortality
