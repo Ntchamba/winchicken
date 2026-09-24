@@ -159,12 +159,13 @@ def _rule_should_fire_today(rule, today_local):
     return True
 
 
-def _already_fired(rule, batch):
+def _already_fired(rule, batch, now):
     """A scheduled rule fires at most once per local day. `Alert` has no date/time columns, so
-    "this occurrence already fired" = an Alert for this rule+batch in the last 10 minutes —
-    comfortably wider than the 3-minute catch-up window, far narrower than a day's cadence, and
-    with no midnight-boundary edge case."""
-    since = timezone.now() - timedelta(minutes=10)
+    "this occurrence already fired" = an Alert for this rule+batch in the 10 minutes before `now`
+    — comfortably wider than the 3-minute catch-up window, far narrower than a day's cadence, and
+    with no midnight-boundary edge case. `now` is the evaluator's own clock, not a second read
+    of the real one."""
+    since = now - timedelta(minutes=10)
     return Alert.objects.filter(rule=rule, batch=batch, triggered_at__gte=since).exists()
 
 
@@ -202,6 +203,11 @@ def _resolve_scheduled_reminder(rule):
         (recipient, render_task_reminder(recipient, line.what, house_name, start_time=start_time))
         for recipient in recipients
     ]
+
+
+def _unaddressed_reminder(rule):
+    what = rule.protocol_line.what if rule.protocol_line_id else 'la pesée d’un échantillon de la bande'
+    return f'Tâche à effectuer : {what} à {rule.batch.house.name} (personne n’est assigné).'
 
 
 def _queue_reminder_sms(alert, recipient, message):
@@ -246,7 +252,7 @@ def fire_scheduled_alerts(now=None):
     for rule in rules:
         if not _rule_should_fire_today(rule, today_local):
             continue
-        if _already_fired(rule, rule.batch):
+        if _already_fired(rule, rule.batch, now or timezone.now()):
             continue
 
         reminders = _resolve_scheduled_reminder(rule)
@@ -254,8 +260,11 @@ def fire_scheduled_alerts(now=None):
             # One Alert per occurrence (it is the farm's record that the task came due), but one
             # SMS per assignee — `_queue_reminder_sms` keys its idempotency on the recipient's
             # phone, so several messages under one Alert do not collide.
+            # With nobody to send it to (no assignee, no batch farmer) the Alert is still the farm's
+            # record that the task came due — it used to be an empty row in the bell.
             alert = Alert.objects.create(
-                rule=rule, batch=rule.batch, message=reminders[0][1] if reminders else '', severity='info',
+                rule=rule, batch=rule.batch, severity='info',
+                message=reminders[0][1] if reminders else _unaddressed_reminder(rule),
             )
             for recipient, message in reminders:
                 _queue_reminder_sms(alert, recipient, message)
