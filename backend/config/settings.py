@@ -105,6 +105,9 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
+# collectstatic target for the production stack (docker-compose.prod.yml): a named volume nginx
+# serves at /static/ (Django admin, API docs). Unused in development, where runserver serves them.
+STATIC_ROOT = config('STATIC_ROOT', default=str(BASE_DIR / 'staticfiles'))
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {

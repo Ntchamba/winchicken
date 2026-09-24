@@ -31,6 +31,9 @@ COPY --chown=appuser:appuser . .
 # image layer's content *and ownership* (documented Docker behavior), giving appuser write
 # access from the start instead of the volume defaulting to root:root.
 RUN mkdir -p /app/logs && chown appuser:appuser /app/logs
+# Same seeding trick for the production stack's other named volumes (docker-compose.prod.yml):
+# collectstatic output and database backups, both written by appuser.
+RUN mkdir -p /app/staticfiles /app/backups && chown appuser:appuser /app/staticfiles /app/backups
 
 USER appuser
 EXPOSE 8000
