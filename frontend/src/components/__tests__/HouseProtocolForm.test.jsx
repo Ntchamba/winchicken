@@ -296,3 +296,31 @@ describe("HouseProtocolForm — import Excel (full replacement)", () => {
     expect(screen.getByText(/Ligne 3 : créneau mal formé/)).toBeInTheDocument();
   });
 });
+
+// Campaign 3 (browser): "Ajouter un créneau" → both times → ✓ threw
+// "ReferenceError: nextId is not defined" (the counter had moved to utils/protocolRows), so no
+// time slot could be added from the form at all; the stale "Les deux heures sont requises."
+// was the only thing on screen.
+describe("HouseProtocolForm — adding a time slot", () => {
+  test("a slot typed into the two time fields is added as a chip and saved with the line", async () => {
+    const onSave = vi.fn();
+    const { container } = render(<HouseProtocolForm mode="onboarding" onSave={onSave} />);
+    await userEvent.type(screen.getByRole("textbox", { name: /nom de la bande/i }), "Bande test");
+    await userEvent.click(screen.getByRole("button", { name: /ajouter une ligne/i }));
+    await userEvent.type(screen.getByPlaceholderText(/aliment démarrage/i), "Aliment");
+    await userEvent.click(screen.getByRole("button", { name: /ajouter un créneau/i }));
+
+    const [start, end] = container.querySelectorAll('input[type="time"]');
+    await userEvent.type(start, "07:00");
+    await userEvent.type(end, "08:00");
+    await userEvent.click(screen.getByRole("button", { name: "Confirmer le créneau" }));
+
+    expect(screen.queryByText("Les deux heures sont requises.")).not.toBeInTheDocument();
+    expect(container.querySelectorAll('input[type="time"]')).toHaveLength(0);
+    expect(screen.getByText("07:00–08:00")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Suivant" }));
+    const line = onSave.mock.calls[0][0].protocolLines[0];
+    expect(line.time_slots).toEqual([{ start_time: "07:00", end_time: "08:00" }]);
+  });
+});

@@ -8,7 +8,7 @@ import { getServerErrorMessage } from "../api/errors";
 import ConfirmDialog from "./ConfirmDialog";
 import ResourceCombobox from "./ResourceCombobox";
 import UnitField from "./UnitField";
-import { DEFAULT_CATEGORIES, ICON_OPTIONS, iconFor, makeRow } from "../utils/protocolRows";
+import { DEFAULT_CATEGORIES, ICON_OPTIONS, iconFor, makeRow, nextRowId } from "../utils/protocolRows";
 import { resolveProtocolImportRows } from "../utils/protocolImportResolve";
 import "../styles/house-protocol-theme-light.css";
 
@@ -359,7 +359,7 @@ export default function HouseProtocolForm({
       return;
     }
     const row = rows.find((r) => r.id === rowId);
-    updateRow(rowId, "timeSlots", [...(row?.timeSlots || []), { id: nextId++, startTime: slotStart, endTime: slotEnd }]);
+    updateRow(rowId, "timeSlots", [...(row?.timeSlots || []), { id: nextRowId(), startTime: slotStart, endTime: slotEnd }]);
     setAddingSlotForRow(null);
   };
 
