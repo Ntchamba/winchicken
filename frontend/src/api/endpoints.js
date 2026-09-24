@@ -125,6 +125,7 @@ export const batchesApi = {
   remove: (batchCode) => client.delete(`/batches/${batchCode}/`),
   close: (batchCode) => client.patch(`/batches/${batchCode}/close/`),
   dailyLogs: (batchCode) => client.get(`/batches/${batchCode}/daily-logs/`),
+  recentWeighings: (batchCode) => client.get(`/batches/${batchCode}/daily-logs/`, { params: { weighed: 1 } }),
   addDailyLog: (batchCode, payload) => client.post(`/batches/${batchCode}/daily-logs/`, payload),
   quickEntry: (batchCode, payload) => client.put(`/batches/${batchCode}/daily-logs/quick-entry/`, payload),
   weeklyKpi: (batchCode) => client.get(`/batches/${batchCode}/kpi/weekly/`),

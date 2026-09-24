@@ -44,7 +44,7 @@ export default function WeighingSection({ batches = [], onLogged }) {
     Promise.all(
       batches.map((b) => {
         const code = b.batchCode || b.batch_code;
-        return batchesApi.dailyLogs(code).then(({ data }) => [code, data.results || data]);
+        return batchesApi.recentWeighings(code).then(({ data }) => [code, data.results || data]);
       })
     ).then((pairs) => {
       const map = {};

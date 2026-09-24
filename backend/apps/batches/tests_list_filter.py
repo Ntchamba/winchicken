@@ -10,7 +10,7 @@ import datetime as dt
 
 from rest_framework.test import APITestCase
 
-from apps.batches.models import BatchStatus, PoultryBatch, ProductionType
+from apps.batches.models import BatchStatus, DailyLog, PoultryBatch, ProductionType
 from apps.core.models import Farm, User, UserRole, create_role_profile
 from apps.houses.models import PoultryHouse
 
@@ -55,3 +55,42 @@ class BatchListStatusFilterTests(APITestCase):
         response = self.client.get('/api/batches/', {'status': 'nimportequoi'})
         self.assertEqual(response.status_code, 400)
         self.assertIn('Statut inconnu', str(response.data))
+
+
+class DailyLogWeighedFilterTests(APITestCase):
+    """GET /api/batches/{code}/daily-logs/?weighed=1 — "Pesées récentes".
+
+    Daily logs are ordered oldest first and paginated by 20, so the weighing section's list stopped
+    at day 20 of the cycle: from day 21 a new weighing never appeared under the form that saved it.
+    """
+
+    def setUp(self):
+        self.farm = Farm.objects.create(name='Ferme Pesée')
+        house = PoultryHouse.objects.create(house_code=f'H-W-{self.farm.id}', farm=self.farm, name='B1', max_capacity=600)
+        admin = User.objects.create_user(email='admin@pesee.local', password='x', name='A', role=UserRole.ADMIN, farm=self.farm)
+        create_role_profile(admin)
+        self.client.force_authenticate(user=admin)
+        start = dt.date(2026, 8, 1)
+        self.batch = PoultryBatch.objects.create(
+            batch_code=f'B-W-{self.farm.id}', house=house, production_type=ProductionType.BROILER,
+            initial_count=600, start_date=start, status=BatchStatus.ACTIVE,
+        )
+        for day in range(30):
+            DailyLog.objects.create(
+                batch=self.batch, log_date=start + dt.timedelta(days=day), mortality=0,
+                avg_sample_weight=None if day % 3 else 0.04 + day * 0.05,
+            )
+        self.url = f'/api/batches/{self.batch.batch_code}/daily-logs/'
+
+    def test_weighed_returns_only_weighed_days_newest_first(self):
+        rows = self.client.get(self.url, {'weighed': '1'}).data['results']
+        dates = [r['log_date'] for r in rows]
+        self.assertEqual(dates[0], '2026-08-28')  # day 27, the last weighed day
+        self.assertEqual(dates, sorted(dates, reverse=True))
+        self.assertTrue(all(r['avg_sample_weight'] is not None for r in rows))
+        self.assertEqual(len(rows), 10)
+
+    def test_without_the_flag_the_list_is_unchanged(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.data['count'], 30)
+        self.assertEqual(response.data['results'][0]['log_date'], '2026-08-01')

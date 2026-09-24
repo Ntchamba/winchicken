@@ -35,7 +35,12 @@ class DailyLogListCreateView(generics.ListCreateAPIView):
         )
 
     def get_queryset(self):
-        return self.get_batch().daily_logs.all()
+        qs = self.get_batch().daily_logs.all()
+        # ?weighed=1 — "Pesées récentes": weighed days, newest first. The plain list is oldest
+        # first and paginated by 20, so reading page 1 stopped at day 20 of the cycle.
+        if self.request.query_params.get('weighed') == '1':
+            qs = qs.filter(avg_sample_weight__isnull=False).order_by('-log_date')
+        return qs
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
