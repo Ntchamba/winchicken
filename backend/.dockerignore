@@ -4,3 +4,9 @@ __pycache__/
 db.sqlite3
 .env
 .git/
+# Farm data and runtime output never belong in an image: these images are shipped to farms by
+# the installer, and a dev machine's backups/ holds real database dumps.
+backups/
+logs/
+logs.docker-owned/
+.pytest_cache/
