@@ -76,7 +76,9 @@ def check_low_stock(item):
 
 
 def check_consumption_deviation(daily_log):
-    if not daily_log.feed_consumed_kg:
+    # Both must be recorded: water left blank is stored as 0, and a ratio of 0 is "not recorded",
+    # not a deviation — it fired a false "hors norme" alarm on every feed-only log.
+    if not daily_log.feed_consumed_kg or not daily_log.water_consumed_l:
         return
     ratio = daily_log.water_consumed_l / daily_log.feed_consumed_kg
     if 1.6 <= ratio <= 2.2:

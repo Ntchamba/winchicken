@@ -45,7 +45,9 @@ def feed_conversion_ratio(batch, up_to_date=None):
     for log in sorted(logs, key=lambda entry: entry.log_date):
         if log.avg_sample_weight:
             latest_weight = log.avg_sample_weight
-    if not latest_weight or not flock:
+    # No feed recorded is an unknown FCR, not a perfect 0.00 (no screen writes feed_consumed_kg
+    # today, so a real farm's KPIs and closing report all read 0.00).
+    if not latest_weight or not flock or total_feed <= 0:
         return None
     return round(total_feed / (flock * latest_weight), 2)
 
