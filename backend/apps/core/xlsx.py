@@ -25,14 +25,19 @@ def clean(value):
 
 
 def as_number(value):
-    """-> float or None. Accepts 12, 12.0, "12", "12.5", "12,5" (French decimal). A cell reading
+    """-> float or None. Accepts 12, 12.0, "12", "12.5", "12,5" (French decimal), "12 000". A cell reading
     "nan", "inf" or an overflowing "1e400" is not a number (float() would say it is)."""
     if value is None or value == '':
         return None
     if isinstance(value, bool):
         return None
     try:
-        number = float(value) if isinstance(value, (int, float)) else float(str(value).strip().replace(',', '.'))
+        # Spaces, no-break and narrow no-break spaces group thousands in French: "12 000" is how
+        # an FCFA amount is typed, and it used to read as unreadable (and import as 0).
+        text = str(value).strip()
+        for sep in (' ', '\u00a0', '\u202f'):
+            text = text.replace(sep, '')
+        number = float(value) if isinstance(value, (int, float)) else float(text.replace(',', '.'))
     except (TypeError, ValueError, OverflowError):
         return None
     return number if math.isfinite(number) else None

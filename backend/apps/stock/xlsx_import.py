@@ -147,21 +147,42 @@ def _import_rows(farm, rows_iter, get, report) -> dict:
         if not category_label:
             skipped.append({'line': line, 'reason': 'catégorie manquante'})
             continue
+        # A cell that holds something but not a number is reported: turning it into 0 overwrote
+        # an existing item's price and called the row a success. Blank still means 0 (documented).
+        threshold, threshold_error = _number_cell(get(raw, 'alert_threshold'), "seuil d'alerte")
+        price, price_error = _number_cell(get(raw, 'unit_price'), 'prix unitaire')
+        if threshold_error or price_error:
+            skipped.append({'line': line, 'reason': threshold_error or price_error})
+            continue
 
+        existing = StockItem.objects.filter(farm=farm, name__iexact=name).first()
+        unit = clean(get(raw, 'unit'))
+        if existing is None and not unit:
+            skipped.append({'line': line, 'reason': 'unité manquante'})
+            continue
+
+        # Snapshot the caches: a category or supplier created inside this row's savepoint is
+        # rolled back with the row, and a cached reference to it made every later row of the
+        # same new category fail on a primary key that no longer existed.
+        cat_before, sup_before = dict(cat_cache), dict(sup_cache)
         try:
             with transaction.atomic():
                 category = _resolve_category(farm, category_label, cat_cache)
-                supplier = _resolve_supplier(farm, clean(get(raw, 'supplier')), sup_cache)
                 fields = {
                     'category': category.id,
-                    'unit': clean(get(raw, 'unit')),
-                    'alert_threshold': as_number(get(raw, 'alert_threshold')) or 0,
-                    'unit_price': _to_decimal(get(raw, 'unit_price')),
-                    'supplier': supplier.id if supplier else None,
+                    'alert_threshold': threshold,
+                    'unit_price': _to_decimal(price),
                     **_detail_fields(category.kind, get(raw, 'detail')),
                 }
+                # A blank or absent Unité leaves an existing item's unit alone (a new item without
+                # one was skipped above); an absent Fournisseur column leaves its supplier alone —
+                # both as the columns' preview notes promise. A present, blank Fournisseur clears it.
+                if unit:
+                    fields['unit'] = unit
+                if 'supplier' in report.index or existing is None:
+                    supplier = _resolve_supplier(farm, clean(get(raw, 'supplier')), sup_cache)
+                    fields['supplier'] = supplier.id if supplier else None
 
-                existing = StockItem.objects.filter(farm=farm, name__iexact=name).first()
                 if existing:
                     # Parameter update only — StockItemSerializer has no quantity field, so a
                     # partial update cannot touch stock level / StockMovement history.
@@ -171,15 +192,30 @@ def _import_rows(farm, rows_iter, get, report) -> dict:
                     updated += 1
                 else:
                     code = next_free_item_code(farm.id, category, used_codes)
-                    used_codes.add(code)
                     ser = StockItemSerializer(data={**fields, 'name': name})
                     ser.is_valid(raise_exception=True)
                     ser.save(farm=farm, item_code=code)
+                    used_codes.add(code)
                     created += 1
         except Exception as exc:  # serializer ValidationError, integrity, etc. — skip this row
+            cat_cache.clear()
+            cat_cache.update(cat_before)
+            sup_cache.clear()
+            sup_cache.update(sup_before)
             skipped.append({'line': line, 'reason': _reason(exc)})
 
     return {'updated': updated, 'created': created, 'skipped': skipped, 'columns': report.as_dict()}
+
+
+def _number_cell(value, label):
+    """(number, None) for a number or a blank cell (blank -> 0, as documented); (None, reason)
+    for a cell holding text that is not a number."""
+    if clean(value) == '':
+        return 0, None
+    number = as_number(value)
+    if number is None:
+        return None, f'{label} illisible : « {clean(value)} »'
+    return number, None
 
 
 def _to_decimal(value):

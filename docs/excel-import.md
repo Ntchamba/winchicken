@@ -127,10 +127,10 @@ delete.**
 | **Article** | name — the **matching key** (case-insensitive, within the farm). |
 | **Catégorie** | matched to a `StockCategory` by name; auto-created as `CUSTOM` (icon `Package`, `sort_order = max+1`) if unknown. |
 | **Détail** | polymorphic by category kind: `FEED` → feed stage; `VETERINARY` → cold-chain flag (`oui`/`yes`/`true`/`1`/`x` → true); otherwise → free-text `item_type`. |
-| **Unité** | `StockItem.unit`. |
-| **Seuil d'alerte** | `alert_threshold` (blank → 0). |
-| **Prix unitaire** | `unit_price` (blank → 0). |
-| **Fournisseur** | matched to a `Supplier` by name; auto-created if unknown; blank → none. |
+| **Unité** | `StockItem.unit`. Required for a new item (row skipped: `unité manquante`); blank or column absent → an existing item's unit is kept. |
+| **Seuil d'alerte** | `alert_threshold` (blank → 0). Text that is not a number → row skipped (`seuil d'alerte illisible : « … »`), never 0. |
+| **Prix unitaire** | `unit_price` (blank → 0). `12 000` / `12 000,50` (space, no-break or narrow no-break space) read as 12000 / 12000.50. Text that is not a number → row skipped (`prix unitaire illisible : « … »`), never 0. |
+| **Fournisseur** | matched to a `Supplier` by name; auto-created if unknown; blank → none. Column absent → an existing item's supplier is kept. |
 
 ## Behaviour
 
@@ -140,7 +140,10 @@ delete.**
   (`partial=True`). No quantity field on that serializer ⇒ stock level / `StockMovement`
   history is untouched. **This import creates no `StockMovement`.**
 - **No match** → new `StockItem` (`item_code` from `next_free_item_code`).
-- **Never deletes** an item not named in the file. One bad row is skipped + reported.
+- **Never deletes** an item not named in the file. One bad row is skipped + reported; a category
+  or supplier it created is rolled back with it and does not break later rows naming the same one.
+- `dry_run=1` runs the same import inside a transaction that is rolled back: the preview's counts
+  and skip reasons are the ones the confirmation will produce.
 
 ---
 
