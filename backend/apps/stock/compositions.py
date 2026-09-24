@@ -5,8 +5,22 @@ quantity, one `IN` for the output item at the user-entered output quantity, all 
 transaction. Output quantity is never derived from the inputs — real processing loses or gains
 weight/volume, so the operator types the actual amount produced.
 """
+import math
+
 from django.db import transaction
 from django.utils import timezone
+
+from apps.core.formatting import fr_number
+
+
+def _positive_quantity(raw):
+    """`raw` as a finite float > 0, or None. float() alone accepts "nan" and "inf", and a
+    NaN or infinite StockMovement would poison every total that sums it."""
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) and value > 0 else None
 
 
 def _shortfalls(composition, quantities):
@@ -44,11 +58,8 @@ def auto_deduct_ingredients_for_output(item, produced_quantity, movement_date):
     from apps.stock.calculations import current_quantity
     from apps.stock.models import MovementType, StockComposition, StockMovement
 
-    try:
-        produced_quantity = float(produced_quantity)
-    except (TypeError, ValueError):
-        return {'status': 'noop'}
-    if produced_quantity <= 0:
+    produced_quantity = _positive_quantity(produced_quantity)
+    if produced_quantity is None:
         return {'status': 'noop'}
 
     composition = (
@@ -62,7 +73,7 @@ def auto_deduct_ingredients_for_output(item, produced_quantity, movement_date):
         return {'status': 'noop'}
 
     factor = produced_quantity / composition.base_output_quantity
-    note = f'Décompté auto · production de {produced_quantity:g} {item.unit} « {composition.name} »'
+    note = f'Décompté auto · production de {fr_number(produced_quantity, 3)} {item.unit} « {composition.name} »'
     created, shortfalls = [], []
     with transaction.atomic():
         for ing in composition.ingredients.all():
@@ -100,12 +111,14 @@ def execute_composition(composition, ingredient_rows, output_quantity, *, force=
     """
     from apps.stock.models import MovementType, StockMovement
 
-    try:
-        output_quantity = float(output_quantity)
-    except (TypeError, ValueError):
-        return {'detail': 'Quantité produite invalide.', 'http_status': 400}
-    if output_quantity <= 0:
-        return {'detail': 'La quantité produite doit être positive.', 'http_status': 400}
+    parsed = _positive_quantity(output_quantity)
+    if parsed is None:
+        try:
+            float(output_quantity)
+        except (TypeError, ValueError):
+            return {'detail': 'Quantité produite invalide.', 'http_status': 400}
+        return {'detail': 'La quantité produite doit être un nombre positif.', 'http_status': 400}
+    output_quantity = parsed
 
     valid_ids = {ing.item_id for ing in composition.ingredients.all()}
     quantities = {}
@@ -113,11 +126,8 @@ def execute_composition(composition, ingredient_rows, output_quantity, *, force=
         code = row.get('item')
         if code not in valid_ids:
             continue
-        try:
-            q = float(row.get('quantity'))
-        except (TypeError, ValueError):
-            continue
-        if q > 0:
+        q = _positive_quantity(row.get('quantity'))
+        if q is not None:
             quantities[code] = q
 
     shortfalls = _shortfalls(composition, quantities)
