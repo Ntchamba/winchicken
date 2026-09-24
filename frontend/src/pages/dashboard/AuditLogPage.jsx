@@ -4,28 +4,8 @@ import { auditLogApi } from "../../api/endpoints";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import "../../styles/dashboard-theme.css";
 import QuickLinksBar from "../../components/QuickLinksBar";
+import { ACTION_LABELS } from "../../utils/auditActions";
 
-// Kept in sync by hand with every apps.core.services.record_audit_log call site (see
-// docs/deviations.md Part 15) — action is a short dotted code, never shown raw.
-const ACTION_LABELS = {
-  "batch.created": "Bande créée",
-  "batch.updated": "Bande modifiée",
-  "batch.deleted": "Bande supprimée",
-  "batch.closed": "Bande clôturée",
-  "protocol.updated": "Protocole modifié",
-  "employee.created": "Employé créé",
-  "employee.updated": "Employé modifié",
-  "employee.deleted": "Employé supprimé",
-  "stock.updated": "Stock mis à jour",
-  "expense.created": "Dépense enregistrée",
-  "sale.created": "Vente enregistrée",
-  "purchase_order.created": "Commande fournisseur créée",
-  "purchase_order.received": "Commande fournisseur reçue",
-  "purchase_order.cancelled": "Commande fournisseur annulée",
-  "farm.reset": "Réinitialisation de la ferme",
-  "unusual_case.resolved": "Cas particulier résolu",
-  "equipment_fault.resolved": "Panne d'équipement résolue",
-};
 
 /**
  * /dashboard/audit (2026-08-26, Administrateur only — docs/deviations.md Part 15) — paginated,
