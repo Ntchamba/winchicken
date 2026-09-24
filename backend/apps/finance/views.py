@@ -12,11 +12,11 @@ from rest_framework.views import APIView
 from apps.core.permissions import ADMIN, FARM_MANAGER, IsAdminOrCashier, IsAdminOrFarmManager, IsAdminOrFarmManagerOrCashier
 from apps.core.services import record_audit_log
 from apps.finance.calculations import (
-    expense_category_breakdown, finance_summary, finance_trend_direction,
+    _ITEM_CATEGORY_TO_EXPENSE_CATEGORY, expense_category_breakdown, finance_summary, finance_trend_direction,
     purchases_evolution, sales_evolution, series_trend,
 )
 from apps.finance.models import (
-    Expense, ExpenseCategory, PurchaseOrder, Sale, SalaryPayment, SalaryPaymentStatus, WorkHoursEntry,
+    Expense, ExpenseCategory, OrderStatus, PurchaseOrder, Sale, SalaryPayment, SalaryPaymentStatus, WorkHoursEntry,
 )
 from apps.finance.serializers import (
     ExpenseSerializer, PurchaseOrderSerializer, SaleSerializer, SalaryPaymentSerializer, WorkHoursEntrySerializer,
@@ -124,7 +124,10 @@ class FinanceTransactionsView(generics.ListAPIView):
     def list(self, request, *args, **kwargs):
         farm = request.user.farm
         type_filter = request.query_params.get('type', 'all')
-        page = int(request.query_params.get('page', 1))
+        raw_page = request.query_params.get('page', '1')
+        if not raw_page.isdigit() or int(raw_page) < 1:
+            return Response({'detail': f'Page invalide : {raw_page}.'}, status=status.HTTP_400_BAD_REQUEST)
+        page = int(raw_page)
         page_size = 20
 
         rows = []
@@ -133,6 +136,15 @@ class FinanceTransactionsView(generics.ListAPIView):
                 rows.append({
                     'id': f'EXP-{e.id}', 'date': e.expense_date, 'category': e.category,
                     'counterparty': e.supplier, 'amount': -float(e.amount), 'status': 'OUT',
+                })
+            # RECEIVED purchase orders are money out too — the cash position subtracts them, so
+            # the ledger has to list them or its rows never add up to it. Mapped to an expense
+            # category the way the Achats breakdown does.
+            for o in PurchaseOrder.objects.filter(farm=farm, status=OrderStatus.RECEIVED).select_related('item__category'):
+                rows.append({
+                    'id': f'PO-{o.order_code}', 'date': o.order_date,
+                    'category': _ITEM_CATEGORY_TO_EXPENSE_CATEGORY.get(o.item.category.kind, ExpenseCategory.MISC),
+                    'counterparty': o.supplier, 'amount': -float(o.amount), 'status': 'OUT',
                 })
         if type_filter in ('all', 'in'):
             for s in Sale.objects.filter(farm=farm):

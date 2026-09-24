@@ -1,9 +1,23 @@
+from decimal import Decimal
+
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.core.models import Farm
 from apps.core.permissions import ADMIN, FARM_MANAGER
 from apps.finance.models import Expense, OrderStatus, PurchaseOrder, Sale, SalaryPayment, WorkHoursEntry
+
+
+# The largest amount a DecimalField(max_digits=14, decimal_places=2) column holds: anything above
+# it was a database error (500), not a French message.
+MAX_AMOUNT = Decimal('999999999999.99')
+
+
+def _not_in_the_future(value, message):
+    if value and value > timezone.localdate():
+        raise serializers.ValidationError(message)
+    return value
 
 
 class ExpenseSerializer(serializers.ModelSerializer):
@@ -15,6 +29,16 @@ class ExpenseSerializer(serializers.ModelSerializer):
         model = Expense
         fields = ['id', 'batch', 'category', 'amount', 'expense_date', 'supplier']
         read_only_fields = ['id']
+
+    # An expense is money that left: a negative or zero one inflated the cash position, and a
+    # future-dated one counted in the cash today while the monthly chart left it out.
+    def validate_amount(self, value):
+        if value <= 0:
+            raise serializers.ValidationError('Le montant doit être supérieur à 0.')
+        return value
+
+    def validate_expense_date(self, value):
+        return _not_in_the_future(value, "La date de la dépense ne peut pas être dans le futur.")
 
     def create(self, validated_data):
         validated_data['farm'] = self.context['request'].user.farm
@@ -31,10 +55,36 @@ class SaleSerializer(serializers.ModelSerializer):
         fields = ['id', 'batch', 'product_type', 'quantity', 'unit_price', 'total_amount', 'sale_date', 'customer']
         read_only_fields = ['id', 'total_amount']
 
+    # A negative sale was recorded as negative revenue (-12 500 FCFA for "-5 plateaux").
+    def validate_quantity(self, value):
+        if value <= 0:
+            raise serializers.ValidationError('La quantité doit être supérieure à 0.')
+        return value
+
+    def validate_unit_price(self, value):
+        if value < 0:
+            raise serializers.ValidationError('Le prix unitaire ne peut pas être négatif.')
+        return value
+
+    def validate_sale_date(self, value):
+        return _not_in_the_future(value, 'La date de la vente ne peut pas être dans le futur.')
+
+    def validate(self, attrs):
+        quantity = attrs.get('quantity', getattr(self.instance, 'quantity', None))
+        unit_price = attrs.get('unit_price', getattr(self.instance, 'unit_price', None))
+        if quantity is not None and unit_price is not None and Decimal(str(quantity)) * unit_price > MAX_AMOUNT:
+            raise serializers.ValidationError({'quantity': 'Le total de la vente est trop élevé.'})
+        return attrs
+
     def create(self, validated_data):
         validated_data['farm'] = self.context['request'].user.farm
         validated_data['cashier'] = self.context['request'].user
         return super().create(validated_data)
+
+
+def _next_order_number(farm):
+    codes = PurchaseOrder.objects.filter(farm=farm, order_code__startswith=f'PO-{farm.id}-').values_list('order_code', flat=True)
+    return max((int(c.rsplit('-', 1)[1]) for c in codes if c.rsplit('-', 1)[1].isdigit()), default=0) + 1
 
 
 class PurchaseOrderSerializer(serializers.ModelSerializer):
@@ -72,6 +122,16 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['order_code', 'order_date']
 
+    def validate_quantity(self, value):
+        if value <= 0:
+            raise serializers.ValidationError('La quantité doit être supérieure à 0.')
+        return value
+
+    def validate_amount(self, value):
+        if value < 0:
+            raise serializers.ValidationError('Le montant ne peut pas être négatif.')
+        return value
+
     def validate(self, attrs):
         if self.instance and self.instance.status != OrderStatus.PENDING and 'status' in attrs \
                 and attrs['status'] != self.instance.status:
@@ -83,16 +143,27 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('supplierBatchNumber', None)  # only meaningful at receiving time
         farm = self.context['request'].user.farm
-        count = PurchaseOrder.objects.filter(farm=farm).count() + 1
-        validated_data['order_code'] = f'PO-{farm.id}-{count:04d}'
         validated_data['farm'] = farm
         validated_data['cashier'] = self.context['request'].user
-        return super().create(validated_data)
+        with transaction.atomic():
+            # The farm row is the lock that serialises code allocation, and the code is the highest
+            # existing suffix + 1 — not the row count, which fell after an order was deleted (a
+            # stock item deletion cascades to its orders) and handed out a code already in use.
+            Farm.objects.select_for_update().get(pk=farm.pk)
+            validated_data['order_code'] = f'PO-{farm.id}-{_next_order_number(farm):04d}'
+            return super().create(validated_data)
 
     def update(self, instance, validated_data):
         supplier_batch_number = validated_data.pop('supplierBatchNumber', '')
-        was_pending = instance.status == OrderStatus.PENDING
         with transaction.atomic():
+            # Re-read under a row lock: two taps on "Reçue" both loaded the order as PENDING, both
+            # passed `validate`, and each wrote the IN movement — the stock received twice.
+            instance = PurchaseOrder.objects.select_for_update().get(pk=instance.pk)
+            was_pending = instance.status == OrderStatus.PENDING
+            if not was_pending and validated_data.get('status', instance.status) != instance.status:
+                raise serializers.ValidationError({
+                    'status': "Cette commande est déjà finalisée (reçue ou annulée) — son statut ne peut plus être modifié.",
+                })
             instance = super().update(instance, validated_data)
             if was_pending and instance.status == OrderStatus.RECEIVED:
                 from apps.stock.models import MovementType, StockMovement
