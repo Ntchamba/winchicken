@@ -270,3 +270,16 @@ VAPID_PRIVATE_KEY = config('VAPID_PRIVATE_KEY', default='')
 # "mailto:" (or https) contact the push service can reach — required by the spec.
 VAPID_SUBJECT = config('VAPID_SUBJECT', default='mailto:admin@winchicken.local')
 WEB_PUSH_ENABLED = config('WEB_PUSH_ENABLED', default=True, cast=bool) and bool(VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY)
+
+# --- Test isolation ------------------------------------------------------------------------
+# The stacks' .env holds live Twilio and VAPID credentials, and the test runner shares the
+# stack's Redis with a running worker. Under `manage.py test` or pytest: SMS goes to the console
+# provider, no Web Push is sent, and Celery tasks run in-process instead of being queued — a
+# queued SMS id from the test database would otherwise be looked up by the live worker in the
+# stack's own database and sent for real. Plain comparisons only: nothing here may raise.
+RUNNING_TESTS = (len(sys.argv) > 1 and sys.argv[1] == 'test') or 'pytest' in sys.modules
+if RUNNING_TESTS:
+    SMS_PROVIDER = 'console'
+    WEB_PUSH_ENABLED = False
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_BROKER_URL = 'memory://'
