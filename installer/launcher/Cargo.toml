@@ -1,0 +1,19 @@
+[package]
+name = "winchicken-launcher"
+version = "1.0.0"
+edition = "2021"
+description = "Installe et démarre Winchicken sur le PC de la ferme (Docker), avec une interface dans le navigateur."
+publish = false
+
+# Kept tiny and compatible with rustc 1.75 (the dev machine's distro toolchain): no TLS, no
+# async runtime. Downloads go through the OS's own curl; the UI is served on 127.0.0.1.
+[dependencies]
+tiny_http = "=0.12.0"
+serde_json = "1"
+qrcode = { version = "=0.12.0", default-features = false, features = ["svg"] }
+getrandom = "=0.2.15"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true

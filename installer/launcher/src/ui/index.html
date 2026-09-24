@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Installation de Winchicken</title>
+<!-- Served by the Winchicken launcher on 127.0.0.1 only. Self-contained: no web font, no CDN,
+     because it must work before anything else is installed and without internet. -->
+<style>
+  :root { --navy: #0d1b28; --mint: #17b892; --mint-dark: #0b8f68; --ink: #10242c; --muted: #4d6166;
+          --line: rgba(13, 49, 41, .12); --danger: #d6433f; --warn-bg: #fdf3d7; --warn: #8a6d1f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: #f3f6f5; }
+  header { background: var(--navy); color: #fff; padding: 18px 20px; display: flex; align-items: center; gap: 12px; }
+  header strong { font-size: 18px; letter-spacing: .08em; }
+  header span { margin-left: auto; font-size: 13px; opacity: .7; }
+  main { width: min(680px, 100%); margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 24px; margin: 0 0 6px; }
+  .lead { color: var(--muted); margin: 0 0 20px; font-size: 16px; line-height: 1.5; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; margin-bottom: 16px; box-shadow: 0 10px 30px rgba(15, 40, 33, .06); }
+  ol.steps { list-style: none; margin: 0; padding: 0; }
+  ol.steps li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  ol.steps li:last-child { border-bottom: 0; }
+  .icon { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 14px; font-weight: 700; border: 2px solid var(--line); color: var(--muted); }
+  .done .icon { background: var(--mint); border-color: var(--mint); color: #fff; }
+  .skipped .icon { border-style: dashed; }
+  .failed .icon { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .running .icon { border-color: var(--mint); border-top-color: transparent; animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .running .icon { animation: none; border-top-color: var(--mint); } }
+  .label { font-weight: 600; }
+  .skipped .label, .pending .label { color: var(--muted); font-weight: 500; }
+  .detail { font-size: 14px; color: var(--muted); margin-top: 2px; }
+  .bar { height: 10px; border-radius: 99px; background: #e4ecea; overflow: hidden; margin-top: 8px; }
+  .bar > div { height: 100%; background: var(--mint); width: 0; transition: width .4s; }
+  .problem { border-color: var(--danger); border-width: 2px; }
+  .problem h2 { color: var(--danger); margin: 0 0 8px; font-size: 20px; }
+  .problem p { margin: 0 0 14px; line-height: 1.55; font-size: 16px; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+  button, a.button { min-height: 48px; padding: 12px 20px; border-radius: 12px; border: 0; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+  .primary { background: var(--mint); color: #082019; }
+  .secondary { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  button:focus-visible, a.button:focus-visible { outline: 3px solid var(--mint-dark); outline-offset: 2px; }
+  button:disabled { opacity: .6; cursor: wait; }
+  .ready h2 { color: var(--mint-dark); margin: 0 0 8px; font-size: 22px; }
+  .lan { display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .lan img { width: 150px; height: 150px; }
+  .lan code { font-size: 18px; font-weight: 700; word-break: break-all; }
+  .tip { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-top: 12px; line-height: 1.45; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 14px; min-height: 32px; }
+  pre { background: var(--navy); color: #d7f5ec; padding: 12px; border-radius: 10px; font-size: 12px; max-height: 280px; overflow: auto; white-space: pre-wrap; }
+  @media (max-width: 520px) { .lan { grid-template-columns: 1fr; } .lan img { justify-self: center; } }
+</style>
+</head>
+<body>
+<header><strong>WINCHICKEN</strong><span id="version"></span></header>
+<main>
+  <h1 id="title">Installation de Winchicken</h1>
+  <p class="lead" id="lead">Tout se fait automatiquement. Laissez cette page ouverte.</p>
+
+  <section class="card problem" id="problem" hidden aria-live="assertive">
+    <h2 id="problem-title"></h2>
+    <p id="problem-message"></p>
+    <div class="buttons" id="problem-actions"></div>
+  </section>
+
+  <section class="card ready" id="ready" hidden aria-live="polite">
+    <h2>Winchicken est prêt</h2>
+    <p>Ouverture automatique dans <strong id="countdown">15</strong> s. <a href="#" id="stay">Rester sur cette page</a></p>
+    <div class="buttons"><a class="button primary" id="open">Ouvrir Winchicken</a></div>
+    <div class="lan" id="lan" hidden>
+      <div>
+        <p style="margin:0 0 6px">Sur les téléphones de la ferme (même Wi-Fi), ouvrez :</p>
+        <code id="lan-url"></code>
+        <div class="tip">Cette adresse peut changer si la box Internet redémarre. Pour qu'elle reste fixe, « réservez » l'adresse de ce PC dans les réglages de la box (DHCP). En cas de doute, relancez Winchicken : la bonne adresse s'affiche ici.</div>
+      </div>
+      <img id="qr" alt="QR code de l'adresse de Winchicken" />
+    </div>
+  </section>
+
+  <section class="card">
+    <ol class="steps" id="steps"></ol>
+    <div id="download" hidden>
+      <div class="detail" id="download-text"></div>
+      <div class="bar" role="progressbar" aria-label="Téléchargement" aria-valuemin="0" aria-valuemax="100" id="bar"><div id="bar-fill"></div></div>
+    </div>
+    <details>
+      <summary>Détails techniques</summary>
+      <pre id="log"></pre>
+      <button class="secondary" id="copy" type="button">Copier le rapport</button>
+    </details>
+  </section>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const SYMBOL = { done: "✓", failed: "!", skipped: "–", pending: "", running: "" };
+  let redirectTimer = null, stayed = false, lastProblem = "";
+
+  function mb(bytes) { return (bytes / 1e6).toFixed(0) + " Mo"; }
+
+  function render(s) {
+    $("version").textContent = "version " + s.version;
+    $("steps").innerHTML = s.steps.map((st) =>
+      `<li class="${st.state}"><span class="icon" aria-hidden="true">${SYMBOL[st.state]}</span>` +
+      `<div><div class="label">${st.label}</div>${st.detail ? `<div class="detail">${escapeHtml(st.detail)}</div>` : ""}</div></li>`).join("");
+
+    if (s.download) {
+      $("download").hidden = false;
+      const pct = s.download.total ? Math.min(100, Math.round(100 * s.download.done / s.download.total)) : 0;
+      $("bar-fill").style.width = pct + "%";
+      $("bar").setAttribute("aria-valuenow", String(pct));
+      $("download-text").textContent = s.download.total ? `${mb(s.download.done)} sur ${mb(s.download.total)} (${pct} %)` : `${mb(s.download.done)} téléchargés`;
+    } else {
+      $("download").hidden = true;
+    }
+
+    const p = s.problem;
+    $("problem").hidden = !p;
+    if (p && p.code + p.message !== lastProblem) {
+      lastProblem = p.code + p.message;
+      $("problem-title").textContent = p.title;
+      $("problem-message").textContent = p.message;
+      $("problem-actions").innerHTML = "";
+      p.actions.forEach((a, i) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = i === 0 ? "primary" : "secondary"; b.textContent = a.label;
+        b.onclick = () => { document.querySelectorAll("#problem-actions button").forEach((x) => { x.disabled = true; }); fetch("/action/" + a.id, { method: "POST" }); };
+        $("problem-actions").appendChild(b);
+      });
+      $("problem-actions").querySelector("button")?.focus();
+    }
+    if (!p) lastProblem = "";
+
+    const log = s.log.join("\n");
+    if ($("log").textContent !== log) $("log").textContent = log;
+
+    if (s.ready && $("ready").hidden) {
+      $("ready").hidden = false;
+      $("title").textContent = "C'est prêt";
+      $("lead").textContent = "Winchicken fonctionne sur cet ordinateur.";
+      $("open").href = s.ready.localUrl;
+      if (s.ready.lanUrls.length) {
+        $("lan").hidden = false;
+        $("lan-url").textContent = s.ready.lanUrls[0];
+        $("qr").src = "/qr.svg?text=" + encodeURIComponent(s.ready.lanUrls[0]);
+      }
+      let left = 15;
+      redirectTimer = setInterval(() => {
+        if (stayed) return;
+        left -= 1; $("countdown").textContent = String(left);
+        if (left <= 0) { clearInterval(redirectTimer); location.href = s.ready.localUrl; }
+      }, 1000);
+    }
+  }
+
+  function escapeHtml(t) { return t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+  $("stay").onclick = (e) => { e.preventDefault(); stayed = true; $("countdown").parentElement.textContent = "Ouverture automatique annulée."; };
+  $("copy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("log").textContent); $("copy").textContent = "Rapport copié"; }
+    catch { $("copy").textContent = "Sélectionnez le texte ci-dessus pour le copier"; }
+  };
+
+  async function poll() {
+    try {
+      const r = await fetch("/status", { cache: "no-store" });
+      render(await r.json());
+    } catch {
+      // The launcher stops a while after Winchicken is ready; nothing more to show then.
+    }
+    setTimeout(poll, 1000);
+  }
+  poll();
+</script>
+</body>
+</html>
