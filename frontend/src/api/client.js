@@ -29,6 +29,16 @@ client.interceptors.request.use((config) => {
 
 let refreshPromise = null;
 
+// "/" (the landing page), not "/login": it re-checks GET /api/farm/exists/ on its own and shows
+// "Créer la ferme" instead of "Se connecter" when the farm is gone (factory reset) — "/login"
+// has no such check and would offer a login form for a farm that no longer exists. For the
+// ordinary token-expiry case this costs one extra click, not a break.
+function endSession(error) {
+  setTokens(null);
+  window.location.href = "/";
+  return Promise.reject(error);
+}
+
 client.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -42,33 +52,31 @@ client.interceptors.response.use(
       return Promise.reject(error);
     }
     original._retried = true;
+    let access;
     try {
       // `_retried` on the refresh call itself: an expired refresh token makes it 401 too, and
       // without the flag that 401 re-entered this interceptor, awaited `refreshPromise` — i.e.
       // itself — and never settled, leaving the app on its loading screen for good.
       refreshPromise =
         refreshPromise || client.post("/auth/refresh/", { refresh: tokens.refresh }, { _retried: true });
-      const { data } = await refreshPromise;
+      ({ data: { access } } = await refreshPromise);
       refreshPromise = null;
-      setTokens({ ...tokens, access: data.access });
-      original.headers.Authorization = `Bearer ${data.access}`;
-      // Awaited here (not `return client(original)`) so a retry that still 401s — e.g. the
-      // refresh token itself is still cryptographically valid but the user row behind it is
-      // gone, as after a factory reset (apps.core.services.factory_reset_farm): SimpleJWT's
-      // TokenRefreshView never touches the User table, so the refresh above "succeeds" and
-      // hands back a token for a user that no longer exists — falls into the same catch below
-      // instead of rejecting silently past it, which a bare `return` would have done (a
-      // `return`ed promise's rejection isn't caught by this try/catch).
-      return await client(original);
     } catch (refreshError) {
       refreshPromise = null;
-      setTokens(null);
-      // "/" (the landing page), not "/login": it re-checks GET /api/farm/exists/ on its own and
-      // shows "Créer la ferme" instead of "Se connecter" when the farm is gone (factory reset)
-      // — "/login" has no such check and would offer a login form for a farm that no longer
-      // exists. For the ordinary token-expiry case this costs one extra click, not a break.
-      window.location.href = "/";
-      return Promise.reject(refreshError);
+      return endSession(refreshError);
+    }
+    setTokens({ ...tokens, access });
+    original.headers.Authorization = `Bearer ${access}`;
+    try {
+      return await client(original);
+    } catch (retryError) {
+      // Only a retry that is *still* 401 ends the session: the refresh token is valid but the
+      // user row behind it is gone, as after a factory reset (apps.core.services.
+      // factory_reset_farm — SimpleJWT's TokenRefreshView never touches the User table, so the
+      // refresh "succeeds"). Any other failure is the request's own answer — a 400 on a save
+      // made just after the access token expired used to log the user out.
+      if (retryError.response?.status === 401) return endSession(retryError);
+      return Promise.reject(retryError);
     }
   }
 );

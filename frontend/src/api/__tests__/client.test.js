@@ -97,6 +97,28 @@ describe("api client — 401 handling", () => {
     await expect(withTimeout(client.get("/me/"))).resolves.toMatchObject({ status: 200 });
   });
 
+  // Campaign 3, in the browser: a save made just after the access token expired was refreshed
+  // and retried, the retry answered 400 (a validation error) — and the user was logged out,
+  // because every retry failure fell into the "refresh failed" branch.
+  test("a retry that answers 400 returns the 400 and keeps the session", async () => {
+    setTokens({ access: "OLD", refresh: "R1" });
+    routes = {
+      "/save/": (c) => (c.headers.Authorization === "Bearer NEW" ? answer(c, 400, { detail: "Poids invalide." }) : answer(c, 401)),
+      "/auth/refresh/": (c) => answer(c, 200, { access: "NEW" }),
+    };
+    await expect(client.put("/save/", {})).rejects.toMatchObject({ response: { status: 400, data: { detail: "Poids invalide." } } });
+    expect(getTokens()).toEqual({ access: "NEW", refresh: "R1" });
+    expect(window.location.href).toBe("/tableau");
+  });
+
+  test("a retry that still answers 401 (user gone after a factory reset) logs out", async () => {
+    setTokens({ access: "OLD", refresh: "R1" });
+    routes = { "/me/": (c) => answer(c, 401), "/auth/refresh/": (c) => answer(c, 200, { access: "NEW" }) };
+    await expect(withTimeout(client.get("/me/"))).rejects.toMatchObject({ response: { status: 401 } });
+    expect(getTokens()).toBeNull();
+    expect(window.location.href).toBe("/");
+  });
+
   test("a 401 with no refresh token clears the session without calling refresh", async () => {
     setTokens({ access: "OLD" });
     routes = { "/me/": (c) => answer(c, 401) };
