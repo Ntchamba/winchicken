@@ -3,6 +3,7 @@ import { Plus, Pencil, Trash2, Loader2, Check, X } from "lucide-react";
 import { stockApi } from "../api/endpoints";
 import { getServerErrorMessage } from "../api/errors";
 import { useAuth } from "../context/AuthContext";
+import "./table-wrap.css";
 
 const CAN_MANAGE = new Set(["ADMIN", "FARM_MANAGER", "FARMER"]);
 const emptyDraft = { name: "", contact: "", email: "" };

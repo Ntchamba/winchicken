@@ -4,6 +4,7 @@ import { stockApi } from "../api/endpoints";
 import { getServerErrorMessage } from "../api/errors";
 import { useAuth } from "../context/AuthContext";
 import ResourceCombobox from "./ResourceCombobox";
+import "./table-wrap.css";
 
 const CAN_MANAGE = new Set(["ADMIN", "FARM_MANAGER", "FARMER"]);
 const blankIngredient = () => ({ item: null, quantity: "" });

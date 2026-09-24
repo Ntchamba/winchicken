@@ -5,6 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { compositionByOutput } from "../utils/compositions";
 import UnitField from "./UnitField";
 import { todayISO } from "../utils/localDate";
+import "./table-wrap.css";
 
 const CAN_MANAGE = new Set(["ADMIN", "FARM_MANAGER", "FARMER"]);
 const today = () => todayISO();

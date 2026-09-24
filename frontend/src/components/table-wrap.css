@@ -1,0 +1,8 @@
+/* A table wider than its card scrolls inside the card instead of widening the page.
+   `.table-wrap` was used by the stock levels, compositions and suppliers tables with no rule
+   behind it, so at 375px the suppliers table pushed the whole stock page 19px sideways. */
+.table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
