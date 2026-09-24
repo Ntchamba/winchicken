@@ -6,6 +6,7 @@ import { saveStockItemsWithQuantities } from "../../api/stockSave";
 import { buildStockRows } from "../../utils/stockRows";
 import { useAuth } from "../../context/AuthContext";
 import { useOnboarding } from "../../context/OnboardingContext";
+import { fetchAllPages } from "../../api/pagination";
 
 export default function OnboardingStockPage() {
   const { warehouse, setWarehouse } = useOnboarding();
@@ -16,13 +17,18 @@ export default function OnboardingStockPage() {
 
   useEffect(() => {
     // The farm (and its four seeded stock categories) already exists by onboarding step 2.
-    Promise.all([stockApi.categories(user.farm), stockApi.items(user.farm), stockApi.suppliers(user.farm)])
-      .then(([catRes, itemRes, supRes]) => {
-        const categories = catRes.data.results || catRes.data;
+    // Every page (paginated by 20): the save sends the items of the categories listed here and
+    // the stock PUT deletes every item it is not sent.
+    Promise.all([
+      fetchAllPages((params) => stockApi.categories(user.farm, params)),
+      stockApi.items(user.farm),
+      fetchAllPages((params) => stockApi.suppliers(user.farm, params)),
+    ])
+      .then(([categories, itemRes, suppliers]) => {
         setState({
           categories,
           data: buildStockRows(itemRes.data.items, categories),
-          suppliers: supRes.data.results || supRes.data,
+          suppliers,
         });
       });
   }, [user.farm]);

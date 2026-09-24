@@ -143,7 +143,7 @@ export const stockApi = {
   updateComposition: (id, payload) => client.patch(`/stock-compositions/${id}/`, payload),
   removeComposition: (id) => client.delete(`/stock-compositions/${id}/`),
   executeComposition: (id, payload) => client.post(`/stock-compositions/${id}/execute/`, payload),
-  categories: (farmId) => client.get(`/farms/${farmId}/stock-categories/`),
+  categories: (farmId, params) => client.get(`/farms/${farmId}/stock-categories/`, { params }),
   addCategory: (farmId, payload) => client.post(`/farms/${farmId}/stock-categories/`, payload),
   removeCategory: (categoryId) => client.delete(`/stock-categories/${categoryId}/`),
   // Excel import — update-or-create StockItem params by Article name (never deletes, no
@@ -157,7 +157,7 @@ export const stockApi = {
     return client.post(`/farms/${farmId}/stock-items/import-xlsx/`, fd);
   },
   importTemplateUrl: `${API_URL}/stock-items/import-template.xlsx`,
-  suppliers: (farmId) => client.get(`/farms/${farmId}/suppliers/`),
+  suppliers: (farmId, params) => client.get(`/farms/${farmId}/suppliers/`, { params }),
   addSupplier: (farmId, payload) => client.post(`/farms/${farmId}/suppliers/`, payload),
   updateSupplier: (id, payload) => client.put(`/suppliers/${id}/`, payload),
   removeSupplier: (id) => client.delete(`/suppliers/${id}/`),

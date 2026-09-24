@@ -7,6 +7,7 @@ import { saveStockItemsWithQuantities } from "../api/stockSave";
 import { buildStockRows } from "../utils/stockRows";
 import { getServerErrorMessage } from "../api/errors";
 import "../styles/protocol-edit-modal.css";
+import { fetchAllPages } from "../api/pagination";
 
 const EASE_EXPO = [0.16, 1, 0.3, 1];
 const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
@@ -41,16 +42,22 @@ export default function StockParametersModal({ open, farmId, compositions = [], 
   const [importError, setImportError] = useState("");
 
   const loadSuppliers = () => {
-    stockApi.suppliers(farmId).then(({ data: d }) => setSuppliers(d.results || d));
+    fetchAllPages((params) => stockApi.suppliers(farmId, params)).then(setSuppliers);
   };
 
   const reload = () =>
-    Promise.all([stockApi.categories(farmId), stockApi.items(farmId), stockApi.suppliers(farmId)])
-      .then(([catRes, itemRes, supRes]) => {
-        const cats = catRes.data.results || catRes.data;
+    // Every page of categories and suppliers: the save sends the items of the categories the form
+    // has, and the stock PUT deletes every item it is not sent (CASCADE to its movements). Both
+    // lists are paginated by 20, so page 1 alone would have wiped the 21st category's items.
+    Promise.all([
+      fetchAllPages((params) => stockApi.categories(farmId, params)),
+      stockApi.items(farmId),
+      fetchAllPages((params) => stockApi.suppliers(farmId, params)),
+    ])
+      .then(([cats, itemRes, sups]) => {
         setCategories(cats);
         setData(buildStockRows(itemRes.data.items, cats));
-        setSuppliers(supRes.data.results || supRes.data);
+        setSuppliers(sups);
       });
 
   useEffect(() => {

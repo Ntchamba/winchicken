@@ -19,11 +19,17 @@ vi.mock("../../api/endpoints", () => ({
   },
 }));
 
+const formProps = vi.hoisted(() => vi.fn());
 vi.mock("../StockParametersForm", () => ({
-  default: ({ onSave }) => (
-    <button onClick={() => onSave({ items: [{ category: 1, name: "Aliment", unit: "kg" }] })}>Fake Save</button>
-  ),
+  default: (props) => {
+    formProps(props);
+    return <button onClick={() => props.onSave({ items: [{ category: 1, name: "Aliment", unit: "kg" }] })}>Fake Save</button>;
+  },
 }));
+
+const paged = (rows) => ({ page }) => Promise.resolve({
+  data: { count: rows.length, next: page * 20 < rows.length ? `?page=${page + 1}` : null, results: rows.slice((page - 1) * 20, page * 20) },
+});
 
 describe("StockParametersModal", () => {
   const onClose = vi.fn();
@@ -46,6 +52,23 @@ describe("StockParametersModal", () => {
     await waitFor(() => expect(stockApi.putItems).toHaveBeenCalledWith(7, [{ category: 1, name: "Aliment", unit: "kg" }]));
     expect(onSaved).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // The save PUTs the items of the categories the form was given, and the server deletes every
+  // item it is not sent (stock/views.py) — CASCADE to its movements, vaccinations, compositions
+  // and purchase orders. Categories are paginated by 20: page 1 only would have wiped the 21st.
+  test("the form gets every category and every supplier, past the first page", async () => {
+    const cats = Array.from({ length: 21 }, (_, i) => ({ id: i + 1, label: `Cat ${i + 1}`, icon: "Box", kind: "OTHER" }));
+    const sups = Array.from({ length: 21 }, (_, i) => ({ id: i + 1, name: `Fournisseur ${i + 1}` }));
+    stockApi.categories.mockImplementation((farmId, params) => paged(cats)(params));
+    stockApi.suppliers.mockImplementation((farmId, params) => paged(sups)(params));
+
+    render(<StockParametersModal open farmId={7} onClose={onClose} onSaved={onSaved} />);
+    await screen.findByText("Fake Save");
+
+    const props = formProps.mock.calls.at(-1)[0];
+    expect(props.initialCategories).toHaveLength(21);
+    expect(props.initialSuppliers).toHaveLength(21);
   });
 
   test("does not fetch while closed", () => {
