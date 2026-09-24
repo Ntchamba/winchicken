@@ -23,10 +23,14 @@ vi.mock("../../../api/endpoints", () => ({
 }));
 vi.mock("../../../hooks/useDocumentTitle", () => ({ default: vi.fn() }));
 
+// One paste per field, not user.type: typing ~44 characters one keystroke at a time re-rendered
+// the whole page 44 times (over a second per test), and under load one test crossed vitest's 5 s
+// timeout. These tests are about the save feedback, not keystrokes.
 const fill = async (user) => {
-  await user.type(screen.getByLabelText("Nom"), "Ouvrier 05");
-  await user.type(screen.getByLabelText("Email"), "ouvrier5@ferme.local");
-  await user.type(screen.getByLabelText("Mot de passe"), "MotDePasse123!");
+  for (const [label, value] of [["Nom", "Ouvrier 05"], ["Email", "ouvrier5@ferme.local"], ["Mot de passe", "MotDePasse123!"]]) {
+    await user.click(screen.getByLabelText(label));
+    await user.paste(value);
+  }
 };
 
 describe("EmployeesPage — worker creation feedback", () => {

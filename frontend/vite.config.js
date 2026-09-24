@@ -24,6 +24,10 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // 15 s, not vitest's 5 s: the heaviest component tests render whole forms and take up to
+    // ~3.5 s on an idle machine; with the backend suite and coverage running alongside (load
+    // average 10+ on the dev box) they crossed 5 s and failed at random. A real hang still fails.
+    testTimeout: 15000,
     setupFiles: './src/test/setup.js',
     globals: true,
   },
