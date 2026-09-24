@@ -1,0 +1,32 @@
+# Builds the farm installers from the committed code. Windows: Winchicken-Setup-<version>.exe,
+# produced on Linux by installer/scripts/build-windows.sh (the same script a developer runs).
+# The .exe is attached to the run as an artifact, for the landing page (other project) to host.
+name: Installateurs
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["installer-build"]
+    tags: ["v*"]
+
+jobs:
+  windows:
+    name: Windows (.exe)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Construire Winchicken-Setup.exe
+        run: installer/scripts/build-windows.sh "$RUNNER_TEMP/dist"
+
+      - name: Publier l'installateur
+        uses: actions/upload-artifact@v4
+        with:
+          name: Winchicken-Setup-windows
+          path: ${{ runner.temp }}/dist/Winchicken-Setup-*.exe
+          # Already compressed (images archive stored as-is); a private repo's artifact quota
+          # is small, so keep it only as long as it takes to move it to the landing page.
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
