@@ -91,15 +91,20 @@ class LowStockTests(AlertsBase):
     def lows(self):
         return Alert.objects.filter(rule__rule_type=AlertRuleType.LOW_STOCK)
 
-    def test_exactly_at_the_threshold_is_not_low(self):
+    def test_exactly_at_the_threshold_is_low(self):
+        # Same rule as the badge, the stock screen and the overview (apps.stock.calculations.is_low).
         self.move(10)
+        self.assertTrue(self.lows().exists())
+
+    def test_above_the_threshold_is_not_low(self):
+        self.move(10.5)
         self.assertFalse(self.lows().exists())
 
     def test_just_below_the_threshold_is_a_danger_alert(self):
         self.move(9.5)
         alert = self.lows().get()
         self.assertEqual(alert.severity, 'danger')
-        self.assertIn('Aliment démarrage sous le seuil (9,5 kg < 10 kg)', alert.message)
+        self.assertIn('Aliment démarrage sous le seuil (9,5 kg pour un seuil de 10 kg)', alert.message)
 
     def test_counts_out_movements(self):
         self.move(20)

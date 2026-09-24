@@ -12,7 +12,7 @@ from rest_framework.views import APIView
 from apps.core.models import Farm
 from apps.core.permissions import IsAdminOrFarmManagerOrFarmer
 from apps.core.services import record_audit_log
-from apps.stock.calculations import current_quantity
+from apps.stock.calculations import current_quantity, is_low
 from apps.stock.models import (
     StockCategory, StockComposition, StockItem, StockMovement, Supplier, Vaccination,
 )
@@ -445,7 +445,7 @@ class StockItemsLowCountView(APIView):
 
     def get(self, request):
         items = StockItem.objects.filter(farm=request.user.farm)
-        count = sum(1 for item in items if current_quantity(item) <= item.alert_threshold)
+        count = sum(1 for item in items if is_low(current_quantity(item), item.alert_threshold))
         return Response({'count': count})
 
 

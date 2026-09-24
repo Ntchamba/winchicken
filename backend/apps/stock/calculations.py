@@ -16,6 +16,14 @@ def current_quantity(item):
     return stock_in - stock_out
 
 
+def is_low(quantity, threshold):
+    """The one definition of a low article: at or under its own alert threshold. The sidebar
+    badge, the stock screen, the overview tree and the LOW_STOCK alert all ask this — the alert
+    used to wait for strictly below, so an article sitting at its threshold showed red with a
+    badge and no alert behind it."""
+    return quantity <= (threshold or 0)
+
+
 def stock_evolution(farm):
     """Per-item running-balance series for the stock evolution charts (2026-08-28). One entry
     per StockItem: `{itemCode, name, unit, alertThreshold, points: [{date, quantity}]}` where

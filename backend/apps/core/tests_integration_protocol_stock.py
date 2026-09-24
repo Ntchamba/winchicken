@@ -132,7 +132,7 @@ class ProtocolToStockToAlertChainTests(APITestCase):
         self.assertEqual(self.on_hand(), 70)
 
         [alert] = self.low_stock_alerts()
-        self.assertEqual(alert['message'], 'Provende sous le seuil (70 kg < 100 kg)')
+        self.assertEqual(alert['message'], 'Provende sous le seuil (70 kg pour un seuil de 100 kg)')
         [sms] = SmsMessage.objects.filter(alert_id=alert['id'])
         self.assertEqual(sms.recipient, '+237600000001')
         self.assertEqual(sms.provider_status, SmsStatus.SENT)
@@ -208,6 +208,33 @@ class ProtocolToStockToAlertChainTests(APITestCase):
         self.assertTrue(task['done'])
         self.assertEqual(self.complete(line['id']).data['status'], 'already_done')
         self.assertEqual(self.on_hand(), 110)
+
+
+@override_settings(SMS_PROVIDER='console')
+class LowStockDefinitionTests(APITestCase):
+    """One definition of "low": the sidebar badge, the stock screen and the overview tree all
+    count an article at exactly its threshold as low, and the LOW_STOCK alert used to wait for it
+    to drop strictly below — a red row and a badge with no alert behind them."""
+
+    def setUp(self):
+        self.farm, self.admin, self.worker, self.house, self.batch, self.item = build_farm('seuil')
+        self.client.force_authenticate(user=self.admin)
+
+    def take(self, quantity):
+        StockMovement.objects.create(item=self.item, movement_type=MovementType.OUT, quantity=quantity, movement_date=timezone.localdate())
+
+    def test_at_exactly_the_threshold_badge_overview_and_alert_agree(self):
+        self.take(50)  # 150 -> 100, the threshold
+        self.assertEqual(self.client.get('/api/stock-items/low-count/').data['count'], 1)
+        self.assertEqual(self.client.get('/api/farm/overview/').data['branches']['stock']['tier'], 'watch')
+        [alert] = Alert.objects.filter(rule__rule_type=AlertRuleType.LOW_STOCK)
+        self.assertEqual(alert.message, 'Provende sous le seuil (100 kg pour un seuil de 100 kg)')
+
+    def test_above_the_threshold_nothing_is_low_anywhere(self):
+        self.take(49)
+        self.assertEqual(self.client.get('/api/stock-items/low-count/').data['count'], 0)
+        self.assertEqual(self.client.get('/api/farm/overview/').data['branches']['stock']['tier'], 'good')
+        self.assertFalse(Alert.objects.exists())
 
 
 class ConcurrentCompletionTests(TransactionTestCase):

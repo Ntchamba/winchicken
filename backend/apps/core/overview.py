@@ -24,7 +24,7 @@ exactly the divergence this delegation avoids.
 """
 from apps.batches.calculations import farm_health_score
 from apps.finance.calculations import cash_on_hand, monthly_summary
-from apps.stock.calculations import current_quantity
+from apps.stock.calculations import current_quantity, is_low
 
 # ---------------------------------------------------------------------------
 # Thresholds — proposed defaults, documented so they can be reviewed and tuned.
@@ -73,7 +73,7 @@ def stock_branch(farm):
         quantity = current_quantity(item)
         if quantity <= STOCK_EMPTY_QUANTITY:
             empty.append(item.name)
-        if quantity <= (item.alert_threshold or 0):
+        if is_low(quantity, item.alert_threshold):
             low.append(item.name)
 
     if empty or len(low) >= STOCK_LOW_COUNT_FOR_CRITICAL:

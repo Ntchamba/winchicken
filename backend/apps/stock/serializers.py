@@ -70,7 +70,7 @@ class StockItemSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['item_code']
         extra_kwargs = {
-            'alert_threshold': {'help_text': 'LOW_STOCK alert fires when current_quantity drops below this value.'},
+            'alert_threshold': {'help_text': 'An article is low (badge, overview, LOW_STOCK alert) when current_quantity is at or under this value.'},
             'supplier': {'required': False, 'allow_null': True},
         }
 

@@ -61,15 +61,18 @@ def trigger_alert(farm, rule_type, message, severity='warning', batch=None, salt
 
 
 def check_low_stock(item):
-    from apps.stock.calculations import current_quantity
+    from apps.stock.calculations import current_quantity, is_low
 
     quantity = current_quantity(item)  # once: it is two aggregate queries per read
-    if quantity >= item.alert_threshold:
+    if not is_low(quantity, item.alert_threshold):
         return
     trigger_alert(
         farm=item.farm,
         rule_type=AlertRuleType.LOW_STOCK,
-        message=f'{item.name} sous le seuil ({fr_number(quantity)} {item.unit} < {fr_number(item.alert_threshold)} {item.unit})',
+        message=(
+            f'{item.name} sous le seuil ({fr_number(quantity)} {item.unit} '
+            f'pour un seuil de {fr_number(item.alert_threshold)} {item.unit})'
+        ),
         severity='danger',
         salt=str(quantity),
     )
