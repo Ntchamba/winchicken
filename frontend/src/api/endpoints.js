@@ -215,6 +215,9 @@ export const alertsApi = {
   rules: () => client.get("/alert-rules/"),
   addRule: (payload) => client.post("/alert-rules/", payload),
   list: (batchCode) => client.get("/alerts/", { params: batchCode ? { batch_code: batchCode } : {} }),
+  // Unresolved alerts only, newest first: filtering page 1 of every alert lost an old open one
+  // as soon as 20 newer alerts existed.
+  listOpen: () => client.get("/alerts/", { params: { open: 1 } }),
   unreadCount: () => client.get("/alerts/unread-count/"),
   markRead: (id) => client.post(`/alerts/${id}/mark-read/`),
   markAllRead: () => client.post("/alerts/mark-all-read/"),

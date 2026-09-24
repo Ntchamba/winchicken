@@ -41,8 +41,8 @@ export default function DashboardHomePage() {
   useEffect(() => {
     loadBatches();
     loadGrowthCurves();
-    alertsApi.list().then(({ data }) => {
-      const results = (data.results || data).filter((a) => a.status !== "RESOLVED").slice(0, 6);
+    alertsApi.listOpen().then(({ data }) => {
+      const results = (data.results || data).slice(0, 6);
       setAlerts(results.map((a) => ({ id: a.id, severity: a.severity, ruleType: a.ruleType, message: a.message, triggeredAt: a.triggered_at })));
     });
   }, [loadBatches, loadGrowthCurves]);

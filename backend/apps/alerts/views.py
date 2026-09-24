@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.alerts.models import Alert, AlertRule, NotificationPreference, SmsMessage
+from apps.alerts.models import Alert, AlertRule, AlertStatus, NotificationPreference, SmsMessage
 from apps.alerts.serializers import (
     AlertRuleSerializer,
     AlertSerializer,
@@ -26,7 +26,9 @@ class AlertRuleListCreateView(generics.ListCreateAPIView):
 
 
 class AlertListView(generics.ListAPIView):
-    """GET /api/alerts/ — filterable by ?batch_code=."""
+    """GET /api/alerts/ — filterable by ?batch_code= and ?open=1 (not RESOLVED). The dashboard's
+    open-alert card asks for ?open=1: filtering page 1 of every alert lost an old unresolved one
+    as soon as 20 newer alerts existed."""
 
     serializer_class = AlertSerializer
     permission_classes = [IsAuthenticated]
@@ -36,6 +38,8 @@ class AlertListView(generics.ListAPIView):
         batch_code = self.request.query_params.get('batch_code')
         if batch_code:
             qs = qs.filter(batch_id=batch_code)
+        if self.request.query_params.get('open') == '1':
+            qs = qs.exclude(status=AlertStatus.RESOLVED)
         return qs
 
 
