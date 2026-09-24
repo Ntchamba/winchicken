@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from apps.core.models import Farm
+from apps.core.formatting import fr_number as fr_hours
 from apps.core.permissions import ADMIN, FARM_MANAGER
 from apps.finance.models import Expense, OrderStatus, PurchaseOrder, Sale, SalaryPayment, WorkHoursEntry
 
@@ -201,6 +202,22 @@ class WorkHoursEntrySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'user': "Cet employé n'appartient pas à votre ferme."})
         if target_user != request.user and request.user.role not in (ADMIN, FARM_MANAGER):
             raise serializers.ValidationError({'user': "Vous ne pouvez enregistrer des heures que pour vous-même."})
+        # Hours are paid: negative hours lowered a salary, and nothing stopped 25 h in one day
+        # or hours logged for a day that has not happened yet.
+        hours = attrs.get('hours_worked', getattr(self.instance, 'hours_worked', None))
+        day = attrs.get('date', getattr(self.instance, 'date', None))
+        if hours is not None and not (0 < hours <= 24):
+            raise serializers.ValidationError({'hours_worked': "Le nombre d'heures doit être compris entre 0 et 24."})
+        _not_in_the_future(day, "La date ne peut pas être dans le futur.")
+        if hours is not None and day is not None:
+            others = WorkHoursEntry.objects.filter(user=target_user, date=day)
+            if self.instance is not None:
+                others = others.exclude(pk=self.instance.pk)
+            logged = sum((e.hours_worked for e in others), Decimal('0'))
+            if logged + hours > 24:
+                raise serializers.ValidationError({
+                    'hours_worked': f'{fr_hours(logged)} h déjà enregistrées ce jour-là : le total dépasserait 24 h.',
+                })
         attrs['user'] = target_user
         return attrs
 

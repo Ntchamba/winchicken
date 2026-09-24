@@ -1,6 +1,7 @@
 """Business logic for the finance app, kept out of views.py per this project's "thin views"
 convention (see docs/architecture.md).
 """
+from django.db import transaction
 from django.db.models import Sum
 
 from apps.finance.models import SalaryPayment, SalaryPaymentStatus, WorkHoursEntry
@@ -30,12 +31,19 @@ def calculate_salaries(farm, month, year):
 
     updated = []
     employees = User.objects.filter(farm=farm, hourly_rate__isnull=False)
+    with transaction.atomic():
+        return _calculate(employees, month, year, farm, updated)
+
+
+def _calculate(employees, month, year, farm, updated):
     for employee in employees:
         total_hours = WorkHoursEntry.objects.filter(
             user=employee, date__year=year, date__month=month,
         ).aggregate(total=Sum('hours_worked'))['total'] or 0
 
-        existing = SalaryPayment.objects.filter(user=employee, period_month=month, period_year=year).first()
+        # Locked like the pay view locks it: a recalculation running while "Payer" commits must
+        # not read PENDING, then write PENDING and the new totals back over a paid row.
+        existing = SalaryPayment.objects.select_for_update().filter(user=employee, period_month=month, period_year=year).first()
         if existing and existing.status == SalaryPaymentStatus.PAID:
             continue
 

@@ -372,6 +372,9 @@ class SalaryCalculateView(APIView):
             year = int(request.data.get('year', today.year))
         except (TypeError, ValueError):
             return Response({'detail': 'month/year doivent être des entiers.'}, status=status.HTTP_400_BAD_REQUEST)
+        # month=13 used to create PENDING payments for a period that does not exist.
+        if not 1 <= month <= 12 or not 2000 <= year <= today.year + 1:
+            return Response({'detail': 'Mois ou année invalide.'}, status=status.HTTP_400_BAD_REQUEST)
         payments = calculate_salaries(request.user.farm, month, year)
         return Response(SalaryPaymentSerializer(payments, many=True).data)
 
@@ -387,11 +390,13 @@ class SalaryPaymentPayView(APIView):
     permission_classes = [IsAdminOrFarmManager]
 
     def post(self, request, pk):
-        payment = get_object_or_404(SalaryPayment, pk=pk, farm=request.user.farm)
-        if payment.status == SalaryPaymentStatus.PAID:
-            return Response({'detail': 'Ce paiement est déjà marqué comme payé.'}, status=status.HTTP_400_BAD_REQUEST)
-
+        get_object_or_404(SalaryPayment, pk=pk, farm=request.user.farm)
         with transaction.atomic():
+            # Checked under a row lock: four simultaneous "Payer" taps all read PENDING and each
+            # wrote a LABOR expense — one salary paid three or four times in the books.
+            payment = SalaryPayment.objects.select_for_update().get(pk=pk)
+            if payment.status == SalaryPaymentStatus.PAID:
+                return Response({'detail': 'Ce paiement est déjà marqué comme payé.'}, status=status.HTTP_400_BAD_REQUEST)
             payment.status = SalaryPaymentStatus.PAID
             payment.paid_date = timezone.localdate()
             payment.save(update_fields=['status', 'paid_date'])

@@ -271,6 +271,10 @@ class EmployeeDetailView(generics.RetrieveUpdateDestroyAPIView):
         record_audit_log(self.request.user, 'employee.deleted', f'{instance.name} ({instance.get_role_display()})')
 
 
+# User.hourly_rate is DecimalField(max_digits=10, decimal_places=2).
+HOURLY_RATE_LIMIT = Decimal('100000000')
+
+
 class EmployeeHourlyRateView(APIView):
     """PATCH /api/employees/{id}/hourly-rate/ — Admin/Farm Manager (2026-08-27, Salaires module,
     Part D: "Administrateur sets/edits... Gérant de ferme can also edit it"). Deliberately a
@@ -288,9 +292,13 @@ class EmployeeHourlyRateView(APIView):
             employee.hourly_rate = None
         else:
             try:
-                employee.hourly_rate = Decimal(str(raw))
+                rate = Decimal(str(raw).strip().replace(',', '.'))
             except InvalidOperation:
                 return Response({'hourly_rate': ['Doit être un nombre valide.']}, status=status.HTTP_400_BAD_REQUEST)
+            # Decimal() also takes "NaN", "Infinity" and negatives; a salary is hours x rate.
+            if not rate.is_finite() or rate < 0 or rate >= HOURLY_RATE_LIMIT:
+                return Response({'hourly_rate': ['Doit être un montant positif valide.']}, status=status.HTTP_400_BAD_REQUEST)
+            employee.hourly_rate = rate
         employee.save(update_fields=['hourly_rate'])
         return Response({'hourly_rate': employee.hourly_rate})
 
