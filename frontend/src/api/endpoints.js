@@ -66,7 +66,7 @@ export const housesApi = {
   // the same phone connection (FIX 8, group 3). Without any timeout the promise never settles
   // and the form spins forever on a dropped link.
   putProtocol: (houseCode, lines) => client.put(`/houses/${houseCode}/protocol/`, { lines }, { timeout: 30000 }),
-  listProtocolCategories: (houseCode) => client.get(`/houses/${houseCode}/protocol-categories/`),
+  listProtocolCategories: (houseCode, params) => client.get(`/houses/${houseCode}/protocol-categories/`, { params }),
   addProtocolCategory: (houseCode, payload) => client.post(`/houses/${houseCode}/protocol-categories/`, payload),
   removeProtocolCategory: (houseCode, categoryId) => client.delete(`/houses/${houseCode}/protocol-categories/${categoryId}/`),
   tasksNow: (houseCode) => client.get(`/houses/${houseCode}/tasks-now/`),

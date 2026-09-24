@@ -100,6 +100,21 @@ describe("ProtocolEditModal — sidebar staleness regression", () => {
     expect(props.initialSchedules[3][0].what).toBe("Aliment démarrage");
   });
 
+  // The save PUTs every line of every category it was given, and the server deletes the lines
+  // it is not sent (houses/views/protocol.py). Categories are paginated by 20: reading page 1
+  // only would have deleted every line of the 21st category and beyond on the next save.
+  test("reads every page of categories, so a save never drops the 21st", async () => {
+    const cats = Array.from({ length: 21 }, (_, i) => ({ id: i + 1, label: `Catégorie ${i + 1}`, icon: "Soup" }));
+    housesApi.listProtocolCategories.mockImplementation((houseCode, { page }) => Promise.resolve({
+      data: { count: 21, next: page === 1 ? "?page=2" : null, results: page === 1 ? cats.slice(0, 20) : cats.slice(20) },
+    }));
+
+    render(<ProtocolEditModal houseCode="H-1" onClose={() => {}} onSaved={() => {}} />);
+    await screen.findByText("Fake Save");
+
+    expect(formProps.mock.calls.at(-1)[0].initialCategories.map((c) => c.id)).toEqual(cats.map((c) => c.id));
+  });
+
   test("saving refetches the shared houses/batches list", async () => {
     render(<ProtocolEditModal houseCode="H-1" onClose={() => {}} onSaved={() => {}} />);
 

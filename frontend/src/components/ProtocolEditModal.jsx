@@ -7,6 +7,7 @@ import { useAuth } from "../context/AuthContext";
 import { useHousesContext } from "../context/HousesContext";
 import { buildProtocolSchedules } from "../utils/protocolRows";
 import "../styles/protocol-edit-modal.css";
+import { fetchAllPages } from "../api/pagination";
 
 const EASE_EXPO = [0.16, 1, 0.3, 1];
 const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
@@ -80,13 +81,15 @@ export default function ProtocolEditModal({ houseCode, onClose, onSaved }) {
     triggerRef.current = document.activeElement;
 
     Promise.all([
-      housesApi.listProtocolCategories(houseCode),
+      // Every page: the protocol save deletes the lines it is not sent, so a category missed
+      // here (paginated by 20) would lose all its lines on the next save.
+      fetchAllPages((params) => housesApi.listProtocolCategories(houseCode, params)),
       housesApi.getProtocol(houseCode),
       housesApi.detail(houseCode),
       batchesApi.list(houseCode),
       stockApi.items(user.farm),
     ]).then(([categoriesRes, protocolRes, houseRes, batchesRes, stockRes]) => {
-      const cats = categoriesRes.data.results || categoriesRes.data;
+      const cats = categoriesRes;
       const batches = batchesRes.data.results || batchesRes.data;
       const batch = batches.find((b) => b.status === "ACTIVE") || null;
       setCategories(cats);

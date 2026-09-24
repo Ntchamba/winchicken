@@ -4,6 +4,7 @@ import HouseProtocolForm from "../../components/HouseProtocolForm";
 import { housesApi } from "../../api/endpoints";
 import { buildProtocolSchedules } from "../../utils/protocolRows";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
+import { fetchAllPages } from "../../api/pagination";
 
 // Kept as a plain full-page route (2026-08-25) even after the "Modifier" buttons on the
 // global/per-house dashboard views moved to `ProtocolEditModal` — this stays useful as a
@@ -21,10 +22,12 @@ export default function HouseProtocolPage() {
 
   useEffect(() => {
     Promise.all([
-      housesApi.listProtocolCategories(houseCode),
+      // Every page: the protocol save deletes the lines it is not sent, so a category missed
+      // here (paginated by 20) would lose all its lines on the next save.
+      fetchAllPages((params) => housesApi.listProtocolCategories(houseCode, params)),
       housesApi.getProtocol(houseCode),
     ]).then(([categoriesRes, protocolRes]) => {
-      const cats = categoriesRes.data.results || categoriesRes.data;
+      const cats = categoriesRes;
       setCategories(cats);
       setSchedules(buildProtocolSchedules(cats, protocolRes.data));
     });
