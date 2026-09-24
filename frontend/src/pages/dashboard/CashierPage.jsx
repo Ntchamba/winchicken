@@ -235,8 +235,8 @@ export default function CashierPage() {
               <tr key={s.id}>
                 <td data-label="Produit">{PRODUCT_TYPES.find((p) => p.value === s.product_type)?.label || s.product_type}</td>
                 <td data-label="Qté">{s.quantity}</td>
-                <td data-label="Prix unitaire">{s.unit_price}</td>
-                <td className="amount in" data-label="Total">{s.total_amount}</td>
+                <td data-label="Prix unitaire">{formatMoney(s.unit_price)}</td>
+                <td className="amount in" data-label="Total">{formatMoney(s.total_amount)}</td>
                 <td data-label="Client">{s.customer || "—"}</td>
                 <td>
                   <button className="icon-button" title="Reçu" onClick={() => setReceiptSale(s)}>

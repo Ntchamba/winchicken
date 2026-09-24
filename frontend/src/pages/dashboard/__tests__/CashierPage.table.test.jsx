@@ -59,7 +59,8 @@ describe("CashierPage — Ventes du jour on a phone", () => {
     expect(await screen.findByText("Marché central")).toBeInTheDocument();
 
     const totals = Array.from(document.querySelectorAll('td[data-label="Total"]'));
-    expect(totals.map((td) => td.textContent)).toEqual(["30000", "3000"]);
+    // Money goes through formatMoney like every amount in the app (campaign 3: "75000.00" raw).
+    expect(totals.map((td) => td.textContent)).toEqual(["30\u202f000 FCFA", "3\u202f000 FCFA"]);
   });
 
   test("the day's total is labelled too, since its own label cell collapses on a phone", async () => {
