@@ -5,9 +5,14 @@
 .receipt-total{border-bottom:0;border-top:2px solid #10242c;margin-top:4px;padding-top:14px;font-size:16px}
 .receipt-total strong{font-family:'Space Grotesk',sans-serif}
 
+/* The print-only copy (ReceiptModal portals it straight under <body>). Printing used to hide the
+   app with visibility:hidden, which keeps it laid out: the receipt, inside the fixed animated modal,
+   came out as two blank pages. Every other top-level element is now removed with display:none, so
+   the receipt is the whole document and starts at the top of page 1. */
+.receipt-print-root{display:none}
+
 @media print{
-  body *{visibility:hidden}
-  .receipt-print-area,.receipt-print-area *{visibility:visible}
-  .receipt-print-area{position:absolute;top:0;left:0;width:100%;padding:20px!important}
-  .receipt-no-print{display:none!important}
+  body>*:not(.receipt-print-root){display:none!important}
+  .receipt-print-root{display:block!important;color:#10242c;background:#fff}
+  .receipt-print-root .receipt-print-area{padding:0!important;max-width:420px;margin:0 auto}
 }

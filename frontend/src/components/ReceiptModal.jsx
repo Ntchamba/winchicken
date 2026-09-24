@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Printer, X } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
@@ -42,9 +43,30 @@ export default function ReceiptModal({ sale, onClose }) {
     };
   }, [open, onClose]);
 
+  // Rendered twice: in the on-screen modal, and as a print-only copy directly under <body>.
+  // Printing the modal itself gave two blank pages — it is fixed and animated, and print CSS
+  // could only make the rest of the app invisible (still laid out), not remove it. The copy
+  // under <body> lets styles/receipt.css drop every other top-level element with display:none.
+  const receipt = open && (
+    <div className="receipt-print-area" style={{ padding: "44px 32px 28px" }}>
+      <p className="eyebrow" style={{ textAlign: "center" }}>WINCHICKEN</p>
+      <h2 style={{ textAlign: "center", margin: "4px 0 2px", fontFamily: "'Space Grotesk',sans-serif" }}>Reçu de vente</h2>
+      <p style={{ textAlign: "center", margin: "0 0 20px", color: "var(--muted)", fontSize: 13 }}>{user.farm_name}</p>
+
+      <div className="receipt-row"><span>Reçu N°</span><strong>{sale.id}</strong></div>
+      <div className="receipt-row"><span>Date</span><strong>{formatDateFR(sale.sale_date)}</strong></div>
+      <div className="receipt-row"><span>Produit</span><strong>{PRODUCT_LABELS[sale.product_type] || sale.product_type}</strong></div>
+      <div className="receipt-row"><span>Quantité</span><strong>{sale.quantity}</strong></div>
+      <div className="receipt-row"><span>Prix unitaire</span><strong>{formatMoney(sale.unit_price)}</strong></div>
+      {sale.customer && <div className="receipt-row"><span>Client</span><strong>{sale.customer}</strong></div>}
+      <div className="receipt-row receipt-total"><span>Total</span><strong>{formatMoney(sale.total_amount)}</strong></div>
+    </div>
+  );
+
   const transition = { duration: reduceMotion ? 0 : 0.25, ease: [0.16, 1, 0.3, 1] };
 
   return (
+    <>
     <AnimatePresence>
       {open && (
         <motion.div
@@ -65,19 +87,7 @@ export default function ReceiptModal({ sale, onClose }) {
               <X size={18} strokeWidth={2} />
             </button>
 
-            <div className="receipt-print-area" style={{ padding: "44px 32px 28px" }}>
-              <p className="eyebrow" style={{ textAlign: "center" }}>WINCHICKEN</p>
-              <h2 style={{ textAlign: "center", margin: "4px 0 2px", fontFamily: "'Space Grotesk',sans-serif" }}>Reçu de vente</h2>
-              <p style={{ textAlign: "center", margin: "0 0 20px", color: "var(--muted)", fontSize: 13 }}>{user.farm_name}</p>
-
-              <div className="receipt-row"><span>Reçu N°</span><strong>{sale.id}</strong></div>
-              <div className="receipt-row"><span>Date</span><strong>{formatDateFR(sale.sale_date)}</strong></div>
-              <div className="receipt-row"><span>Produit</span><strong>{PRODUCT_LABELS[sale.product_type] || sale.product_type}</strong></div>
-              <div className="receipt-row"><span>Quantité</span><strong>{sale.quantity}</strong></div>
-              <div className="receipt-row"><span>Prix unitaire</span><strong>{formatMoney(sale.unit_price)}</strong></div>
-              {sale.customer && <div className="receipt-row"><span>Client</span><strong>{sale.customer}</strong></div>}
-              <div className="receipt-row receipt-total"><span>Total</span><strong>{formatMoney(sale.total_amount)}</strong></div>
-            </div>
+            {receipt}
 
             <div style={{ padding: "0 32px 28px", display: "flex", justifyContent: "flex-end" }} className="receipt-no-print">
               <button className="save-button" style={{ width: "auto" }} onClick={() => window.print()}>
@@ -89,5 +99,7 @@ export default function ReceiptModal({ sale, onClose }) {
         </motion.div>
       )}
     </AnimatePresence>
+    {receipt && createPortal(<div className="receipt-print-root" aria-hidden="true">{receipt}</div>, document.body)}
+    </>
   );
 }
