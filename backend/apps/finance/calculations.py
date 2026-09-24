@@ -51,7 +51,9 @@ def _bucket_end(start, unit):
 
 def _bucket_label(start, unit):
     if unit == 'week':
-        return start.strftime('%Y-W%V')
+        # %G (ISO year), not %Y: the week starting Monday 2024-12-30 is 2025-W01. With %Y it was
+        # labelled "2024-W01", sorted first on the chart and shared a label with a real week.
+        return start.strftime('%G-W%V')
     if unit == 'year':
         return str(start.year)
     return start.strftime('%Y-%m')
@@ -214,7 +216,15 @@ def roi_forecast_pct(farm, range_param='6m'):
         return None
     total_revenue = sum(s.total_amount for s in Sale.objects.filter(farm=farm, sale_date__gte=period_start))
     total_expenses = sum(e.amount for e in Expense.objects.filter(farm=farm, expense_date__gte=period_start))
-    projected_margin = total_revenue - total_expenses
+    # Received supply orders are expenses everywhere else (monthly_summary, Achats, the category
+    # breakdown); leaving them out overstated the margin. Equipment orders stay out: they are the
+    # investment this margin is divided by, not a running cost.
+    total_supply_orders = sum(
+        o.amount for o in PurchaseOrder.objects.filter(
+            farm=farm, status=OrderStatus.RECEIVED, order_date__gte=period_start,
+        ).exclude(item__category__kind=ItemCategory.EQUIPMENT)
+    )
+    projected_margin = total_revenue - total_expenses - total_supply_orders
     return round(float(projected_margin / total_investment) * 100, 2)
 
 
@@ -326,14 +336,15 @@ def expense_category_breakdown(farm, range_param='6m'):
 def break_even_quantity(allocated_fixed_cost, unit_sale_price, unit_variable_cost):
     """`break_even_quantity = allocated_fixed_cost / (unit_sale_price - unit_variable_cost)`
     (implementation-detail spec 5.3). Returns None if sale price equals variable cost (division
-    by zero) — never a fabricated value.
+    by zero), and when the price is *below* the variable cost (every sale loses money, so no
+    quantity ever breaks even) — never a fabricated value.
 
     NOT currently called from any view or serializer — implemented per the spec formula but not
     wired to an API endpoint or exposed figure (see docs/deviations.md). Callers must compute
     the three inputs themselves from Expense/Sale rows; this module does not do so for them.
     """
     denominator = unit_sale_price - unit_variable_cost
-    if not denominator:
+    if denominator <= 0:
         return None
     return allocated_fixed_cost / denominator
 
