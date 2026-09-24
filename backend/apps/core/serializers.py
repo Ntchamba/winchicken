@@ -69,7 +69,13 @@ class EmployeeSerializer(serializers.ModelSerializer):
         # EmployeeHourlyRateView (2026-08-27, Salaires module Part D), not this general-purpose
         # create/update endpoint, so a PUT here never accidentally clobbers a payroll rate.
         read_only_fields = ['id', 'hourly_rate']
-        extra_kwargs = {'civility': {'required': True}}
+        extra_kwargs = {
+            'civility': {'required': True},
+            # The model's UniqueValidator ran before validate_email and answered with Django's
+            # "Un objet user avec ce champ email existe déjà."; validate_email is the check
+            # (case-insensitive, with the app's own sentence).
+            'email': {'validators': []},
+        }
 
     def validate_role(self, value):
         if value == UserRole.ADMIN:
