@@ -14,7 +14,12 @@ export const toStockItemOption = (item) => ({ item_code: item.item_code, name: i
  * had — which created a second "Provende" (campaign 3, found in the browser). Same shape the
  * "Modifier le protocole" modal builds with `toStockItemOption`.
  */
-export default function useStockItemOptions(farmId) {
+/**
+ * @param {?number} farmId
+ * @param {*} [refreshKey] - reloads when it changes: the Excel onboarding path creates articles
+ *   after the page mounted, and the review form showed their rows as consuming nothing.
+ */
+export default function useStockItemOptions(farmId, refreshKey) {
   const [items, setItems] = useState(NONE);
   useEffect(() => {
     if (!farmId) return undefined;
@@ -24,6 +29,6 @@ export default function useStockItemOptions(farmId) {
       .then(({ data }) => { if (!cancelled) setItems((data.items || []).map(toStockItemOption)); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [farmId]);
+  }, [farmId, refreshKey]);
   return items;
 }

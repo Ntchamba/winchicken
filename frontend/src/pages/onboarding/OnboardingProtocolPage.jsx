@@ -66,7 +66,8 @@ export default function OnboardingProtocolPage() {
   const { user, refreshMe } = useAuth();
   // The farm's existing articles, so the Consommation selector finds "Provende" after a reload
   // instead of offering to create it a second time.
-  const stockItems = useStockItemOptions(user?.farm);
+  // Keyed on the step: articles the Excel path creates must be listed when the form opens.
+  const stockItems = useStockItemOptions(user?.farm, step);
   // Farm already configured (stock/employees already exist) -> this is the
   // "+ Nouvelle bande" flow, not first-time onboarding. Skip straight to the
   // dashboard instead of forcing the stock/employees steps again, which

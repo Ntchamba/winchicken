@@ -23,3 +23,19 @@ describe("useStockItemOptions", () => {
     expect(api.items).not.toHaveBeenCalled();
   });
 });
+
+// Campaign 3: the Excel onboarding path creates articles *after* the page mounted, so the review
+// form showed "Aucun article de stock consommé" on imported rows that did consume stock. A new
+// refresh key reloads the list.
+describe("useStockItemOptions — refresh", () => {
+  test("a new refresh key reloads the articles", async () => {
+    api.items.mockReset();
+    api.items
+      .mockResolvedValueOnce({ data: { items: [] } })
+      .mockResolvedValueOnce({ data: { items: [{ item_code: "FEE-2-001", name: "Provende démarrage", unit: "kg" }] } });
+    const { result, rerender } = renderHook(({ step }) => useStockItemOptions(2, step), { initialProps: { step: "excel" } });
+    await waitFor(() => expect(api.items).toHaveBeenCalledTimes(1));
+    rerender({ step: "manual" });
+    await waitFor(() => expect(result.current).toEqual([{ item_code: "FEE-2-001", name: "Provende démarrage", unit: "kg" }]));
+  });
+});
