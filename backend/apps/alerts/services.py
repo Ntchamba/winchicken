@@ -52,7 +52,7 @@ def trigger_alert(farm, rule_type, message, severity='warning', batch=None, salt
         # repeat of the same occurrence used to try a second insert and fail the whole save.
         sms, created = SmsMessage.objects.get_or_create(
             idempotency_key=idempotency_key,
-            defaults={'alert': alert, 'recipient': pref.user.phone},
+            defaults={'alert': alert, 'recipient': pref.user.phone, 'body': message},
         )
         if created:
             transaction.on_commit(lambda sms_id=sms.id: send_sms_task.delay(sms_id))
@@ -226,7 +226,7 @@ def _queue_reminder_sms(alert, recipient, message):
         salt=f'{alert.rule_id}:{alert.triggered_at.date()}',
     )
     sms, created = SmsMessage.objects.get_or_create(
-        idempotency_key=key, defaults={'alert': alert, 'recipient': recipient.phone},
+        idempotency_key=key, defaults={'alert': alert, 'recipient': recipient.phone, 'body': message},
     )
     if created:
         transaction.on_commit(lambda sms_id=sms.id: send_sms_task.delay(sms_id))

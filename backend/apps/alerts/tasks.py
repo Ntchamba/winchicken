@@ -48,7 +48,7 @@ def send_sms_task(self, sms_message_id: int):
         return  # already handled — idempotency guard against task replay
 
     provider = get_sms_provider()
-    result = provider.send(sms.recipient, sms.alert.message)
+    result = provider.send(sms.recipient, sms.body or sms.alert.message)
 
     if result['success']:
         sms.provider_status = SmsStatus.SENT

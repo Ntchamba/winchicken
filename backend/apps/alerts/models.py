@@ -146,6 +146,10 @@ class SmsMessage(models.Model):
 
     alert = models.ForeignKey(Alert, on_delete=models.CASCADE, related_name='sms_messages')
     recipient = models.CharField(max_length=32)
+    # This recipient's own text. A reminder shared by several assignees is one Alert with one
+    # SMS each, greeted by name — sending `alert.message` gave all of them the first one's
+    # greeting. Blank on rows written before the column existed: those send `alert.message`.
+    body = models.TextField(blank=True, default='')
     idempotency_key = models.CharField(max_length=128, unique=True)
     provider_status = models.CharField(max_length=16, choices=SmsStatus.choices, default=SmsStatus.PENDING)
     provider = models.CharField(max_length=64, blank=True)

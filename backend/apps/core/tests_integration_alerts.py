@@ -8,7 +8,6 @@ gateway is the console provider (config/settings.py forces it under tests), exce
 failing gateway is the point of the test.
 """
 import datetime as dt
-import unittest
 from unittest import mock
 from zoneinfo import ZoneInfo
 
@@ -123,13 +122,23 @@ class ScheduledReminderChainTests(APITestCase):
         PoultryBatch.objects.filter(pk=self.batch.pk).update(status=BatchStatus.CLOSED)
         self.assertEqual(self.fire('07:01'), [])
 
-    @unittest.expectedFailure  # REPORTED, not fixed: needs an SmsMessage.body column (a migration).
     def test_each_assignee_is_greeted_by_their_own_name(self):
+        # The task used to send alert.message — Awa's greeting — to everyone on the reminder.
         self.assign('awa', 'ben')
         with self.assertLogs('winchicken.sms', level='INFO') as logs:
             self.fire('07:01')
-        to_ben = next(line for line in logs.output if '+237600000012' in line)
-        self.assertIn('Ben', to_ben)  # the task sends alert.message — Awa's greeting — to everyone
+        sent = {phone: next(line for line in logs.output if phone in line) for phone in ('+237600000011', '+237600000012')}
+        self.assertIn('Madame Awa', sent['+237600000011'])
+        self.assertIn('Monsieur Ben', sent['+237600000012'])
+        self.assertNotIn('Awa', sent['+237600000012'])
+
+    def test_an_sms_written_before_the_body_column_still_sends_the_alert_text(self):
+        self.assign('awa')
+        [alert] = self.fire('07:01')
+        legacy = SmsMessage.objects.create(alert=alert, recipient='+237600000099', idempotency_key='legacy-row')
+        with self.assertLogs('winchicken.sms', level='INFO') as logs:
+            send_sms_task(legacy.id)
+        self.assertIn(alert.message, logs.output[0])
 
 
 class EventAlertDispatchTests(APITestCase):
