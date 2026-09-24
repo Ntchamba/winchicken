@@ -1,4 +1,5 @@
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
@@ -175,6 +176,21 @@ class HouseTaskCompleteView(APIView):
             if d is None:
                 return Response({'detail': 'date invalide (attendu YYYY-MM-DD).'}, status=400)
             when = _tz.make_aware(_dt.datetime.combine(d, _dt.time(12, 0)))  # noon — only .date() is used
+
+        # The endpoint takes any date, but only a day the line is actually due on is an occurrence:
+        # a day-7 vaccine "done" on day 1 deducted its stock for a task that did not exist.
+        from apps.batches.services import day_of_cycle
+        from apps.houses.services import _protocol_line_occurrence
+
+        cycle_day = day_of_cycle(batch, timezone.localdate(when) if when else timezone.localdate())
+        if _protocol_line_occurrence(line, cycle_day) is None:
+            return Response(
+                {'detail': f"Cette tâche n'est pas prévue ce jour-là (jour {cycle_day} du cycle)."}, status=400,
+            )
+        # A timed line is one occurrence per slot. Without the slot, a third, untimed occurrence
+        # was filed and deducted while both real ones stayed outstanding.
+        if time_slot is None and line.time_slots.exists():
+            return Response({'detail': 'Précisez le créneau : cette tâche a plusieurs horaires dans la journée.'}, status=400)
 
         result = complete_task_occurrence(
             line, batch, when=when, time_slot=time_slot, user=request.user,
