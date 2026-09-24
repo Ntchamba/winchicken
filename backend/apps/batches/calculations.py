@@ -28,22 +28,26 @@ def feed_conversion_ratio(batch, up_to_date=None):
     `feed_conversion_ratio = SUM(DailyLog.feed_consumed_kg) / (PoultryBatch.current_count *
     latest(DailyLog.avg_sample_weight))` (implementation-detail spec 5.1) — live weight is
     estimated as *current* flock size times the most recent sample weight, not a per-bird sum.
-    `up_to_date` restricts both the feed sum and the "latest sample weight" search to logs on or
-    before that date (used by `weekly_kpi` to compute a running FCR per week). Returns None
+    `up_to_date` restricts the feed sum, the "latest sample weight" search and the flock size to
+    logs on or before that date (used by `weekly_kpi` to compute a running FCR per week). Returns None
     (never a fabricated 0) if there is no sample weight yet or current_count is 0.
     Reference range 2.10 (favorable) to 2.30 (unfavorable) — see FCR_REFERENCE_RANGE.
     """
     logs = batch.daily_logs.all()
+    flock = batch.current_count
     if up_to_date:
         logs = [log for log in logs if log.log_date <= up_to_date]
+        # A past week's FCR divides by the flock alive *then*: deaths logged in later weeks must
+        # not shrink an earlier week's flock after the fact (that inflated early weeks' FCR).
+        flock = max(0, batch.initial_count - sum(log.mortality for log in logs))
     total_feed = sum(log.feed_consumed_kg for log in logs)
     latest_weight = None
     for log in sorted(logs, key=lambda entry: entry.log_date):
         if log.avg_sample_weight:
             latest_weight = log.avg_sample_weight
-    if not latest_weight or not batch.current_count:
+    if not latest_weight or not flock:
         return None
-    return round(total_feed / (batch.current_count * latest_weight), 2)
+    return round(total_feed / (flock * latest_weight), 2)
 
 
 def week_number(batch, log_date):
