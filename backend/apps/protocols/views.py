@@ -276,6 +276,7 @@ class ProtocolImportView(APIView):
 
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
+    throttle_scope = 'import'  # security review 2026-09-26 HIGH-2
 
     def post(self, request):
         upload = request.FILES.get('file')

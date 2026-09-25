@@ -112,6 +112,7 @@ class FarmResetView(APIView):
     """
 
     permission_classes = [IsAdmin]
+    throttle_scope = 'farm_reset'  # security review 2026-09-26 HIGH-2
 
     def post(self, request):
         serializer = FarmResetSerializer(data=request.data, context={'request': request})
@@ -145,6 +146,7 @@ class FarmResetRequestView(APIView):
     """
 
     permission_classes = [permissions.AllowAny]
+    throttle_scope = 'farm_reset'  # security review 2026-09-26 HIGH-2: admin-password oracle
 
     def post(self, request):
         serializer = PreLoginResetRequestSerializer(data=request.data)
@@ -173,6 +175,7 @@ class FarmResetConfirmView(APIView):
     """
 
     permission_classes = [permissions.AllowAny]
+    throttle_scope = 'farm_reset'  # security review 2026-09-26 HIGH-2
 
     def post(self, request):
         serializer = PreLoginResetConfirmSerializer(data=request.data)
@@ -209,6 +212,7 @@ class LoginView(TokenObtainPairView):
 
     permission_classes = [permissions.AllowAny]
     serializer_class = WinchickenTokenObtainPairSerializer
+    throttle_scope = 'login'  # security review 2026-09-26 HIGH-2: brute-force limit, keyed by IP
 
 
 class MeView(generics.RetrieveAPIView):
@@ -403,6 +407,7 @@ class EmployeeImportView(APIView):
 
     permission_classes = [IsAdminOrSecondaryAdmin]
     parser_classes = [MultiPartParser, FormParser]
+    throttle_scope = 'import'  # security review 2026-09-26 HIGH-2
 
     def post(self, request):
         from apps.core.import_jobs import start_employee_import

@@ -545,6 +545,7 @@ class StockImportView(APIView):
 
     permission_classes = [IsAdminOrFarmManagerOrFarmer]
     parser_classes = [MultiPartParser, FormParser]
+    throttle_scope = 'import'  # security review 2026-09-26 HIGH-2
 
     def post(self, request, farm_id):
         from apps.stock.xlsx_import import parse_and_apply_stock_import

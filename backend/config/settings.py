@@ -130,6 +130,18 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'apps.core.pagination.StablePageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # Rate limiting (security review 2026-09-26, HIGH-2). ScopedRateThrottle only throttles the
+    # views that set `throttle_scope`, so every other endpoint is unaffected; the sensitive ones
+    # (login, the farm-reset password oracle, the Excel imports) opt in below. Counts live in the
+    # `default` cache — Redis in the stacks, so the limit holds across gunicorn workers; keyed by
+    # user when authenticated, by client IP otherwise. Rates are deliberately generous enough for
+    # a real farmer retyping a password, tight enough to stop automated brute force.
+    'DEFAULT_THROTTLE_CLASSES': ('rest_framework.throttling.ScopedRateThrottle',),
+    'DEFAULT_THROTTLE_RATES': {
+        'login': '10/min',
+        'farm_reset': '5/min',
+        'import': '12/min',
+    },
 }
 
 # OpenAPI schema (drf-spectacular) — served at /api/schema/ (raw) and /api/docs/
@@ -323,6 +335,9 @@ if RUNNING_TESTS:
     WEB_PUSH_ENABLED = False
     CELERY_TASK_ALWAYS_EAGER = True
     CELERY_BROKER_URL = 'memory://'
+    # No throttling under the test runner: the suite logs in and imports far faster than a
+    # human, and a shared LocMemCache would carry counts between tests and fail them at random.
+    REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = ()
     CACHES = {
         'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'},
         'responses': {'BACKEND': 'django.core.cache.backends.dummy.DummyCache'},
