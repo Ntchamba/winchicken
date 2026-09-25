@@ -76,7 +76,8 @@
    scrolling list; 16px text so iOS does not zoom the page on focus. */
 .assignee-picker-search {
   position: sticky;
-  top: 0;
+  /* The list's own 4px top padding: at top: 0, scrolled rows showed through above the box. */
+  top: -4px;
   z-index: 1;
   display: flex;
   align-items: center;

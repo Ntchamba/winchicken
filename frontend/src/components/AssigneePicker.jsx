@@ -89,10 +89,7 @@ export default function AssigneePicker({
   // current search would not return them.
   let candidates = users ?? [];
   if (searching) {
-    const needle = query.trim().toLowerCase();
-    const assigned = assignedTo
-      .map((id, i) => ({ id, name: assignedToNames[i] ?? "" }))
-      .filter((u) => !needle || u.name.toLowerCase().includes(needle));
+    const assigned = assignedTo.map((id, i) => ({ id, name: assignedToNames[i] ?? "" }));
     const rest = (found ?? []).filter((u) => !assignedTo.includes(u.id));
     candidates = [...assigned, ...rest];
   }

@@ -41,10 +41,9 @@ describe("AssigneePicker without a users list", () => {
     await waitFor(() => expect(tasksApi.assignableUsers).toHaveBeenLastCalledWith({ q: "brice", limit: PICKER_LIMIT }));
     await waitFor(() => expect(screen.queryByRole("checkbox", { name: "Ouvrier 02" })).not.toBeInTheDocument());
     expect(screen.getByRole("checkbox", { name: "Brice Mbarga" })).not.toBeChecked();
-
-    await userEvent.clear(screen.getByRole("searchbox", { name: "Rechercher un employé" }));
-    await userEvent.type(screen.getByRole("searchbox", { name: "Rechercher un employé" }), "ouvrier 01");
-    expect(await screen.findByRole("checkbox", { name: "Ouvrier 01" })).toBeChecked();
+    // Live QA 2026-09-25: the assigned person vanished from a search that did not match them,
+    // so they could not be unticked without clearing the search first.
+    expect(screen.getByRole("checkbox", { name: "Ouvrier 01" })).toBeChecked();
   });
 
   test("ticking a found name sends the whole set", async () => {
