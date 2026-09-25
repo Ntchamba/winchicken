@@ -67,7 +67,7 @@ describe("AssigneePicker without a users list", () => {
     tasksApi.assignableUsers.mockRejectedValue(new Error("réseau"));
     render(<AssigneePicker assignedTo={[]} assignedToNames={[]} onChange={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: /Modifier/ }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("La liste des employés n'a pas pu être chargée.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Le serveur est inaccessible. Vérifiez votre connexion et réessayez.");
     expect(screen.queryByText("Aucun compte à assigner.")).not.toBeInTheDocument();
   });
 });

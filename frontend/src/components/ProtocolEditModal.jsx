@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getServerErrorMessage } from "../api/errors";
 import { X } from "lucide-react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import HouseProtocolForm from "./HouseProtocolForm";
@@ -184,7 +185,7 @@ export default function ProtocolEditModal({ houseCode, onClose, onSaved }) {
       // Surfaced in the panel below rather than left silent — a failed save (permission,
       // validation, network) used to leave the user with no feedback at all: the spinner just
       // stopped and the modal stayed open with nothing visibly wrong.
-      setSaveError(err.response?.data?.detail || "Impossible d'enregistrer les modifications. Réessayez.");
+      setSaveError(getServerErrorMessage(err, "Les modifications n'ont pas été enregistrées. Réessayez."));
       throw err; // re-thrown so HouseProtocolForm's own handleSave doesn't show a false "Enregistré"
     } finally {
       setSaving(false);

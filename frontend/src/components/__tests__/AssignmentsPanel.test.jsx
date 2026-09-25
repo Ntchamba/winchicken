@@ -83,10 +83,10 @@ describe("AssignmentsPanel", () => {
   });
 
   test("a failed removal shows a French error instead of silently dropping the row", async () => {
-    housesApi.assignTask.mockRejectedValue(new Error("boom"));
+    housesApi.assignTask.mockRejectedValue({ response: { status: 500, data: "" } });
     render(<AssignmentsPanel houseCode="H-1-001" />);
     await userEvent.click((await screen.findAllByRole("button", { name: "Retirer" }))[0]);
-    expect(await screen.findByText("Le retrait de l'affectation a échoué. Réessayez.")).toBeInTheDocument();
+    expect(await screen.findByText(/Le retrait de l'affectation a échoué\. Le serveur a rencontré un problème/)).toBeInTheDocument();
     expect(screen.getByText(/Peser un échantillon de la bande/)).toBeInTheDocument();
   });
 

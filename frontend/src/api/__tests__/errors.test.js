@@ -38,3 +38,28 @@ describe("getFieldErrors", () => {
       .toEqual({ email: "e1", lines: "Ligne 1 : w" });
   });
 });
+
+describe("getServerErrorMessage says what to do (phone audit, 2026-09-25)", () => {
+  const withStatus = (status, data) => ({ response: { status, data } });
+
+  test("a generic field error names its field; a message of the backend's own is left alone", () => {
+    expect(getServerErrorMessage(withStatus(400, { mortality: ["Ce champ est obligatoire."] })))
+      .toBe("Mortalité : Ce champ est obligatoire.");
+    expect(getServerErrorMessage(withStatus(400, { email: ["Un compte utilise déjà cet email."] })))
+      .toBe("Un compte utilise déjà cet email.");
+    expect(getServerErrorMessage(withStatus(400, { quantity: ["Un nombre valide est requis."] })))
+      .toBe("Quantité : Un nombre valide est requis.");
+    expect(getServerErrorMessage(withStatus(400, { name: ["Ce fournisseur existe déjà."] }))).toBe("Ce fournisseur existe déjà.");
+    expect(getServerErrorMessage(withStatus(400, { mystery: ["Ce champ est obligatoire."] }))).toBe("Ce champ est obligatoire.");
+  });
+
+  test("a server error keeps what failed and adds what to do", () => {
+    expect(getServerErrorMessage(withStatus(500, "<html>"), "La vente n'a pas été enregistrée. Réessayez."))
+      .toBe("La vente n'a pas été enregistrée. Le serveur a rencontré un problème. Réessayez dans un instant ; si cela continue, prévenez l'administrateur de la ferme.");
+  });
+
+  test("a refusal says who to ask", () => {
+    expect(getServerErrorMessage(withStatus(403, { detail: "Vous n'avez pas la permission d'effectuer cette action." })))
+      .toMatch(/permission.*Demandez à l'administrateur de la ferme/);
+  });
+});

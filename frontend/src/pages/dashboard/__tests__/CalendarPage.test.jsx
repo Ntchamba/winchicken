@@ -50,6 +50,7 @@ describe("CalendarPage", () => {
     scheduleApi.day.mockRejectedValue(new Error("réseau"));
     render(<MemoryRouter><CalendarPage /></MemoryRouter>);
     await userEvent.click((await screen.findByText(/Aliment 1/)).closest("button"));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Les tâches de ce jour n'ont pas pu être chargées.");
+    // No answer at all: the phone is off the network, and the message says so.
+    expect(await screen.findByRole("alert")).toHaveTextContent("Le serveur est inaccessible. Vérifiez votre connexion et réessayez.");
   });
 });

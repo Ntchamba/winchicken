@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { getServerErrorMessage } from "../api/errors";
 import { Check, Loader2 } from "lucide-react";
 import { batchesApi } from "../api/endpoints";
 import "../styles/protocol-edit-modal.css";
@@ -81,7 +82,7 @@ export default function WeighingSection({ batches = [], onLogged }) {
       loadRecent();
       onLogged?.();
     } catch (err) {
-      setError(err.response?.data?.detail || "Impossible d'enregistrer la pesée.");
+      setError(getServerErrorMessage(err, "La pesée n'a pas été enregistrée. Réessayez."));
     } finally {
       setSaving(false);
     }
@@ -135,7 +136,9 @@ export default function WeighingSection({ batches = [], onLogged }) {
             {saving ? <Loader2 size={16} className="spin" /> : saved ? <Check size={16} /> : "Enregistrer"}
           </button>
         </div>
-        {error && <p style={{ color: "var(--danger)", fontSize: 13, margin: "8px 0 0" }}>{error}</p>}
+        {error && <p role="alert" style={{ color: "var(--danger)", fontSize: 13, margin: "8px 0 0" }}>{error}</p>}
+        {/* Said in words, not only by a check mark on the button (phone audit, 2026-09-25). */}
+        {saved && !error && <p className="save-confirmation" role="status" style={{ margin: "8px 0 0" }}>Pesée enregistrée.</p>}
       </form>
 
       {isMulti ? (

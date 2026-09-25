@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { getServerErrorMessage } from "../../api/errors";
 import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
 import { scheduleApi } from "../../api/endpoints";
 import { iconFor } from "../../components/HouseProtocolForm";
@@ -68,7 +69,7 @@ export default function CalendarPage() {
     setDayDetail({ date: key, entries: null });
     scheduleApi.day(key)
       .then(({ data }) => setDayDetail((current) => (current?.date === key ? { date: key, entries: data } : current)))
-      .catch(() => setDayError("Les tâches de ce jour n'ont pas pu être chargées."));
+      .catch((err) => setDayError(getServerErrorMessage(err, "Les tâches de ce jour n'ont pas pu être chargées. Réessayez.")));
   };
 
   // A previous month's summary is not shown under the new month's heading while it loads.

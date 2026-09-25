@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getServerErrorMessage } from "../../api/errors";
 import { useNavigate } from "react-router-dom";
 import { Coins, HeartPulse, Package } from "lucide-react";
 import { farmApi } from "../../api/endpoints";
@@ -39,7 +40,7 @@ export default function GlobalOverviewPage() {
   useEffect(() => {
     farmApi.overview()
       .then(({ data }) => setOverview(data))
-      .catch(() => setError("Impossible de charger le bilan global."));
+      .catch((err) => setError(getServerErrorMessage(err, "Le bilan global n'a pas pu être chargé. Réessayez.")));
   }, []);
 
   // The heading and the shortcuts render before the data does, on purpose: leaving the user

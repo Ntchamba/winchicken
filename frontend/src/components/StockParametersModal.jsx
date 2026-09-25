@@ -133,7 +133,7 @@ export default function StockParametersModal({ open, farmId, compositions = [], 
       onClose();
       triggerRef.current?.focus?.();
     } catch (err) {
-      setSaveError(err.response?.data?.detail || "Impossible d'enregistrer les paramètres. Réessayez.");
+      setSaveError(getServerErrorMessage(err, "Impossible d'enregistrer les paramètres. Réessayez."));
       throw err;
     } finally {
       setSaving(false);

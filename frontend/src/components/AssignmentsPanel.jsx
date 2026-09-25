@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { getServerErrorMessage } from "../api/errors";
 import AssigneePicker from "./AssigneePicker";
 import { housesApi } from "../api/endpoints";
 // Reuses the secondary-button style TaskCompleteButton already defines (44px touch target)
@@ -43,7 +44,7 @@ export default function AssignmentsPanel({ houseCode, reloadKey, onChanged }) {
     housesApi
       .assignments(houseCode)
       .then(({ data }) => { setRows(data); setLoaded(true); })
-      .catch(() => setError("Impossible de charger les affectations."));
+      .catch((err) => setError(getServerErrorMessage(err, "Les affectations n'ont pas pu être chargées. Réessayez.")));
   }, [canAssign, houseCode]);
 
   useEffect(() => { load(); }, [load, reloadKey]);
@@ -57,8 +58,8 @@ export default function AssignmentsPanel({ houseCode, reloadKey, onChanged }) {
       await housesApi.assignTask(houseCode, taskId, []);
       setRows((current) => current.filter((row) => row.id !== taskId));
       onChanged?.();
-    } catch {
-      setError("Le retrait de l'affectation a échoué. Réessayez.");
+    } catch (err) {
+      setError(getServerErrorMessage(err, "Le retrait de l'affectation a échoué. Réessayez."));
     } finally {
       setRemovingId(null);
     }

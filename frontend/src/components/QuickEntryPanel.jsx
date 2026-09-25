@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { getServerErrorMessage } from "../api/errors";
 import { Check, Loader2 } from "lucide-react";
 import { batchesApi } from "../api/endpoints";
 import "../styles/protocol-edit-modal.css";
@@ -63,7 +64,7 @@ export default function QuickEntryPanel({ batches = [], onLogged }) {
       setEggsCollected("");
       onLogged?.();
     } catch (err) {
-      setError(err.response?.data?.detail || "Impossible d'enregistrer.");
+      setError(getServerErrorMessage(err, "La saisie du jour n'a pas été enregistrée. Réessayez."));
     } finally {
       setSaving(false);
     }
@@ -117,14 +118,14 @@ export default function QuickEntryPanel({ batches = [], onLogged }) {
         </button>
       </div>
       {saved && lastResult && (
-        <p className={`mortality-summary mortality-summary-${severityFor(lastResult.mortality, lastResult.cumulativeMortalityPct, lastResult.mortalityReferenceRange)}`}>
+        <p role="status" className={`mortality-summary mortality-summary-${severityFor(lastResult.mortality, lastResult.cumulativeMortalityPct, lastResult.mortalityReferenceRange)}`}>
           {lastResult.mortality} perte{lastResult.mortality === 1 ? "" : "s"} enregistrée{lastResult.mortality === 1 ? "" : "s"} aujourd'hui
           {lastResult.cumulativeMortalityPct != null && (
             <> · mortalité cumulée {lastResult.cumulativeMortalityPct}% (référence {lastResult.mortalityReferenceRange[0]}-{lastResult.mortalityReferenceRange[1]}%)</>
           )}
         </p>
       )}
-      {error && <p style={{ color: "var(--danger)", fontSize: 13, margin: "8px 0 0" }}>{error}</p>}
+      {error && <p role="alert" style={{ color: "var(--danger)", fontSize: 13, margin: "8px 0 0" }}>{error}</p>}
     </form>
   );
 }

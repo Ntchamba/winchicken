@@ -54,11 +54,12 @@ describe("AssigneePicker", () => {
   });
 
   test("a rejected save shows a French error instead of a silent no-op", async () => {
-    const onChange = vi.fn().mockRejectedValue(new Error("boom"));
+    const onChange = vi.fn().mockRejectedValue({ response: { status: 500, data: "" } });
     render(<AssigneePicker users={USERS} assignedTo={[]} assignedToNames={[]} onChange={onChange} />);
     await open();
     await userEvent.click(screen.getByRole("checkbox", { name: "Ouvrier 02" }));
-    expect(await screen.findByText("L'affectation n'a pas été enregistrée. Réessayez.")).toBeInTheDocument();
+    // What failed, and what to do about it (phone audit, 2026-09-25).
+    expect(await screen.findByText(/L'affectation n'a pas été enregistrée\. Le serveur a rencontré un problème\. Réessayez dans un instant/)).toBeInTheDocument();
   });
 
   test("a successful save confirms, so a phone tap is never ambiguous", async () => {

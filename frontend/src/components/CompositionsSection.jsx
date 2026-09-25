@@ -68,8 +68,8 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
       resetForm();
       load();
       onChanged?.();
-    } catch {
-      setError("Impossible d'enregistrer la composition.");
+    } catch (err) {
+      setError(getServerErrorMessage(err, "La composition n'a pas été enregistrée. Réessayez."));
     } finally {
       setBusy(false);
     }
@@ -145,8 +145,8 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
       closeRun();
       load();
       onChanged?.();
-    } catch {
-      setRunError("Impossible d'exécuter la composition.");
+    } catch (err) {
+      setRunError(getServerErrorMessage(err, "La composition n'a pas été exécutée. Réessayez."));
     } finally {
       setRunBusy(false);
     }

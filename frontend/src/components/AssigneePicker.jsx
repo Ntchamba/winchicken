@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getServerErrorMessage } from "../api/errors";
 import { Check, Loader2, Search, Users } from "lucide-react";
 import { tasksApi } from "../api/endpoints";
 import "./assignee-picker.css";
@@ -50,7 +51,7 @@ export default function AssigneePicker({
     const timer = setTimeout(() => {
       searchAssignableUsers(query.trim())
         .then((list) => { if (live) { setFound(list); setListError(""); } })
-        .catch(() => { if (live) setListError("La liste des employés n'a pas pu être chargée."); });
+        .catch((err) => { if (live) setListError(getServerErrorMessage(err, "La liste des employés n'a pas pu être chargée. Réessayez.")); });
     }, query ? 250 : 0);
     return () => { live = false; clearTimeout(timer); };
   }, [open, searching, query]);
@@ -73,8 +74,8 @@ export default function AssigneePicker({
       setSaved(true);
       clearTimeout(savedTimer.current);
       savedTimer.current = setTimeout(() => setSaved(false), 3000);
-    } catch {
-      setError("L'affectation n'a pas été enregistrée. Réessayez.");
+    } catch (err) {
+      setError(getServerErrorMessage(err, "L'affectation n'a pas été enregistrée. Réessayez."));
     } finally {
       setSaving(false);
     }

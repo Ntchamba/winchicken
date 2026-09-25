@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getServerErrorMessage } from "../api/errors";
 import { Check, Loader2, Plus, X } from "lucide-react";
 
 /**
@@ -45,8 +46,8 @@ export default function ResourceCombobox({ items = [], value = null, onSelect, o
       onSelect(created.item_code);
       setQuery("");
       setOpen(false);
-    } catch {
-      setError("Impossible de créer l'article.");
+    } catch (err) {
+      setError(getServerErrorMessage(err, "L'article n'a pas été créé. Réessayez."));
     } finally {
       setBusy(false);
     }

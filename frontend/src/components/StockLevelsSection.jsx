@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { getServerErrorMessage } from "../api/errors";
 import { Plus, Loader2, Check, X } from "lucide-react";
 import { stockApi } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
@@ -91,8 +92,8 @@ export default function StockLevelsSection({ items = [], compositions = [], onCh
       setOpenFor(null);
       setError("");
       onChanged?.();
-    } catch {
-      setError("Impossible d'ajouter le stock. Réessayez.");
+    } catch (err) {
+      setError(getServerErrorMessage(err, "Le stock n'a pas été ajouté. Réessayez."));
     } finally {
       setBusy(false);
     }
