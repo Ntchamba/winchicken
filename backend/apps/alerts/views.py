@@ -4,13 +4,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.alerts.models import Alert, AlertRule, AlertStatus, NotificationPreference, SmsMessage
+from apps.alerts.models import Alert, AlertRule, NotificationPreference, SmsMessage
 from apps.alerts.serializers import (
     AlertRuleSerializer,
     AlertSerializer,
     NotificationPreferenceSerializer,
     SmsMessageSerializer,
 )
+from apps.alerts.services import open_problem_alerts
 from apps.core.permissions import IsAdminOrFarmManager
 
 
@@ -26,20 +27,23 @@ class AlertRuleListCreateView(generics.ListCreateAPIView):
 
 
 class AlertListView(generics.ListAPIView):
-    """GET /api/alerts/ — filterable by ?batch_code= and ?open=1 (not RESOLVED). The dashboard's
-    open-alert card asks for ?open=1: filtering page 1 of every alert lost an old unresolved one
-    as soon as 20 newer alerts existed."""
+    """GET /api/alerts/ — filterable by ?batch_code= and ?open=1 (unresolved problems:
+    `open_problem_alerts`, which leaves out task reminders). The dashboard's open-alert card asks
+    for ?open=1: filtering page 1 of every alert lost an old unresolved one as soon as 20 newer
+    alerts existed. Without ?open=1 every alert is listed, reminders included (the Alertes page)."""
 
     serializer_class = AlertSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = Alert.objects.filter(rule__farm=self.request.user.farm).select_related('rule', 'batch__house')
+        if self.request.query_params.get('open') == '1':
+            qs = open_problem_alerts(self.request.user.farm)
+        else:
+            qs = Alert.objects.filter(rule__farm=self.request.user.farm)
+        qs = qs.select_related('rule', 'batch__house')
         batch_code = self.request.query_params.get('batch_code')
         if batch_code:
             qs = qs.filter(batch_id=batch_code)
-        if self.request.query_params.get('open') == '1':
-            qs = qs.exclude(status=AlertStatus.RESOLVED)
         return qs
 
 

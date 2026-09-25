@@ -181,7 +181,8 @@ def farm_health_score(farm):
       `CONSUMPTION_DEVIATION` — `LOW_STOCK` always fires at `severity='danger'`, so this
       condition is really "any stock-out alert is still open").
     - **watch** ("À surveiller"): exactly 1 batch has a breach, OR at least 1 `Alert` is open at
-      all (even `severity='warning'`).
+      all (even `severity='warning'`). "Open" is `apps.alerts.services.open_problem_alerts`:
+      task reminders (PROTOCOL_TASK / WEIGHING_REMINDER) are notifications, not problems.
     - **good** ("Bonne"): none of the above — no breaches, no open alerts.
 
     Note on this feature's original task premise: it named `MORTALITY_SPIKE`/`WEIGHT_DEVIATION`
@@ -193,7 +194,7 @@ def farm_health_score(farm):
     the first two signals anyway, independent of the (mis-named) alert-type check in item 2's
     example.
     """
-    from apps.alerts.models import Alert, AlertStatus
+    from apps.alerts.services import open_problem_alerts
     from apps.batches.models import BatchStatus, PoultryBatch
 
     # Logs fetched once for every batch: weekly_kpi and feed_conversion_ratio each walk them.
@@ -210,7 +211,7 @@ def farm_health_score(farm):
         if fcr is not None and fcr > FCR_REFERENCE_RANGE[1]:
             breaches.append((batch, 'IC'))
 
-    open_alerts = Alert.objects.filter(rule__farm=farm).exclude(status=AlertStatus.RESOLVED)
+    open_alerts = open_problem_alerts(farm)
     open_count = open_alerts.count()
     danger_open = open_alerts.filter(severity='danger').exists()
 

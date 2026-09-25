@@ -4,6 +4,7 @@ import HomeDashboard from "../../components/HomeDashboard";
 import ProtocolEditModal from "../../components/ProtocolEditModal";
 import { alertsApi, batchesApi } from "../../api/endpoints";
 import { fetchAllPages } from "../../api/pagination";
+import { countOf } from "../../api/incidents";
 import { useAuth } from "../../context/AuthContext";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import { enrichHouses } from "../../utils/dashboardHouses";
@@ -17,6 +18,9 @@ export default function DashboardHomePage() {
   const [activeBatches, setActiveBatches] = useState([]);
   const [growthSeries, setGrowthSeries] = useState([]);
   const [alerts, setAlerts] = useState([]);
+  // The card lists the 6 newest open alerts but counts all of them: it used to count the 6 it
+  // showed, next to a health badge saying "46 alertes ouvertes" (live QA, 2026-09-25).
+  const [openAlertCount, setOpenAlertCount] = useState(0);
   const [editingHouseCode, setEditingHouseCode] = useState(null);
 
   const loadBatches = useCallback(() => {
@@ -43,6 +47,7 @@ export default function DashboardHomePage() {
     loadBatches();
     loadGrowthCurves();
     alertsApi.listOpen().then(({ data }) => {
+      setOpenAlertCount(countOf(data));
       const results = (data.results || data).slice(0, 6);
       setAlerts(results.map((a) => ({ id: a.id, severity: a.severity, ruleType: a.ruleType, message: a.message, triggeredAt: a.triggered_at })));
     });
@@ -64,7 +69,7 @@ export default function DashboardHomePage() {
         stats={{
           activeBatches: enrichedHouses.filter((h) => h.status === "active").length,
           totalBirds: enrichedHouses.reduce((sum, h) => sum + (h.count || 0), 0),
-          openAlerts: alerts.length,
+          openAlerts: openAlertCount,
         }}
         onNavigate={handleNavigate}
         onModifyBatch={setEditingHouseCode}

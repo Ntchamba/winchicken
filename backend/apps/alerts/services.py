@@ -9,7 +9,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.alerts.models import (
-    Alert, AlertRule, AlertRuleType, NotificationChannel, NotificationPreference,
+    Alert, AlertRule, AlertRuleType, AlertStatus, NotificationChannel, NotificationPreference,
     ScheduleFrequency, SmsMessage, TriggerMode,
 )
 from apps.alerts.tasks import send_sms_task
@@ -203,6 +203,23 @@ def _resolve_scheduled_reminder(rule):
         (recipient, render_task_reminder(recipient, line.what, house_name, start_time=start_time))
         for recipient in recipients
     ]
+
+
+# Scheduled reminders: a task came due and its assignees were notified. They are the farm's
+# record of that notification, not a problem to deal with — counting them as open alerts made
+# "Alertes ouvertes" (and the health score) grow by every reminder ever sent (46 on the test
+# farm, 2026-09-25) and kept the farm "À surveiller" for good.
+REMINDER_RULE_TYPES = (AlertRuleType.PROTOCOL_TASK, AlertRuleType.WEIGHING_REMINDER)
+
+
+def open_problem_alerts(farm):
+    """Unresolved alerts that report a problem — the one definition behind "Alertes ouvertes",
+    `GET /api/alerts/?open=1` and the farm health score."""
+    return (
+        Alert.objects.filter(rule__farm=farm)
+        .exclude(status=AlertStatus.RESOLVED)
+        .exclude(rule__rule_type__in=REMINDER_RULE_TYPES)
+    )
 
 
 def _unaddressed_reminder(rule):
