@@ -9,6 +9,9 @@ import { useAuth } from "../../context/AuthContext";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import { enrichHouses } from "../../utils/dashboardHouses";
 
+// Roles whose day is recording what happened in a house: their dashboard opens on the daily entry.
+const DAILY_FIRST_ROLES = ["WORKER", "FARMER", "TECHNICIAN"];
+
 export default function DashboardHomePage() {
   useDocumentTitle("Tableau de bord");
   const { houses, refreshHouses } = useOutletContext();
@@ -81,6 +84,7 @@ export default function DashboardHomePage() {
         onDailyLogged={loadGrowthCurves}
         loading={!batchesLoaded}
         alertsLoading={!alertsLoaded}
+        dailyFirst={DAILY_FIRST_ROLES.includes(user.role)}
       />
       <ProtocolEditModal
         houseCode={editingHouseCode}

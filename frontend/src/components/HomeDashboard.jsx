@@ -69,11 +69,56 @@ function timeAgo(isoDate) {
  */
 export default function HomeDashboard({
   farmName = "Winchicken", houses = [], alerts = [], stats = null, onNavigate,
-  growthSeries = [], activeBatchList = [], onModifyBatch, onDailyLogged, loading = false, alertsLoading = false,
+  growthSeries = [], activeBatchList = [], onModifyBatch, onDailyLogged, loading = false, alertsLoading = false, dailyFirst = false,
 }) {
   // While loading, figures read "—" rather than 0: "0 bande" or "Tout est en ordre" before the
   // data has arrived is a false answer, not a placeholder (phone audit, 2026-09-25).
   const pending = (value) => (loading ? "—" : value);
+  // The two daily actions of the field roles. For them (dailyFirst) they open the dashboard;
+  // they sat below the charts, ~2 000px down a phone screen (phone audit, 2026-09-25).
+  const weighingBlock = (
+    <>
+      {/* Weighing moved to each house's "Pesée" page (2026-09-23), next to the curve it feeds;
+          this keeps the one-tap path to it from here instead of a second copy of the form. */}
+      <div className="section-row"><h2>Pesée</h2></div>
+      {loading ? (
+        <p className="empty-state">Chargement…</p>
+      ) : activeBatchList.length === 0 ? (
+        <p className="empty-state">Aucune bande active à peser.</p>
+      ) : (
+        <div className="weighing-links">
+          {activeBatchList.map((b) => (
+            <button
+              key={b.batchCode}
+              type="button"
+              className="weighing-link"
+              onClick={() => onNavigate?.(`/dashboard/houses/${b.houseCode}/weighing`)}
+            >
+              <Scale size={16} strokeWidth={1.9} aria-hidden="true" />
+              <span>Peser {b.name || b.batchCode}</span>
+              <span className="weighing-link-house">{b.houseName}</span>
+              <ChevronRight size={15} strokeWidth={2} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      )}
+
+    </>
+  );
+  const quickEntryBlock = (
+    <>
+      <div className="section-row"><h2>Saisie rapide du jour</h2></div>
+      {loading ? (
+        <p className="empty-state">Chargement…</p>
+      ) : (
+        <QuickEntryPanel
+          batches={activeBatchList.map((b) => ({ batch_code: b.batchCode, name: b.name }))}
+          onLogged={onDailyLogged}
+        />
+      )}
+    </>
+  );
+
   const activeBatches = stats?.activeBatches ?? houses.filter((h) => h.status === "active").length;
   const totalBirds = stats?.totalBirds ?? houses.reduce((sum, h) => sum + (h.count || 0), 0);
   const weeklyMortalityPct = stats?.weeklyMortalityPct;
@@ -99,6 +144,9 @@ export default function HomeDashboard({
         <p>Bonjour</p>
         <span>Voici comment se porte {farmName} aujourd'hui, tous bâtiments confondus.</span>
       </div>
+
+      {dailyFirst && quickEntryBlock}
+      {dailyFirst && weighingBlock}
 
       <FarmHealthBadge />
 
@@ -134,40 +182,8 @@ export default function HomeDashboard({
       <div className="section-row"><h2>Croissance et survie — toutes bandes actives</h2></div>
       {loading ? <p className="empty-state">Chargement…</p> : <GrowthCurves series={growthSeries} scope="all" />}
 
-      {/* Weighing moved to each house's "Pesée" page (2026-09-23), next to the curve it feeds;
-          this keeps the one-tap path to it from here instead of a second copy of the form. */}
-      <div className="section-row"><h2>Pesée</h2></div>
-      {loading ? (
-        <p className="empty-state">Chargement…</p>
-      ) : activeBatchList.length === 0 ? (
-        <p className="empty-state">Aucune bande active à peser.</p>
-      ) : (
-        <div className="weighing-links">
-          {activeBatchList.map((b) => (
-            <button
-              key={b.batchCode}
-              type="button"
-              className="weighing-link"
-              onClick={() => onNavigate?.(`/dashboard/houses/${b.houseCode}/weighing`)}
-            >
-              <Scale size={16} strokeWidth={1.9} aria-hidden="true" />
-              <span>Peser {b.name || b.batchCode}</span>
-              <span className="weighing-link-house">{b.houseName}</span>
-              <ChevronRight size={15} strokeWidth={2} aria-hidden="true" />
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="section-row"><h2>Saisie rapide du jour</h2></div>
-      {loading ? (
-        <p className="empty-state">Chargement…</p>
-      ) : (
-        <QuickEntryPanel
-          batches={activeBatchList.map((b) => ({ batch_code: b.batchCode, name: b.name }))}
-          onLogged={onDailyLogged}
-        />
-      )}
+      {!dailyFirst && weighingBlock}
+      {!dailyFirst && quickEntryBlock}
 
       {activeBatchList.length > 0 && (
         <>

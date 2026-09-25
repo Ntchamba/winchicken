@@ -48,10 +48,12 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       const { data } = await authApi.login(email, password);
-      await loginWithTokens(data);
+      const me = await loginWithTokens(data);
       // Login already succeeded and is saved (tokens issued, user session live) at this
       // point — the transition screen only delays this page's own navigation.
-      setTransitionTarget(data.is_configured ? "/dashboard" : "/onboarding/protocol");
+      // A cashier's job is the till: straight to it, not to the farm dashboard (phone audit).
+      const home = me?.role === "CASHIER" ? "/dashboard/cashier" : "/dashboard";
+      setTransitionTarget(data.is_configured ? home : "/onboarding/protocol");
     } catch (err) {
       // A 401 here is SimpleJWT's own already-specific message ("Aucun compte actif n'a été
       // trouvé avec les identifiants fournis"); getServerErrorMessage only needs to add the
@@ -66,7 +68,7 @@ export default function LoginPage() {
   if (transitionTarget) {
     return (
       <TransitionScreen
-        message={transitionTarget === "/dashboard" ? TRANSITION_MESSAGES.dashboard : TRANSITION_MESSAGES.onboarding}
+        message={transitionTarget.startsWith("/dashboard") ? TRANSITION_MESSAGES.dashboard : TRANSITION_MESSAGES.onboarding}
         durationMs={8000}
         onComplete={() => navigate(transitionTarget, { replace: true })}
       />

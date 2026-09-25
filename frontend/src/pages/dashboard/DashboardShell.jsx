@@ -10,6 +10,9 @@ const ROLE_LABELS = {
   FARMER: "Fermier", WORKER: "Ouvrier", TECHNICIAN: "Technicien", CASHIER: "Caissier",
 };
 
+// The phone bar's role slot: the screen each role opens most (see DashboardLayout).
+const PHONE_SHORTCUT = { WORKER: "tasks", FARMER: "tasks", TECHNICIAN: "tasks", CASHIER: "cashier" };
+
 export default function DashboardShell() {
   return (
     <HousesProvider>
@@ -65,6 +68,7 @@ function DashboardShellContent() {
       canSeeCashier={["ADMIN", "CASHIER"].includes(user.role)}
       canSeePurchaseOrders={["ADMIN", "FARM_MANAGER", "CASHIER"].includes(user.role)}
       canSeeAudit={user.role === "ADMIN"}
+      phoneShortcut={PHONE_SHORTCUT[user.role] || null}
       unreadCount={unreadCount}
       stockLowCount={stockLowCount}
       financePendingCount={financePendingCount}

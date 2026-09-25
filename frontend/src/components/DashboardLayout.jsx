@@ -82,6 +82,7 @@ export default function DashboardLayout({
   canSeeCashier = true,
   canSeePurchaseOrders = true,
   canSeeAudit = false,
+  phoneShortcut = null,
   unreadCount = 0,
   stockLowCount = 0,
   financePendingCount = 0,
@@ -354,7 +355,32 @@ export default function DashboardLayout({
             >
               <LayoutGrid size={22} strokeWidth={1.8} aria-hidden="true" />
             </button>
-            {canSeeFinance && (
+            {/* The second slot is the role's own daily destination (phone audit, 2026-09-25):
+                "Mes tâches" took a worker three taps through "Autres", the till a cashier four.
+                Finance stays one tap away for the roles that use it, in the drawer for the rest. */}
+            {phoneShortcut === "tasks" && (
+              <button
+                type="button"
+                className={`mobile-icon-link ${isActive("/dashboard/my-tasks") ? "active" : ""}`}
+                aria-label="Mes tâches"
+                aria-current={isActive("/dashboard/my-tasks") ? "page" : undefined}
+                onClick={() => go("/dashboard/my-tasks")}
+              >
+                <ClipboardCheck size={22} strokeWidth={1.8} aria-hidden="true" />
+              </button>
+            )}
+            {phoneShortcut === "cashier" && (
+              <button
+                type="button"
+                className={`mobile-icon-link ${isActive("/dashboard/cashier") ? "active" : ""}`}
+                aria-label="Caisse"
+                aria-current={isActive("/dashboard/cashier") ? "page" : undefined}
+                onClick={() => go("/dashboard/cashier")}
+              >
+                <Wallet2 size={22} strokeWidth={1.8} aria-hidden="true" />
+              </button>
+            )}
+            {!phoneShortcut && canSeeFinance && (
               <button
                 type="button"
                 className={`mobile-icon-link ${isActive("/dashboard/finances") ? "active" : ""}`}
