@@ -287,6 +287,11 @@ class ProtocolImportView(APIView):
                 {'detail': 'Format non pris en charge. Importez un fichier .xlsx (Excel).'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        from apps.core.xlsx import WorkbookError, check_upload_size
+        try:  # security review 2026-09-26: refuse a memory bomb up front
+            check_upload_size(upload)
+        except WorkbookError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         # `preview=1` (the batch-creation Excel screen) wants the column mapping back even when
         # a required column couldn't be resolved, so it can show which one needs attention and
         # keep the confirm button disabled. Without the flag a file like that is still a 400,

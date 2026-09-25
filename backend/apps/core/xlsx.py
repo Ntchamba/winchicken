@@ -15,9 +15,26 @@ CONTENT_TYPE_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml
 
 TRUE_WORDS = {'oui', 'yes', 'true', 'vrai', '1', 'x', 'o'}
 
+# A real import (employees or stock parameters for one farm) is kilobytes. Anything far larger is
+# either a mistake or an attempt to exhaust memory while openpyxl parses it (security review
+# 2026-09-26). read_only=True already streams rows, but a cap refuses the obvious bomb up front.
+MAX_IMPORT_BYTES = 5 * 1024 * 1024
+
 
 class WorkbookError(Exception):
-    """A file that cannot be used at all (unreadable, empty, missing required headers)."""
+    """A file that cannot be used at all (unreadable, empty, missing required headers, too big)."""
+
+
+def check_upload_size(upload):
+    """Raise WorkbookError (-> 400 with a French message) if the upload exceeds MAX_IMPORT_BYTES.
+    `upload.size` is known before the file is read, so an oversized file is refused without
+    parsing it."""
+    size = getattr(upload, 'size', None)
+    if size is not None and size > MAX_IMPORT_BYTES:
+        raise WorkbookError(
+            f'Fichier trop volumineux ({size // (1024 * 1024)} Mo). La taille maximale est de '
+            f'{MAX_IMPORT_BYTES // (1024 * 1024)} Mo.'
+        )
 
 
 def clean(value):

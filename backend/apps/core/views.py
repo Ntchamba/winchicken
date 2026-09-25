@@ -411,7 +411,7 @@ class EmployeeImportView(APIView):
 
     def post(self, request):
         from apps.core.import_jobs import start_employee_import
-        from apps.core.xlsx import WorkbookError
+        from apps.core.xlsx import WorkbookError, check_upload_size
 
         upload = request.FILES.get('file')
         if upload is None:
@@ -419,6 +419,7 @@ class EmployeeImportView(APIView):
         if not upload.name.lower().endswith('.xlsx'):
             return Response({'detail': 'Importez un fichier .xlsx (Excel).'}, status=status.HTTP_400_BAD_REQUEST)
         try:
+            check_upload_size(upload)  # security review 2026-09-26: refuse a memory bomb up front
             job = start_employee_import(request.user, upload)
         except WorkbookError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)

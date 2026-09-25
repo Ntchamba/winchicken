@@ -565,7 +565,7 @@ class StockImportView(APIView):
 
     def post(self, request, farm_id):
         from apps.stock.xlsx_import import parse_and_apply_stock_import
-        from apps.core.xlsx import WorkbookError
+        from apps.core.xlsx import WorkbookError, check_upload_size
 
         farm = _scoped_farm(request, farm_id)
         upload = request.FILES.get('file')
@@ -577,6 +577,7 @@ class StockImportView(APIView):
         # change, and writes nothing — the user confirms before anything is committed.
         dry_run = str(request.data.get('dry_run', '')).lower() in ('1', 'true', 'oui')
         try:
+            check_upload_size(upload)  # security review 2026-09-26: refuse a memory bomb up front
             result = parse_and_apply_stock_import(farm, upload, dry_run=dry_run)
         except WorkbookError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
