@@ -58,6 +58,34 @@ pub fn engine_ready(docker: &Path) -> bool {
     command(docker).args(["info", "--format", "{{.ServerVersion}}"]).output().map(|o| o.status.success()).unwrap_or(false)
 }
 
+/// Docker Compose v2 (`docker compose`), which every start command needs. Docker Desktop always
+/// has it; a Linux engine from the distribution (Ubuntu/Debian `docker.io`) does not, and without
+/// this check the failure only surfaced as a generic "Winchicken n'a pas pu démarrer".
+pub fn compose_ready(docker: &Path) -> bool {
+    command(docker).args(["compose", "version"]).output().map(|o| o.status.success()).unwrap_or(false)
+}
+
+pub fn compose_missing() -> Problem {
+    let how = if cfg!(target_os = "linux") {
+        "Sur Ubuntu ou Debian, installez-le avec « sudo apt install docker-compose-v2 » \
+         (ou « docker-compose-plugin » si Docker vient du dépôt docker.com), puis cliquez sur Réessayer."
+    } else {
+        "Mettez Docker Desktop à jour (menu Docker > « Check for updates »), puis cliquez sur Réessayer."
+    };
+    Problem::new("compose_missing", "Il manque « Docker Compose »", &format!("Winchicken a besoin de Docker Compose, un complément de Docker. {how}"), &[RETRY])
+}
+
+/// Linux: the engine runs but this account may not use it (not in the `docker` group). Waiting
+/// six minutes for it to "start" and then pointing at Docker Desktop, as before, never helps.
+fn permission_denied(docker: &Path) -> bool {
+    cfg!(target_os = "linux")
+        && command(docker)
+            .args(["info", "--format", "{{.ServerVersion}}"])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stderr).to_lowercase().contains("permission denied"))
+            .unwrap_or(false)
+}
+
 fn docker_desktop_app() -> Option<PathBuf> {
     if cfg!(windows) {
         let p = PathBuf::from(r"C:\Program Files\Docker\Docker\Docker Desktop.exe");
@@ -75,6 +103,15 @@ fn docker_desktop_app() -> Option<PathBuf> {
 pub fn start_and_wait(docker: &Path, shared: &Shared) -> Result<(), Problem> {
     if engine_ready(docker) {
         return Ok(());
+    }
+    if permission_denied(docker) {
+        return Err(Problem::new(
+            "docker_permission",
+            "Ce compte n'a pas accès à Docker",
+            "Docker est installé mais ce compte n'a pas le droit de l'utiliser. Dans un terminal, tapez \
+             « sudo usermod -aG docker $USER », fermez la session puis reconnectez-vous, et relancez Winchicken.",
+            &[RETRY],
+        ));
     }
     match docker_desktop_app() {
         Some(app) if cfg!(windows) => {
@@ -104,16 +141,27 @@ pub fn start_and_wait(docker: &Path, shared: &Shared) -> Result<(), Problem> {
              Winchicken reprendra tout seul après le redémarrage.",
             &[INSTALL_WSL, RETRY],
         )
-    } else {
+    } else if cfg!(target_os = "linux") {
+        // No Docker Desktop to open on Linux: the engine is a system service.
         Problem::new(
             "docker_not_starting",
             "Docker ne démarre pas",
+            "Le service Docker ne répond pas après 6 minutes. Dans un terminal, tapez \
+             « sudo systemctl start docker », puis cliquez sur Réessayer.",
+            &[RETRY],
+        )
+    } else {
+        let text = if cfg!(target_os = "macos") {
+            "Docker est installé mais ne répond pas après 6 minutes. Ouvrez « Docker » depuis le dossier \
+             Applications et lisez son message : s'il demande d'accepter des conditions ou une mise à jour, \
+             faites-le, puis cliquez sur Réessayer."
+        } else {
             "Docker est installé mais ne répond pas après 6 minutes. Ouvrez « Docker Desktop » depuis \
              le menu Démarrer et lisez son message : s'il demande d'accepter des conditions ou de \
              mettre à jour WSL, faites-le, puis cliquez sur Réessayer. S'il parle de virtualisation, \
-             elle doit être activée dans le BIOS du PC (voir « Détails techniques »).",
-            &[RETRY],
-        )
+             elle doit être activée dans le BIOS du PC (voir « Détails techniques »)."
+        };
+        Problem::new("docker_not_starting", "Docker ne démarre pas", text, &[RETRY])
     })
 }
 
