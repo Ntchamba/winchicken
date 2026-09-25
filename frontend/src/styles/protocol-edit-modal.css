@@ -9,7 +9,7 @@
 .protocol-modal-panel .page-wrap{padding:44px 32px 32px}
 .protocol-modal-close{
   position:absolute;top:14px;right:14px;z-index:1;
-  display:grid;place-items:center;width:34px;height:34px;border-radius:50%;
+  display:grid;place-items:center;width:44px;height:44px;border-radius:50%;
   border:1px solid var(--line);background:#fff;color:var(--muted);cursor:pointer;transition:.15s;
 }
 .protocol-modal-close:hover{background:var(--surface-2);color:#10242c}

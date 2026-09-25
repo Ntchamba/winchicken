@@ -68,7 +68,7 @@ export default function IncidentShortcut({ houses, openCasesCount = 0 }) {
               <button
                 onClick={reset}
                 aria-label="Fermer"
-                style={{ border: 0, background: "none", color: "var(--muted)", cursor: "pointer", padding: 0 }}
+                style={{ border: 0, background: "none", color: "var(--muted)", cursor: "pointer", padding: 0, display: "grid", placeItems: "center", minWidth: 44, minHeight: 44, marginRight: -12 }}
               >
                 <X size={18} />
               </button>

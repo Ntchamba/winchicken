@@ -115,7 +115,7 @@
 .list-row-name{margin:0;font-size:13.5px;font-weight:700;color:#10242c}
 .list-row-sub{margin:2px 0 0;font-size:12px;color:var(--muted)}
 .list-row-actions{display:flex;gap:8px;flex-shrink:0}
-.icon-button{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted);cursor:pointer;transition:.15s}
+.icon-button{display:grid;place-items:center;flex-shrink:0;width:44px;height:44px;border-radius:9px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted);cursor:pointer;transition:.15s}
 .icon-button:hover{border-color:rgba(11,143,104,.35);color:var(--mint)}
 .icon-button.danger:hover{background:var(--danger);color:#fff;border-color:var(--danger)}
 
@@ -175,12 +175,14 @@
 .cycle-timeline-fill{position:absolute;top:0;left:0;height:100%;border-radius:99px;background:var(--mint-fill)}
 .cycle-timeline-endpoint{position:absolute;top:50%;width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid var(--mint-fill);transform:translate(-50%,-50%);z-index:1}
 .cycle-timeline-endpoint.cycle-timeline-current{width:14px;height:14px;background:var(--mint-fill);border-color:#fff;box-shadow:0 0 0 3px rgba(11,143,104,.25);z-index:2}
+/* A 44px target around the 22px dot: the padding is transparent (background-clip). */
 .cycle-timeline-tick{
-  position:absolute;top:50%;width:22px;height:22px;border-radius:50%;transform:translate(-50%,-50%);
-  display:grid;place-items:center;border:0;cursor:pointer;padding:0;z-index:3;transition:.15s;
+  position:absolute;top:50%;width:44px;height:44px;border-radius:50%;transform:translate(-50%,-50%);
+  display:grid;place-items:center;border:0;cursor:pointer;padding:11px;z-index:3;transition:.15s;
+  background-clip:content-box;
 }
 .cycle-timeline-tick-past{background:var(--surface-2);color:var(--muted)}
-.cycle-timeline-tick-upcoming{background:var(--mint-soft);color:var(--mint);box-shadow:0 0 0 2px #fff}
+.cycle-timeline-tick-upcoming{background:var(--mint-soft);color:var(--mint)}
 .cycle-timeline-tick:hover,.cycle-timeline-tick:focus-visible{transform:translate(-50%,-50%) scale(1.15)}
 .cycle-timeline-tooltip{
   position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);
@@ -315,3 +317,7 @@
 /* Baseline tap target for controls inside page content (2026-09-11). Filter chips,
    pagination and selects were 25-34px tall, which is not a finger-sized target. */
 .page-wrap button,.page-wrap select{min-height:44px}
+/* Same floor for fields (2026-09-25 audit): quick-entry, hourly-rate, composition and picker
+   search inputs were 27-40px tall. Checkboxes and radios take their label's size instead. */
+.page-wrap input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=range]),.page-wrap textarea{min-height:44px}
+.breadcrumb a{display:inline-flex;align-items:center;min-height:44px}

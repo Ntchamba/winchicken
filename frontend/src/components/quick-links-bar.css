@@ -19,8 +19,8 @@
   align-items: center;
   gap: 7px;
   flex-shrink: 0;
-  /* 40px tall: a comfortable tap target on a phone. */
-  min-height: 40px;
+  /* 44px tall: the app's tap-target floor. */
+  min-height: 44px;
   padding: 9px 14px;
   border: 1px solid rgba(13, 49, 41, .12);
   border-radius: 999px;

@@ -868,9 +868,12 @@ export default function HouseProtocolForm({
                       type="button"
                       onClick={() => removeTimeSlot(row.id, slot.id)}
                       aria-label={`Supprimer le créneau ${formatSlotTime(slot.startTime)}–${formatSlotTime(slot.endTime)}`}
-                      style={{ border: 0, background: "none", padding: 0, cursor: "pointer", color: "inherit", display: "flex" }}
+                      style={{
+                        border: 0, background: "none", padding: 0, cursor: "pointer", color: "inherit", display: "grid",
+                        placeItems: "center", minWidth: 44, minHeight: 44, margin: "-10px -9px -10px -12px",
+                      }}
                     >
-                      <X size={11} strokeWidth={2.5} />
+                      <X size={14} strokeWidth={2.5} />
                     </button>
                   </span>
                 ))}
