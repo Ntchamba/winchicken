@@ -127,6 +127,9 @@ class Alert(models.Model):
 
     class Meta:
         ordering = ['-triggered_at']
+        # Every list of alerts (the page, the bell, `?open=1`) is newest-first and paginated:
+        # without this the database sorts the whole table to return 20 rows.
+        indexes = [models.Index(fields=['-triggered_at'], name='alert_triggered_at_desc')]
 
     def __str__(self):
         return f'{self.rule.rule_type} · {self.triggered_at}'
