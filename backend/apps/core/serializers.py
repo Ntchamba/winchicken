@@ -7,6 +7,15 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from apps.core.models import AuditLogEntry, Civility, ContactMessage, Farm, User, UserRole, create_role_profile
 from apps.core.services import is_farm_configured
 
+
+def _blacklist_all_tokens(user):
+    """Blacklist every outstanding refresh token for `user` (security review 2026-09-26,
+    MEDIUM-5). Imported lazily-safe at module load: token_blacklist is in INSTALLED_APPS."""
+    from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+
+    for token in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=token)
+
 # Namespaced salt + short TTL for the pre-login reset step-up token (see PreLoginResetRequestSerializer).
 # `django.core.signing` is HMAC-SHA256 over SECRET_KEY — no DB row, no session, self-expiring.
 PRELOGIN_RESET_SALT = 'apps.core.prelogin-farm-reset'
@@ -115,6 +124,13 @@ class EmployeeSerializer(serializers.ModelSerializer):
         if password:
             instance.set_password(password)
         instance.save()
+        if password:
+            # A changed password must end the account's other live sessions, or a stolen or
+            # shared token keeps working for its full 7 days (security review 2026-09-26,
+            # MEDIUM-5). Blacklist every refresh token issued to this user so far; access tokens
+            # already expire within 30 min. Only tokens minted since token_blacklist was
+            # installed are tracked — older ones simply age out.
+            _blacklist_all_tokens(instance)
         return instance
 
 

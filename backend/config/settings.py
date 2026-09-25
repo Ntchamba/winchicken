@@ -32,6 +32,10 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    # Refresh-token revocation (security review 2026-09-26, MEDIUM-5): lets rotation actually
+    # retire the old token and lets a password change end other sessions. Ships its own
+    # migrations (new tables only) — run `migrate` after deploying.
+    'rest_framework_simplejwt.token_blacklist',
     'drf_spectacular',
     'corsheaders',
     'apps.core',
@@ -177,6 +181,10 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
+    # Without this, rotation issued a new refresh token but left the old one valid for its full
+    # 7 days — a stolen token could not be retired (security review 2026-09-26, MEDIUM-5). Now
+    # each refresh blacklists the token it replaces (needs the token_blacklist app above).
+    'BLACKLIST_AFTER_ROTATION': True,
 }
 
 CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:5173', cast=Csv())
