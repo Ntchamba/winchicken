@@ -126,6 +126,8 @@ export default function DashboardLayout({
 
   return (
     <div className="dashboard-shell">
+      {/* First stop for a keyboard: past the sidebar's links straight to the page. */}
+      <a className="skip-link" href="#contenu">Aller au contenu</a>
       {/* Tapping the dimmed page closes the drawer. Rendered before the sidebar so the sidebar
           wins the stacking order without either of them needing a large z-index. */}
       {mobileOpen && (
@@ -405,7 +407,7 @@ export default function DashboardLayout({
           </nav>
         </header>
         <ConnectionBanner />
-        <main className="dashboard-content">{children}</main>
+        <main id="contenu" tabIndex={-1} className="dashboard-content">{children}</main>
       </div>
     </div>
   );

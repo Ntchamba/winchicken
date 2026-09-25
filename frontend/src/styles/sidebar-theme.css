@@ -117,6 +117,9 @@
 @media(max-width:900px){
   .sidebar{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);transition:transform .2s;z-index:40;box-shadow:0 0 0 1px var(--line)}
   .sidebar.open{transform:translateX(0);box-shadow:0 0 40px rgba(0,0,0,.45)}
+  /* Closed, the drawer is off-screen but its ~20 links stayed in the Tab order (and in a screen
+     reader's reading order): hidden once the slide-out has finished. */
+  .sidebar:not(.open){visibility:hidden;transition:transform .2s,visibility 0s linear .2s}
   .dashboard-content{padding:20px}
 
   /* Sticky, so the menu is still one tap away after scrolling down a long list — the reason

@@ -4,3 +4,29 @@
 /* Placeholders at 4.5:1 or more on the light field background (#f1f5f4). The browser default
    (#757575) read at 4.2:1. Scoped stylesheets that restyle their own placeholder still win. */
 ::placeholder { color: #676e70; opacity: 1; }
+
+/* A visible focus ring on any control that has none of its own (date fields had nothing).
+   :where() keeps this at zero specificity, so every component's own focus style still wins. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid var(--mint, #087456);
+  outline-offset: 2px;
+}
+main:focus { outline: none; }
+
+/* "Aller au contenu": off-screen until a keyboard reaches it. */
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 10px;
+  background: #0d1b28;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+.skip-link:focus { top: 12px; }
