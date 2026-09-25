@@ -169,9 +169,16 @@ services:
     # how this stack went a month with no backup while the container reported `running` with
     # 0 restarts: the image predated a requirements change, every run raised ModuleNotFoundError,
     # and nothing said so (2026-09-22).
+    #
+    # backups/ is not in git, so on a fresh clone it does not exist and `appuser` cannot create
+    # it inside the bind-mounted ./backend (rootless Docker maps the host owner to container
+    # root): every run failed with PermissionError. The service starts as root only to create
+    # and hand over that one directory; each backup itself runs as appuser (2026-09-25).
+    user: root
     command: >
-      sh -c 'while true; do
-        if python manage.py backup_db; then
+      sh -c 'mkdir -p /app/backups && chown appuser:appuser /app/backups;
+      while true; do
+        if setpriv --reuid=appuser --regid=appuser --init-groups python manage.py backup_db; then
           sleep "$${BACKUP_INTERVAL_SECONDS:-86400}";
         else
           echo "BACKUP FAILED — retrying in $${BACKUP_RETRY_SECONDS:-300}s" >&2;
