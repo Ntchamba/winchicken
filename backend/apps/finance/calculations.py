@@ -7,10 +7,32 @@ from collections import OrderedDict
 from datetime import date, timedelta
 
 from dateutil.relativedelta import relativedelta
+from django.db.models import Sum
 from django.utils import timezone
 
 from apps.finance.models import Expense, ExpenseCategory, OrderStatus, ProductType, PurchaseOrder, Sale
 from apps.stock.models import ItemCategory
+
+
+def _total(queryset, field):
+    """SUM(`field`) over `queryset`, computed by the database — 0 when there are no rows, as the
+    Python `sum()` over every fetched row that this replaced returned."""
+    return queryset.aggregate(total=Sum(field))['total'] or 0
+
+
+def _totals_by(queryset, key, field):
+    """`{key value: SUM(field)}` over `queryset`, grouped by the database."""
+    return {row[key]: row['total'] for row in queryset.order_by().values(key).annotate(total=Sum(field))}
+
+
+def _received_orders_by_expense_category(orders):
+    """RECEIVED purchase-order amounts folded onto the ExpenseCategory axis (see
+    `_ITEM_CATEGORY_TO_EXPENSE_CATEGORY`), grouped in the database by the item's category kind."""
+    folded = {}
+    for kind, amount in _totals_by(orders, 'item__category__kind', 'amount').items():
+        mapped = _ITEM_CATEGORY_TO_EXPENSE_CATEGORY.get(kind, ExpenseCategory.MISC)
+        folded[mapped] = folded.get(mapped, 0) + amount
+    return folded
 
 
 def _month_range(range_param):
@@ -67,20 +89,20 @@ def sales_evolution(farm, period='month'):
     series = []
     for start in starts:
         end = _bucket_end(start, unit)
-        total = sum(s.total_amount for s in Sale.objects.filter(farm=farm, sale_date__gte=start, sale_date__lt=end))
+        total = _total(Sale.objects.filter(farm=farm, sale_date__gte=start, sale_date__lt=end), 'total_amount')
         series.append({'bucket': _bucket_label(start, unit), 'total': float(total)})
 
     period_start = starts[0]
-    period_sales = list(Sale.objects.filter(farm=farm, sale_date__gte=period_start))
-    total_revenue = sum(s.total_amount for s in period_sales)
+    period_sales = Sale.objects.filter(farm=farm, sale_date__gte=period_start)
+    total_revenue = _total(period_sales, 'total_amount')
     by_product = OrderedDict((p.value, 0) for p in ProductType)
-    for s in period_sales:
-        by_product[s.product_type] += s.total_amount
+    for product_type, amount in _totals_by(period_sales, 'product_type', 'total_amount').items():
+        by_product[product_type] += amount
     breakdown = [{'productType': p, 'amount': float(a)} for p, a in by_product.items() if a]
 
     return {
         'period': period, 'series': series,
-        'totalRevenue': float(total_revenue), 'salesCount': len(period_sales),
+        'totalRevenue': float(total_revenue), 'salesCount': period_sales.count(),
         'breakdown': breakdown,
     }
 
@@ -113,28 +135,23 @@ def purchases_evolution(farm, period='month'):
     series = []
     for start in starts:
         end = _bucket_end(start, unit)
-        po_total = sum(
-            o.amount for o in PurchaseOrder.objects.filter(
-                farm=farm, status=OrderStatus.RECEIVED, order_date__gte=start, order_date__lt=end,
-            )
-        )
-        exp_total = sum(e.amount for e in Expense.objects.filter(farm=farm, expense_date__gte=start, expense_date__lt=end))
+        po_total = _total(PurchaseOrder.objects.filter(
+            farm=farm, status=OrderStatus.RECEIVED, order_date__gte=start, order_date__lt=end,
+        ), 'amount')
+        exp_total = _total(Expense.objects.filter(farm=farm, expense_date__gte=start, expense_date__lt=end), 'amount')
         series.append({'bucket': _bucket_label(start, unit), 'total': float(po_total + exp_total)})
 
     period_start = starts[0]
-    period_orders = list(
-        PurchaseOrder.objects.filter(farm=farm, status=OrderStatus.RECEIVED, order_date__gte=period_start).select_related('item')
-    )
-    period_expenses = list(Expense.objects.filter(farm=farm, expense_date__gte=period_start))
-    total_po = sum(o.amount for o in period_orders)
-    total_exp = sum(e.amount for e in period_expenses)
+    period_orders = PurchaseOrder.objects.filter(farm=farm, status=OrderStatus.RECEIVED, order_date__gte=period_start)
+    period_expenses = Expense.objects.filter(farm=farm, expense_date__gte=period_start)
+    total_po = _total(period_orders, 'amount')
+    total_exp = _total(period_expenses, 'amount')
 
     by_category = OrderedDict((c.value, 0) for c in ExpenseCategory)
-    for e in period_expenses:
-        by_category[e.category] += e.amount
-    for o in period_orders:
-        mapped = _ITEM_CATEGORY_TO_EXPENSE_CATEGORY.get(o.item.category.kind, ExpenseCategory.MISC)
-        by_category[mapped] += o.amount
+    for category, amount in _totals_by(period_expenses, 'category', 'amount').items():
+        by_category[category] += amount
+    for category, amount in _received_orders_by_expense_category(period_orders).items():
+        by_category[category] += amount
     breakdown = [{'category': c, 'amount': float(a)} for c, a in by_category.items() if a]
 
     return {
@@ -158,17 +175,15 @@ def monthly_summary(farm, range_param='6m'):
     result = []
     for month_start in months:
         month_end = month_start + relativedelta(months=1)
-        revenue = sum(
-            s.total_amount for s in Sale.objects.filter(farm=farm, sale_date__gte=month_start, sale_date__lt=month_end)
+        revenue = _total(
+            Sale.objects.filter(farm=farm, sale_date__gte=month_start, sale_date__lt=month_end), 'total_amount',
         )
-        expenses = sum(
-            e.amount for e in Expense.objects.filter(farm=farm, expense_date__gte=month_start, expense_date__lt=month_end)
+        expenses = _total(
+            Expense.objects.filter(farm=farm, expense_date__gte=month_start, expense_date__lt=month_end), 'amount',
         )
-        received_orders = sum(
-            o.amount for o in PurchaseOrder.objects.filter(
-                farm=farm, status=OrderStatus.RECEIVED, order_date__gte=month_start, order_date__lt=month_end,
-            )
-        )
+        received_orders = _total(PurchaseOrder.objects.filter(
+            farm=farm, status=OrderStatus.RECEIVED, order_date__gte=month_start, order_date__lt=month_end,
+        ), 'amount')
         result.append({
             'month': month_start.strftime('%Y-%m'),
             'revenue': float(revenue),
@@ -181,11 +196,9 @@ def cash_on_hand(farm):
     """`cash_on_hand = cumulative(Sale.totalAmount) - cumulative(Expense.amount) -
     cumulative(PurchaseOrder.amount WHERE status=RECEIVED)` (implementation-detail spec 5.4).
     Computed over the farm's *entire* history, not scoped to any date range."""
-    total_sales = sum(s.total_amount for s in Sale.objects.filter(farm=farm))
-    total_expenses = sum(e.amount for e in Expense.objects.filter(farm=farm))
-    total_received_orders = sum(
-        o.amount for o in PurchaseOrder.objects.filter(farm=farm, status=OrderStatus.RECEIVED)
-    )
+    total_sales = _total(Sale.objects.filter(farm=farm), 'total_amount')
+    total_expenses = _total(Expense.objects.filter(farm=farm), 'amount')
+    total_received_orders = _total(PurchaseOrder.objects.filter(farm=farm, status=OrderStatus.RECEIVED), 'amount')
     return float(total_sales - total_expenses - total_received_orders)
 
 
@@ -193,7 +206,7 @@ def pending_payables(farm):
     """Sum of PurchaseOrder.amount still PENDING (not yet received/paid) for the farm — all-time,
     not scoped to any date range."""
     return float(
-        sum(o.amount for o in PurchaseOrder.objects.filter(farm=farm, status=OrderStatus.PENDING))
+        _total(PurchaseOrder.objects.filter(farm=farm, status=OrderStatus.PENDING), 'amount')
     )
 
 
@@ -207,23 +220,19 @@ def roi_forecast_pct(farm, range_param='6m'):
     never a fabricated 0, when total_investment is 0 for the period."""
     months = _month_range(range_param)
     period_start = months[0]
-    total_investment = sum(
-        o.amount for o in PurchaseOrder.objects.filter(
-            farm=farm, item__category__kind=ItemCategory.EQUIPMENT, status=OrderStatus.RECEIVED, order_date__gte=period_start
-        )
-    )
+    total_investment = _total(PurchaseOrder.objects.filter(
+        farm=farm, item__category__kind=ItemCategory.EQUIPMENT, status=OrderStatus.RECEIVED, order_date__gte=period_start
+    ), 'amount')
     if not total_investment:
         return None
-    total_revenue = sum(s.total_amount for s in Sale.objects.filter(farm=farm, sale_date__gte=period_start))
-    total_expenses = sum(e.amount for e in Expense.objects.filter(farm=farm, expense_date__gte=period_start))
+    total_revenue = _total(Sale.objects.filter(farm=farm, sale_date__gte=period_start), 'total_amount')
+    total_expenses = _total(Expense.objects.filter(farm=farm, expense_date__gte=period_start), 'amount')
     # Received supply orders are expenses everywhere else (monthly_summary, Achats, the category
     # breakdown); leaving them out overstated the margin. Equipment orders stay out: they are the
     # investment this margin is divided by, not a running cost.
-    total_supply_orders = sum(
-        o.amount for o in PurchaseOrder.objects.filter(
-            farm=farm, status=OrderStatus.RECEIVED, order_date__gte=period_start,
-        ).exclude(item__category__kind=ItemCategory.EQUIPMENT)
-    )
+    total_supply_orders = _total(PurchaseOrder.objects.filter(
+        farm=farm, status=OrderStatus.RECEIVED, order_date__gte=period_start,
+    ).exclude(item__category__kind=ItemCategory.EQUIPMENT), 'amount')
     projected_margin = total_revenue - total_expenses - total_supply_orders
     return round(float(projected_margin / total_investment) * 100, 2)
 
@@ -315,15 +324,16 @@ def expense_category_breakdown(farm, range_param='6m'):
     period_start = months[0]
     totals = OrderedDict((category.value, 0) for category in ExpenseCategory)
 
-    for expense in Expense.objects.filter(farm=farm, expense_date__gte=period_start):
-        totals[expense.category] += expense.amount
+    for category, amount in _totals_by(
+        Expense.objects.filter(farm=farm, expense_date__gte=period_start), 'category', 'amount',
+    ).items():
+        totals[category] += amount
     # RECEIVED PurchaseOrders folded onto the same axis (2026-08-31), each mapped from its
     # item's stock-category kind — the same mapping/combination the Achats section uses.
-    for order in PurchaseOrder.objects.filter(
+    for category, amount in _received_orders_by_expense_category(PurchaseOrder.objects.filter(
         farm=farm, status=OrderStatus.RECEIVED, order_date__gte=period_start,
-    ).select_related('item', 'item__category'):
-        mapped = _ITEM_CATEGORY_TO_EXPENSE_CATEGORY.get(order.item.category.kind, ExpenseCategory.MISC)
-        totals[mapped] += order.amount
+    )).items():
+        totals[category] += amount
 
     total = sum(totals.values()) or 1
     categories = [
