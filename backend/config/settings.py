@@ -7,11 +7,20 @@ from datetime import timedelta
 from pathlib import Path
 
 from decouple import Csv, config
+from django.core.management.utils import get_random_secret_key
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-winchicken-dev-key-change-in-production')
-DEBUG = config('DEBUG', default=True, cast=bool)
+# No hardcoded fallback: a committed default is a key every deployment would share, so anyone
+# could forge this app's JWTs (HS256 is signed with it). Unset -> a fresh random key each boot
+# (get_random_secret_key never raises, so this is safe at import time; sessions/tokens simply do
+# not survive a restart until SECRET_KEY is set in the environment, which every stack and the
+# installer do). Security review 2026-09-26 (MEDIUM-4).
+SECRET_KEY = config('SECRET_KEY', default='') or get_random_secret_key()
+# Fail safe, not open: an operator who forgets to set DEBUG gets production behaviour (no
+# tracebacks, no settings dump), not a debug page leaking DB and Twilio secrets to any logged-in
+# user. Dev and test compose set DEBUG=True explicitly. Security review 2026-09-26 (HIGH-1).
+DEBUG = config('DEBUG', default=False, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 
 INSTALLED_APPS = [
