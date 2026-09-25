@@ -2,6 +2,7 @@ import math
 
 from django.db import transaction
 from django.db.models import Prefetch
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import generics, serializers, status
@@ -23,6 +24,21 @@ from apps.stock.serializers import (
 )
 
 _StockItemsPayload = inline_serializer('StockItemsPayload', {'items': StockItemSerializer(many=True)})
+
+
+def _scoped_farm(request, farm_id):
+    """The requester's own farm, or 404 if the URL names any other one.
+
+    Every /api/farms/<farm_id>/... endpoint used to `_scoped_farm(request, farm_id)` and
+    scope its data to that id, never checking it was the caller's farm (security review
+    2026-09-26, MEDIUM-6). The Farm singleton hides this today — a second farm cannot exist — but
+    request.user.farm is the only farm any user may read or write, so resolve against it and
+    treat a mismatch as "not found" (never confirm another farm id could exist).
+    """
+    farm = request.user.farm
+    if farm is None or str(farm.pk) != str(farm_id):
+        raise Http404()
+    return farm
 
 # Protocol category label → StockCategory.kind, for inline item creation from a protocol row
 # ("+ Créer ... comme nouvel article de stock"): a Feeding-category row makes a FEED item, etc.
@@ -62,7 +78,7 @@ class FarmStockItemsView(APIView):
 
     @extend_schema(responses=_StockItemsPayload)
     def get(self, request, farm_id):
-        farm = get_object_or_404(Farm, pk=farm_id)
+        farm = _scoped_farm(request, farm_id)
         items = with_current_quantity(StockItem.objects.filter(farm=farm).select_related('category', 'supplier'))
         return Response({'items': StockItemSerializer(items, many=True).data})
 
@@ -82,7 +98,7 @@ class FarmStockItemsView(APIView):
         farm's first StockCategory. `unit` defaults to 'kg'. Same permission as PUT."""
         if not IsAdminOrFarmManagerOrFarmer().has_permission(request, self):
             return Response({'detail': 'Action non autorisée.'}, status=status.HTTP_403_FORBIDDEN)
-        farm = get_object_or_404(Farm, pk=farm_id)
+        farm = _scoped_farm(request, farm_id)
         name = (request.data.get('name') or '').strip()
         if not name:
             return Response({'detail': "Le nom de l'article est requis."}, status=status.HTTP_400_BAD_REQUEST)
@@ -120,7 +136,7 @@ class FarmStockItemsView(APIView):
     def put(self, request, farm_id):
         if not IsAdminOrFarmManagerOrFarmer().has_permission(request, self):
             return Response({'detail': 'Action non autorisée.'}, status=status.HTTP_403_FORBIDDEN)
-        farm = get_object_or_404(Farm, pk=farm_id)
+        farm = _scoped_farm(request, farm_id)
         items_data = request.data.get('items', [])
 
         categories = {c.id: c for c in StockCategory.objects.filter(farm=farm)}
@@ -205,7 +221,7 @@ class FarmStockCategoriesView(generics.ListCreateAPIView):
         return [IsAuthenticated()]
 
     def get_farm(self):
-        return get_object_or_404(Farm, pk=self.kwargs['farm_id'])
+        return _scoped_farm(self.request, self.kwargs['farm_id'])
 
     def get_queryset(self):
         return StockCategory.objects.filter(farm=self.get_farm())
@@ -244,7 +260,7 @@ class FarmSuppliersView(generics.ListCreateAPIView):
         return [IsAuthenticated()]
 
     def get_farm(self):
-        return get_object_or_404(Farm, pk=self.kwargs['farm_id'])
+        return _scoped_farm(self.request, self.kwargs['farm_id'])
 
     def get_queryset(self):
         return Supplier.objects.filter(farm=self.get_farm()).prefetch_related('items')
@@ -273,7 +289,7 @@ class FarmStockCompositionsView(generics.ListCreateAPIView):
         return [IsAuthenticated()]
 
     def get_farm(self):
-        return get_object_or_404(Farm, pk=self.kwargs['farm_id'])
+        return _scoped_farm(self.request, self.kwargs['farm_id'])
 
     def get_queryset(self):
         return (
@@ -426,7 +442,7 @@ class FarmStockEvolutionView(APIView):
     def get(self, request, farm_id):
         from apps.stock.calculations import stock_evolution
 
-        farm = get_object_or_404(Farm, pk=farm_id)
+        farm = _scoped_farm(request, farm_id)
         return Response(stock_evolution(farm))
 
 
@@ -551,7 +567,7 @@ class StockImportView(APIView):
         from apps.stock.xlsx_import import parse_and_apply_stock_import
         from apps.core.xlsx import WorkbookError
 
-        farm = get_object_or_404(Farm, pk=farm_id)
+        farm = _scoped_farm(request, farm_id)
         upload = request.FILES.get('file')
         if upload is None:
             return Response({'detail': 'Aucun fichier reçu.'}, status=status.HTTP_400_BAD_REQUEST)
