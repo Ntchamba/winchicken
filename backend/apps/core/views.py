@@ -240,7 +240,9 @@ class EmployeeListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAdminOrSecondaryAdmin]
 
     def get_queryset(self):
-        return User.objects.filter(farm=self.request.user.farm).exclude(pk=self.request.user.pk)
+        # Ordered, because the list is paginated: an unordered query lets Postgres return rows in
+        # any order per page, so an employee could appear on two pages and another on none.
+        return User.objects.filter(farm=self.request.user.farm).exclude(pk=self.request.user.pk).order_by('name', 'id')
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
