@@ -35,6 +35,12 @@ describe("SalairesSection", () => {
     ));
   });
 
+  test("hours read in French: 7,5 h, not 7.50", async () => {
+    payrollApi.salaryPayments.mockResolvedValue(page([{ ...payment(1), total_hours: "7.50" }], null, 1));
+    render(<SalairesSection />);
+    expect(await screen.findByText("7,5 h")).toBeInTheDocument();
+  });
+
   test("every employee is offered for hours, not just the first 20", async () => {
     render(<SalairesSection />);
     await waitFor(() => expect(screen.getAllByRole("option", { name: /Employé/ })).toHaveLength(25));

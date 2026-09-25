@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { payrollApi, employeesApi } from "../../api/endpoints";
 import { getServerErrorMessage } from "../../api/errors";
 import { formatMoney } from "../../utils/money";
+import { formatNumber } from "../../utils/numberFormat";
 import { useDateDefaultingToToday } from "../../hooks/useTodayISO";
 import { fetchAllPages } from "../../api/pagination";
 import usePagedList from "../../hooks/usePagedList";
@@ -212,7 +213,7 @@ export default function SalairesSection({ onPaymentRecorded }) {
               <tr key={p.id}>
                 <td data-label="Employé">{p.employeeName}</td>
                 <td data-label="Période">{MONTH_LABELS[p.period_month]} {p.period_year}</td>
-                <td data-label="Heures">{p.total_hours}</td>
+                <td data-label="Heures">{formatNumber(p.total_hours)} h</td>
                 <td data-label="Montant">{formatMoney(p.amount)}</td>
                 <td data-label="Statut">
                   <span className={`status-pill ${p.status === "PAID" ? "received" : "pending"}`}>
