@@ -1,3 +1,7 @@
+# Host ports default to 5433 / 6379 / 8000 / 5173. If one is already taken on your machine
+# (`docker compose up` then fails with "port is already allocated"), pick others in the root
+# .env, e.g. WINCHICKEN_REDIS_PORT=6390 — the UI and CORS settings follow WINCHICKEN_API_PORT
+# and WINCHICKEN_UI_PORT automatically.
 services:
   db:
     image: postgres:16
@@ -7,7 +11,7 @@ services:
       POSTGRES_USER: winchicken
       POSTGRES_PASSWORD: winchicken
     ports:
-      - "5433:5432"
+      - "${WINCHICKEN_DB_PORT:-5433}:5432"
     volumes:
       - winchicken_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +24,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${WINCHICKEN_REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -42,7 +46,7 @@ services:
       # was owned by a uid appuser couldn't write to.
       - winchicken_backend_logs:/app/logs
     ports:
-      - "8000:8000"
+      - "${WINCHICKEN_API_PORT:-8000}:8000"
     environment:
       SECRET_KEY: dev-secret-key-change-in-production
       DEBUG: "True"
@@ -52,7 +56,7 @@ services:
       DB_PASSWORD: winchicken
       DB_HOST: db
       DB_PORT: "5432"
-      CORS_ALLOWED_ORIGINS: http://localhost:5173
+      CORS_ALLOWED_ORIGINS: http://localhost:${WINCHICKEN_UI_PORT:-5173}
       REDIS_URL: redis://redis:6379/0
       SMS_PROVIDER: twilio
       # Container OS timezone, point 2 of the farm-local-time fix (see settings.py
@@ -232,9 +236,9 @@ services:
       - ./frontend:/app
       - winchicken_frontend_node_modules:/app/node_modules
     ports:
-      - "5173:5173"
+      - "${WINCHICKEN_UI_PORT:-5173}:5173"
     environment:
-      VITE_API_URL: http://localhost:8000/api
+      VITE_API_URL: http://localhost:${WINCHICKEN_API_PORT:-8000}/api
     depends_on:
       - web
 
