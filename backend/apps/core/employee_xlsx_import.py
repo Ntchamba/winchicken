@@ -49,17 +49,37 @@ def _generate_temp_password() -> str:
     return secrets.token_urlsafe(9)  # ~12 URL-safe chars
 
 
-def parse_and_apply_employee_import(actor, farm, file_obj) -> dict:
+def check_employee_workbook(file_obj) -> None:
+    """Raise WorkbookError now for a file the import could not use at all (unreadable, empty,
+    missing headers), so the upload is refused at once instead of failing later in the
+    background job. The same `_read_workbook` the import runs."""
+    _read_workbook(file_obj)
+    file_obj.seek(0)
+
+
+def _read_workbook(file_obj):
     header, rows_iter = open_rows(file_obj)
     index = header_index(header, _ALIASES)
     require_headers(index, [('Nom', 'name'), ('Email', 'email'), ('Rôle', 'role')])
+    return index, rows_iter
+
+
+def parse_and_apply_employee_import(actor, farm, file_obj, on_progress=None) -> dict:
+    """`on_progress(done, total)`, when given, is called after every row: each new account
+    hashes its password (~1 s), so a large file runs as a background job that reports how far
+    it got (apps.core.import_jobs)."""
+    index, rows_iter = _read_workbook(file_obj)
     get = cell_getter(index)
+    rows = list(rows_iter)
+    total = len(rows)
 
     updated = created = 0
     skipped = []
     new_accounts = []  # [{line, name, email, password}]
 
-    for line, raw in enumerate(rows_iter, start=2):
+    for line, raw in enumerate(rows, start=2):
+        if on_progress is not None:
+            on_progress(line - 2, total)
         if raw is None or all(clean(c) == '' for c in raw):
             continue
 
@@ -116,6 +136,8 @@ def parse_and_apply_employee_import(actor, farm, file_obj) -> dict:
         except Exception as exc:
             skipped.append({'line': line, 'reason': _reason(exc)})
 
+    if on_progress is not None:
+        on_progress(total, total)
     return {'updated': updated, 'created': created, 'skipped': skipped, 'newAccounts': new_accounts}
 
 

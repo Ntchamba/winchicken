@@ -164,15 +164,28 @@ Update-or-create, **never deletes, never resets an existing account's password.*
 
 ## Behaviour
 
-- `POST /api/employees/import-xlsx/` — Admin / Secondary Admin. Returns
-  `{updated, created, skipped:[{line, reason}], newAccounts:[{line, name, email, password}]}`.
+- `POST /api/employees/import-xlsx/` — Admin / Secondary Admin. **A background job since
+  2026-09-25** (`apps/core/import_jobs.py`, Celery task `apps.core.tasks.run_employee_import`):
+  every new account hashes its password (~1 s), and above ~80 rows the request outlived
+  gunicorn's 120 s timeout and lost the temporary passwords. An unusable file (unreadable,
+  empty, missing headers) is still refused at once with 400; otherwise `202
+  {jobId, status: "queued", processed, total}`. Poll `GET /api/employees/import-xlsx/{jobId}/`
+  until `status` is `done` — `result` is then
+  `{updated, created, skipped:[{line, reason}], newAccounts:[{line, name, email, password}]}` —
+  or `error` (`detail`). `DELETE` on the same URL forgets the job.
+- The job state is in the Django cache (Redis), **readable only by the admin who started it**
+  (anyone else: 404), kept 24 h, deleted when the summary is closed. The result is stored
+  **encrypted** (Fernet, key derived from `SECRET_KEY`) so Redis snapshots never hold the
+  temporary passwords in clear. The screen (`hooks/useEmployeeImport.js`) shows progress and
+  resumes the job if the admin leaves and returns.
 - **Match by Email** → update Nom / Rôle / Civilité / Taux horaire via `EmployeeSerializer`
   (`partial=True`). **No password column read for a match** — an existing account is never
   locked out. On a role change the class-table-inheritance subtype row is swapped via the
   existing `ROLE_PROFILE_MODELS` / `create_role_profile`.
 - **No match** → new account via `EmployeeSerializer` with a **generated temporary password**
   (`secrets.token_urlsafe(9)`), returned **once** in `newAccounts` and shown in the summary for
-  the admin to hand off. Never stored in plaintext or logged.
+  the admin to hand off. Never stored in plaintext or logged (the 24 h job result above is
+  encrypted).
 - **Never deletes** a user absent from the file.
 
 ## Shared decisions (Stock + Employees, autonomous mode)

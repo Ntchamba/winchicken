@@ -350,6 +350,27 @@ class Command(BaseCommand):
         ]
         self.results['writes']['imports'] = {}
         for label, url, make, extra in cases:
+            if url == '/api/employees/import-xlsx/':
+                # A background job since 2026-09-25: the request only checks and queues the file
+                # (measured with the queueing stubbed out), the Celery task does the work.
+                from unittest import mock
+
+                from apps.core.import_jobs import run_job
+
+                def job():
+                    with mock.patch('apps.core.tasks.run_employee_import.delay') as delay:
+                        request = self._measure(client, headers, 'post', url, data={'file': make(), **extra})
+                    with _QueryCounter() as ctx:
+                        t0 = time.perf_counter()
+                        run_job(*delay.call_args.args)
+                        ms = (time.perf_counter() - t0) * 1000
+                    return request, {'ms': round(ms, 1), 'queries': ctx.count, 'sql_ms': round(ctx.ms, 1), 'kb': 0, 'status': 200}
+
+                request, task = self._rolled_back(job)
+                for part, r in ((f'{label} — requête', request), (f'{label} — tâche Celery', task)):
+                    self._row(part, r)
+                    self.results['writes']['imports'][part] = r
+                continue
             r = self._rolled_back(lambda: self._measure(client, headers, 'post', url, data={'file': make(), **extra}))
             self._row(label, r)
             self.results['writes']['imports'][label] = r

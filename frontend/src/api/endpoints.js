@@ -52,6 +52,9 @@ export const employeesApi = {
     fd.append("file", file);
     return client.post("/employees/import-xlsx/", fd);
   },
+  // The import runs in the background (202 {jobId, status}); poll until done / error.
+  importJob: (jobId) => client.get(`/employees/import-xlsx/${jobId}/`),
+  discardImportJob: (jobId) => client.delete(`/employees/import-xlsx/${jobId}/`),
   importTemplateUrl: `${API_URL}/employees/import-template.xlsx`,
 };
 

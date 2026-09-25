@@ -391,14 +391,19 @@ class EmployeeImportView(APIView):
     """POST /api/employees/import-xlsx/ (multipart, field `file`) — update-or-create employee
     accounts by Email. Never deletes; never resets an existing account's password. New accounts
     get a generated temporary password, returned once in `newAccounts`. Admin / Secondary Admin.
-    Returns {updated, created, skipped:[{line, reason}], newAccounts:[{line, name, email, password}]}.
+
+    Runs in the background since 2026-09-25 (apps.core.import_jobs): an unusable file is still
+    refused here with 400, otherwise 202 with `{jobId, status, processed, total}`; poll
+    `GET /api/employees/import-xlsx/{jobId}/` until `status` is `done` (then `result` holds
+    {updated, created, skipped:[{line, reason}], newAccounts:[{line, name, email, password}]})
+    or `error` (`detail`).
     """
 
     permission_classes = [IsAdminOrSecondaryAdmin]
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
-        from apps.core.employee_xlsx_import import parse_and_apply_employee_import
+        from apps.core.import_jobs import start_employee_import
         from apps.core.xlsx import WorkbookError
 
         upload = request.FILES.get('file')
@@ -407,11 +412,30 @@ class EmployeeImportView(APIView):
         if not upload.name.lower().endswith('.xlsx'):
             return Response({'detail': 'Importez un fichier .xlsx (Excel).'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            result = parse_and_apply_employee_import(request.user, request.user.farm, upload)
+            job = start_employee_import(request.user, upload)
         except WorkbookError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        record_audit_log(
-            request.user, 'employee.imported',
-            f"Import employés ({result['updated']} maj, {result['created']} créé(s))",
-        )
-        return Response(result)
+        return Response(job, status=status.HTTP_202_ACCEPTED)
+
+
+class EmployeeImportJobView(APIView):
+    """GET /api/employees/import-xlsx/{jobId}/ — progress, then the result, of a background
+    employee import. DELETE forgets it (the result holds temporary passwords). Only the admin
+    who started it can see it; anyone else gets 404."""
+
+    permission_classes = [IsAdminOrSecondaryAdmin]
+
+    def get(self, request, job_id):
+        from apps.core.import_jobs import job_state
+
+        state = job_state(job_id, request.user)
+        if state is None:
+            return Response({'detail': 'Import introuvable ou expiré.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(state)
+
+    def delete(self, request, job_id):
+        from apps.core.import_jobs import discard_job
+
+        if not discard_job(job_id, request.user):
+            return Response({'detail': 'Import introuvable ou expiré.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)

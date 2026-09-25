@@ -6,6 +6,7 @@ import useDocumentTitle from "../../hooks/useDocumentTitle";
 import QuickLinksBar from "../../components/QuickLinksBar";
 import LoadMoreButton from "../../components/LoadMoreButton";
 import usePagedList from "../../hooks/usePagedList";
+import useEmployeeImport from "../../hooks/useEmployeeImport";
 
 // Page by page: only page 1 (20 accounts) was ever read, so from the 21st employee on the
 // list silently stopped (load test, 2026-09-25).
@@ -44,9 +45,6 @@ export default function EmployeesPage() {
   const rowInFlight = useRef(null);
 
   const importInputRef = useRef(null);
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState(null); // { updated, created, skipped, newAccounts }
-  const [importError, setImportError] = useState("");
 
   // Caught on purpose: a create can succeed and this refresh still fail, which used to leave
   // the new account off the list with no message — indistinguishable from a lost submission.
@@ -55,22 +53,17 @@ export default function EmployeesPage() {
     ? getServerErrorMessage(employeeList.error, "La liste des employés n'a pas pu être rechargée.")
     : "";
 
-  const handleImportFile = async (e) => {
+  // Runs as a background job (useEmployeeImport); the list reloads once it has finished.
+  const employeeImport = useEmployeeImport({ onFinished: load });
+  const importing = employeeImport.running;
+  const importResult = employeeImport.result; // { updated, created, skipped, newAccounts }
+  const importError = employeeImport.error;
+
+  const handleImportFile = (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    setImporting(true);
-    setImportError("");
-    setImportResult(null);
-    try {
-      const { data } = await employeesApi.importXlsx(file);
-      setImportResult(data);
-      load();
-    } catch (err) {
-      setImportError(getServerErrorMessage(err, "Échec de l'import du fichier Excel."));
-    } finally {
-      setImporting(false);
-    }
+    employeeImport.start(file);
   };
 
 
@@ -190,6 +183,14 @@ export default function EmployeesPage() {
         </span>
       </div>
       {importError && <p className="field-error" style={{ margin: "0 0 12px" }}>{importError}</p>}
+      {employeeImport.progress && (
+        <p className="schedule-note" role="status" style={{ margin: "0 0 12px", display: "flex", alignItems: "center", gap: 8 }}>
+          <Loader2 size={14} className="spin" />
+          {employeeImport.progress.total
+            ? `Import en cours : ${employeeImport.progress.processed} / ${employeeImport.progress.total} lignes — vous pouvez quitter cette page, il continue.`
+            : "Import en attente de démarrage…"}
+        </p>
+      )}
       {importResult && (
         <div
           role="status"
@@ -212,6 +213,9 @@ export default function EmployeesPage() {
           {importResult.newAccounts?.length > 0 && (
             <div style={{ marginTop: 10 }}>
               <strong>Mots de passe temporaires (à communiquer, à faire changer à la première connexion) :</strong>
+              <p style={{ margin: "4px 0 0" }}>
+                Ils restent affichés ici pendant 24 h, jusqu&apos;à ce que vous fermiez ce résumé.
+              </p>
               <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
                 {importResult.newAccounts.map((a) => (
                   <li key={a.email}>
@@ -221,6 +225,11 @@ export default function EmployeesPage() {
               </ul>
             </div>
           )}
+          <div style={{ marginTop: 10, textAlign: "right" }}>
+            <button type="button" className="task-undo-button" onClick={employeeImport.dismiss}>
+              Fermer ce résumé
+            </button>
+          </div>
         </div>
       )}
 

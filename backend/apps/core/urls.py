@@ -16,6 +16,7 @@ urlpatterns = [
     path('auth/me/', views.MeView.as_view(), name='auth-me'),
     path('employees/', views.EmployeeListCreateView.as_view(), name='employee-list'),
     path('employees/import-xlsx/', views.EmployeeImportView.as_view(), name='employee-import'),
+    path('employees/import-xlsx/<str:job_id>/', views.EmployeeImportJobView.as_view(), name='employee-import-job'),
     path('employees/import-template.xlsx', views.EmployeeImportTemplateView.as_view(), name='employee-import-template'),
     path('employees/payroll/', views.EmployeePayrollListView.as_view(), name='employee-payroll-list'),
     path('employees/<int:pk>/', views.EmployeeDetailView.as_view(), name='employee-detail'),

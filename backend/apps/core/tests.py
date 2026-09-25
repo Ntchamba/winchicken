@@ -505,7 +505,15 @@ class EmployeeXlsxImportTests(APITestCase):
         return buf
 
     def _upload(self, buf):
-        return self.client.post('/api/employees/import-xlsx/', {'file': buf}, format='multipart')
+        """POST, then read the finished job (Celery runs eagerly under tests): the tests below
+        are about what the import does, which is the job's `result`."""
+        resp = self.client.post('/api/employees/import-xlsx/', {'file': buf}, format='multipart')
+        if resp.status_code != 202:
+            return resp
+        job = self.client.get(f"/api/employees/import-xlsx/{resp.data['jobId']}/")
+        self.assertEqual(job.data['status'], 'done', job.data)
+        job.data = job.data['result']
+        return job
 
     def test_template_downloads_without_auth(self):
         self.client.force_authenticate(user=None)
@@ -569,3 +577,69 @@ class EmployeeXlsxImportTests(APITestCase):
         self.client.force_authenticate(user=farmer)
         resp = self._upload(self._xlsx([['X', 'z@emp-imp.local', 'Fermier', 'M.', '']]))
         self.assertEqual(resp.status_code, 403)
+
+
+class EmployeeImportJobTests(APITestCase):
+    """2026-09-25: the import runs as a background job — 100 new accounts took 107 s in the
+    request and past ~80 rows gunicorn killed it, losing the temporary passwords."""
+
+    setUp = EmployeeXlsxImportTests.setUp
+    _xlsx = staticmethod(EmployeeXlsxImportTests._xlsx)
+
+    def post(self, buf):
+        return self.client.post('/api/employees/import-xlsx/', {'file': buf}, format='multipart')
+
+    def test_unusable_file_is_refused_at_once_and_no_job_is_queued(self):
+        from unittest import mock
+        with mock.patch('apps.core.tasks.run_employee_import.delay') as delay:
+            resp = self.post(self._xlsx([['X', 'x@a.b']], headers=['Nom', 'Courriel']))
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('Rôle', resp.data['detail'])
+        delay.assert_not_called()
+
+    def test_queued_job_is_handed_ids_only_and_reports_progress_to_the_end(self):
+        from unittest import mock
+        with mock.patch('apps.core.tasks.run_employee_import.delay') as delay:
+            resp = self.post(self._xlsx([['A', 'a@emp-imp.local', 'Ouvrier', 'M.', ''],
+                                         ['B', 'b@emp-imp.local', 'Ouvrier', 'M.', '']]))
+        self.assertEqual(resp.status_code, 202)
+        self.assertEqual(resp.data['status'], 'queued')
+        job_id = resp.data['jobId']
+        delay.assert_called_once_with(job_id, self.admin.id)
+
+        from apps.core.import_jobs import run_job
+        run_job(job_id, self.admin.id)
+        job = self.client.get(f'/api/employees/import-xlsx/{job_id}/').data
+        self.assertEqual((job['status'], job['processed'], job['total']), ('done', 2, 2))
+        self.assertEqual(job['result']['created'], 2)
+        self.assertEqual(len(job['result']['newAccounts']), 2)
+        self.assertNotIn('ownerId', job)
+        # What sits in Redis (and its snapshots on disk) does not hold the passwords in clear.
+        from django.core.cache import cache
+        stored = str(cache.get(f'employee-import:{job_id}:state'))
+        for account in job['result']['newAccounts']:
+            self.assertNotIn(account['password'], stored)
+        from apps.core.models import AuditLogEntry as AuditLog
+        self.assertTrue(AuditLog.objects.filter(action='employee.imported').exists())
+
+    def test_only_the_admin_who_started_it_can_read_it_and_closing_forgets_it(self):
+        job_id = self.post(self._xlsx([['A', 'a@emp-imp.local', 'Ouvrier', 'M.', '']])).data['jobId']
+        other = User.objects.create_user(email='sa@emp-imp.local', password='x', name='SA',
+                                          role=UserRole.SECONDARY_ADMIN, farm=self.farm)
+        create_role_profile(other)
+        self.client.force_authenticate(user=other)
+        self.assertEqual(self.client.get(f'/api/employees/import-xlsx/{job_id}/').status_code, 404)
+        self.assertEqual(self.client.delete(f'/api/employees/import-xlsx/{job_id}/').status_code, 404)
+
+        self.client.force_authenticate(user=self.admin)
+        self.assertEqual(self.client.delete(f'/api/employees/import-xlsx/{job_id}/').status_code, 204)
+        self.assertEqual(self.client.get(f'/api/employees/import-xlsx/{job_id}/').status_code, 404)
+
+    def test_a_crash_mid_import_ends_in_an_error_the_screen_can_show(self):
+        from unittest import mock
+        # A failing row is only a skipped row; this breaks the loop itself.
+        with mock.patch('apps.core.employee_xlsx_import.as_number', side_effect=RuntimeError('boom')):
+            resp = self.post(self._xlsx([['A', 'a@emp-imp.local', 'Ouvrier', 'M.', '']]))
+        job = self.client.get(f"/api/employees/import-xlsx/{resp.data['jobId']}/").data
+        self.assertEqual(job['status'], 'error')
+        self.assertIn('Les comptes déjà créés sont conservés', job['detail'])

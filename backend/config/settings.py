@@ -245,6 +245,23 @@ CELERY_TASK_TRACK_STARTED = True
 # someone adds is not silently an hour off. Instants stay UTC on the wire (`enable_utc` default).
 CELERY_TIMEZONE = FARM_TIME_ZONE
 
+# Cache — the stack's Redis (already there for Celery), shared by web and worker: background
+# import jobs keep their progress here. `memory://` (load_test.sh, no broker) and the test runner
+# get an in-process cache instead, so a test never reads or writes the live stack's keys. String
+# checks only: nothing here may raise at import time.
+_REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
+if _REDIS_URL.startswith(('redis://', 'rediss://')):
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': _REDIS_URL,
+            'KEY_PREFIX': 'winchicken',
+            'TIMEOUT': 300,
+        },
+    }
+else:
+    CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
+
 # SMS provider — never hardcoded, always from env
 SMS_PROVIDER = config('SMS_PROVIDER', default='console')
 SMS_PROVIDER_API_KEY = config('SMS_PROVIDER_API_KEY', default='')
@@ -283,3 +300,4 @@ if RUNNING_TESTS:
     WEB_PUSH_ENABLED = False
     CELERY_TASK_ALWAYS_EAGER = True
     CELERY_BROKER_URL = 'memory://'
+    CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
