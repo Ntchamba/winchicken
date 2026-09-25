@@ -1,0 +1,26 @@
+.app-loading {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px 20px;
+  text-align: center;
+  background: #0d1b28;
+  color: #fff;
+}
+.app-loading-logo { width: 56px; height: 56px; }
+.app-loading-title { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: .18em; color: #5eead4; }
+.app-loading-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 420px;
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, .88);
+}
+.app-loading-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 8px; }
+.app-loading-actions .add-button { margin-top: 0; background: rgba(255, 255, 255, .12); color: #fff; }

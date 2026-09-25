@@ -57,10 +57,12 @@ export default function LandingPage() {
   const parallaxEnabled = fineCursor && !reduceMotion;
 
   useEffect(() => {
-    farmApi.exists().then(({ data }) => setFarmExists(data.exists)).catch(() => setFarmExists(false));
+    // An unanswered request is "unknown", not "no farm": it used to send "Se connecter" to the
+    // farm-creation form whenever the phone was off the farm's network.
+    farmApi.exists().then(({ data }) => setFarmExists(data.exists)).catch(() => setFarmExists("unreachable"));
   }, []);
 
-  const primaryPath = farmExists ? "/login" : "/create-farm";
+  const primaryPath = farmExists === false ? "/create-farm" : "/login";
 
   // Footer settles in last, after the rest of the stagger has finished — its own
   // variant (embedded transition takes precedence over a plain `transition` prop).
@@ -190,6 +192,11 @@ export default function LandingPage() {
           </motion.button>
         </motion.div>
 
+        {farmExists === "unreachable" && (
+          <motion.p className="welcome-hint" variants={fadeUp} role="status">
+            Le serveur de la ferme ne répond pas. Vérifiez que le téléphone est connecté au réseau de la ferme.
+          </motion.p>
+        )}
         {farmExists === false && (
           <motion.p className="welcome-hint" variants={fadeUp}>
             Pas encore de compte ? La création se fait au premier lancement.

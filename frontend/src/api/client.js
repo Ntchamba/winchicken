@@ -16,9 +16,16 @@ export function getTokens() {
   }
 }
 
+// The last profile /auth/me returned (context/AuthContext.jsx), so the app can open on a slow
+// connection without waiting for it. Belongs to the session: it goes when the tokens go.
+export const USER_CACHE_KEY = "winchicken_user";
+
 export function setTokens(tokens) {
   if (tokens) localStorage.setItem("winchicken_tokens", JSON.stringify(tokens));
-  else localStorage.removeItem("winchicken_tokens");
+  else {
+    localStorage.removeItem("winchicken_tokens");
+    localStorage.removeItem(USER_CACHE_KEY);
+  }
 }
 
 client.interceptors.request.use((config) => {
