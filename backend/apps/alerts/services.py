@@ -210,26 +210,35 @@ def _unaddressed_reminder(rule):
     return f'Tâche à effectuer : {what} à {rule.batch.house.name} (personne n’est assigné).'
 
 
-def _queue_reminder_sms(alert, recipient, message):
-    """Queue one SMS for the reminder's resolved recipient — same idempotent get_or_create +
-    on_commit(send_sms_task.delay) as `trigger_alert`. Not gated by NotificationPreference:
-    scheduled task reminders are personal job assignments to the responsible user, not the
-    opt-in farm-wide EVENT alerts that preference table throttles."""
-    if not recipient or not recipient.phone:
+def _queue_reminder_sms(alert, reminders):
+    """Queue one SMS per resolved recipient of a reminder, with the same idempotency as
+    `trigger_alert`: a key already in the table is never sent twice. Not gated by
+    NotificationPreference: scheduled task reminders are personal job assignments to the
+    responsible user, not the opt-in farm-wide EVENT alerts that preference table throttles.
+
+    One insert for the whole list rather than a `get_or_create` per recipient — a line with thirty
+    assignees used to cost ~120 queries at every créneau. `ignore_conflicts` keeps the unique key
+    as the arbiter under a concurrent run; the rows that came back under *this* alert are the ones
+    this call created, and only those are queued."""
+    rows = {}
+    for recipient, message in reminders:
+        if not recipient or not recipient.phone:
+            continue
+        # One SMS per rule per recipient per local day. Keyed on rule id (not trigger_time)
+        # because several protocol lines can share one créneau, and each line's rule must get its
+        # own SMS.
+        key = _idempotency_key(
+            alert.rule.rule_type,
+            alert.batch.batch_code if alert.batch else 'farm',
+            recipient.phone,
+            salt=f'{alert.rule_id}:{alert.triggered_at.date()}',
+        )
+        rows.setdefault(key, SmsMessage(alert=alert, recipient=recipient.phone, body=message, idempotency_key=key))
+    if not rows:
         return
-    # One SMS per rule per local day. Keyed on rule id (not trigger_time) because several
-    # protocol lines can share one créneau, and each line's rule must get its own SMS.
-    key = _idempotency_key(
-        alert.rule.rule_type,
-        alert.batch.batch_code if alert.batch else 'farm',
-        recipient.phone,
-        salt=f'{alert.rule_id}:{alert.triggered_at.date()}',
-    )
-    sms, created = SmsMessage.objects.get_or_create(
-        idempotency_key=key, defaults={'alert': alert, 'recipient': recipient.phone, 'body': message},
-    )
-    if created:
-        transaction.on_commit(lambda sms_id=sms.id: send_sms_task.delay(sms_id))
+    SmsMessage.objects.bulk_create(rows.values(), ignore_conflicts=True)
+    for sms_id in SmsMessage.objects.filter(alert=alert, idempotency_key__in=rows).values_list('id', flat=True):
+        transaction.on_commit(lambda sms_id=sms_id: send_sms_task.delay(sms_id))
 
 
 def fire_scheduled_alerts(now=None):
@@ -245,7 +254,7 @@ def fire_scheduled_alerts(now=None):
         AlertRule.objects
         .filter(_trigger_time_window(now_local), trigger_mode=TriggerMode.SCHEDULED, active=True, trigger_time__isnull=False)
         .select_related('batch', 'batch__house', 'batch__house__farm', 'batch__farmer', 'protocol_line')
-        .prefetch_related('assignees', 'protocol_line__assignees')
+        .prefetch_related('assignees', 'protocol_line__assignees', 'protocol_line__time_slots')
     )
 
     created = []
@@ -266,8 +275,7 @@ def fire_scheduled_alerts(now=None):
                 rule=rule, batch=rule.batch, severity='info',
                 message=reminders[0][1] if reminders else _unaddressed_reminder(rule),
             )
-            for recipient, message in reminders:
-                _queue_reminder_sms(alert, recipient, message)
+            _queue_reminder_sms(alert, reminders)
             if rule.frequency == ScheduleFrequency.ONE_TIME:
                 AlertRule.objects.filter(pk=rule.pk).update(active=False)  # fire once, never re-evaluate
         created.append(alert)
