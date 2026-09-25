@@ -45,6 +45,9 @@ const EMPTY_EXPENSE_FORM = { category: "FEED", amount: "", supplier: "" };
 export default function CashierPage() {
   useDocumentTitle("Caissier");
   const [sales, setSales] = useState([]);
+  // "Aucune vente enregistrée aujourd'hui" only once the day's sales are known: on a slow
+  // connection it used to show before they arrived, and read as lost sales.
+  const [salesLoaded, setSalesLoaded] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -70,7 +73,7 @@ export default function CashierPage() {
   const load = useCallback(
     () =>
       fetchAllPages(financeApi.sales, { sale_date: today })
-        .then(setSales)
+        .then((rows) => { setSales(rows); setSalesLoaded(true); })
         .catch((err) => setError(getServerErrorMessage(err, "La liste des ventes n'a pas pu être rechargée."))),
     [today],
   );
@@ -223,7 +226,9 @@ export default function CashierPage() {
       </form>
 
       <div className="section-row" style={{ marginTop: 26 }}><h2>Ventes du jour</h2></div>
-      {todaySales.length === 0 ? (
+      {!salesLoaded ? (
+        <p className="empty-state">Chargement des ventes du jour…</p>
+      ) : todaySales.length === 0 ? (
         <p className="empty-state">Aucune vente enregistrée aujourd'hui.</p>
       ) : (
         <table className="data-table stacked">

@@ -16,6 +16,9 @@ export default function DashboardHomePage() {
   const navigate = useNavigate();
   const [enrichedHouses, setEnrichedHouses] = useState([]);
   const [activeBatches, setActiveBatches] = useState([]);
+  // Until the batches are in, the dashboard says "Chargement…" rather than "Aucune bande active".
+  const [batchesLoaded, setBatchesLoaded] = useState(false);
+  const [alertsLoaded, setAlertsLoaded] = useState(false);
   const [growthSeries, setGrowthSeries] = useState([]);
   const [alerts, setAlerts] = useState([]);
   // The card lists the 6 newest open alerts but counts all of them: it used to count the 6 it
@@ -28,6 +31,7 @@ export default function DashboardHomePage() {
     fetchAllPages(batchesApi.listActive).then((batches) => {
       const active = batches.filter((b) => b.status === "ACTIVE");
       setEnrichedHouses(enrichHouses(houses, batches));
+      setBatchesLoaded(true);
       setActiveBatches(
         active.map((b) => ({
           batchCode: b.batch_code,
@@ -48,6 +52,7 @@ export default function DashboardHomePage() {
     loadGrowthCurves();
     alertsApi.listOpen().then(({ data }) => {
       setOpenAlertCount(countOf(data));
+      setAlertsLoaded(true);
       const results = (data.results || data).slice(0, 6);
       setAlerts(results.map((a) => ({ id: a.id, severity: a.severity, ruleType: a.ruleType, message: a.message, triggeredAt: a.triggered_at })));
     });
@@ -74,6 +79,8 @@ export default function DashboardHomePage() {
         onNavigate={handleNavigate}
         onModifyBatch={setEditingHouseCode}
         onDailyLogged={loadGrowthCurves}
+        loading={!batchesLoaded}
+        alertsLoading={!alertsLoaded}
       />
       <ProtocolEditModal
         houseCode={editingHouseCode}

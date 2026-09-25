@@ -69,8 +69,11 @@ function timeAgo(isoDate) {
  */
 export default function HomeDashboard({
   farmName = "Winchicken", houses = [], alerts = [], stats = null, onNavigate,
-  growthSeries = [], activeBatchList = [], onModifyBatch, onDailyLogged,
+  growthSeries = [], activeBatchList = [], onModifyBatch, onDailyLogged, loading = false, alertsLoading = false,
 }) {
+  // While loading, figures read "—" rather than 0: "0 bande" or "Tout est en ordre" before the
+  // data has arrived is a false answer, not a placeholder (phone audit, 2026-09-25).
+  const pending = (value) => (loading ? "—" : value);
   const activeBatches = stats?.activeBatches ?? houses.filter((h) => h.status === "active").length;
   const totalBirds = stats?.totalBirds ?? houses.reduce((sum, h) => sum + (h.count || 0), 0);
   const weeklyMortalityPct = stats?.weeklyMortalityPct;
@@ -88,7 +91,7 @@ export default function HomeDashboard({
         </div>
         <div className="header-stat">
           <span className="status-dot" />
-          <span>{activeBatches} bâtiment{activeBatches === 1 ? "" : "s"} actif{activeBatches === 1 ? "" : "s"}</span>
+          <span>{loading ? "Chargement…" : `${activeBatches} bâtiment${activeBatches === 1 ? "" : "s"} actif${activeBatches === 1 ? "" : "s"}`}</span>
         </div>
       </div>
 
@@ -104,13 +107,13 @@ export default function HomeDashboard({
       <div className="stat-grid">
         <div className="stat-card">
           <p className="stat-label">Bandes actives</p>
-          <p className="stat-value">{activeBatches}</p>
-          <p className="stat-delta">{houses.filter((h) => h.status === "void").length} bâtiment(s) en vide sanitaire</p>
+          <p className="stat-value">{pending(activeBatches)}</p>
+          <p className="stat-delta">{loading ? "Chargement…" : `${houses.filter((h) => h.status === "void").length} bâtiment(s) en vide sanitaire`}</p>
         </div>
         <div className="stat-card">
           <p className="stat-label">Effectif total</p>
-          <p className="stat-value">{totalBirds.toLocaleString()}</p>
-          <p className="stat-delta">Sur {activeBatches} bâtiment{activeBatches === 1 ? "" : "s"} actif{activeBatches === 1 ? "" : "s"}</p>
+          <p className="stat-value">{pending(totalBirds.toLocaleString())}</p>
+          <p className="stat-delta">{loading ? "Chargement…" : `Sur ${activeBatches} bâtiment${activeBatches === 1 ? "" : "s"} actif${activeBatches === 1 ? "" : "s"}`}</p>
         </div>
         <div className="stat-card">
           <p className="stat-label">Mortalité hebdomadaire</p>
@@ -119,9 +122,9 @@ export default function HomeDashboard({
         </div>
         <div className="stat-card">
           <p className="stat-label">Alertes ouvertes</p>
-          <p className={`stat-value ${openAlerts > 0 ? "danger" : ""}`}>{openAlerts}</p>
+          <p className={`stat-value ${openAlerts > 0 ? "danger" : ""}`}>{alertsLoading ? "—" : openAlerts}</p>
           <p className={`stat-delta ${openAlerts > 0 ? "down" : ""}`}>
-            {openAlerts > 0 ? `${openAlerts} à traiter` : "Tout est en ordre"}
+            {alertsLoading ? "Chargement…" : openAlerts > 0 ? `${openAlerts} à traiter` : "Tout est en ordre"}
           </p>
         </div>
       </div>
@@ -129,12 +132,14 @@ export default function HomeDashboard({
       <Upcoming48hWidget onNavigate={onNavigate} />
 
       <div className="section-row"><h2>Croissance et survie — toutes bandes actives</h2></div>
-      <GrowthCurves series={growthSeries} scope="all" />
+      {loading ? <p className="empty-state">Chargement…</p> : <GrowthCurves series={growthSeries} scope="all" />}
 
       {/* Weighing moved to each house's "Pesée" page (2026-09-23), next to the curve it feeds;
           this keeps the one-tap path to it from here instead of a second copy of the form. */}
       <div className="section-row"><h2>Pesée</h2></div>
-      {activeBatchList.length === 0 ? (
+      {loading ? (
+        <p className="empty-state">Chargement…</p>
+      ) : activeBatchList.length === 0 ? (
         <p className="empty-state">Aucune bande active à peser.</p>
       ) : (
         <div className="weighing-links">
@@ -155,10 +160,14 @@ export default function HomeDashboard({
       )}
 
       <div className="section-row"><h2>Saisie rapide du jour</h2></div>
-      <QuickEntryPanel
-        batches={activeBatchList.map((b) => ({ batch_code: b.batchCode, name: b.name }))}
-        onLogged={onDailyLogged}
-      />
+      {loading ? (
+        <p className="empty-state">Chargement…</p>
+      ) : (
+        <QuickEntryPanel
+          batches={activeBatchList.map((b) => ({ batch_code: b.batchCode, name: b.name }))}
+          onLogged={onDailyLogged}
+        />
+      )}
 
       {activeBatchList.length > 0 && (
         <>
@@ -189,7 +198,7 @@ export default function HomeDashboard({
         </button>
       </div>
       {houses.length === 0 ? (
-        <p className="empty-state">Aucun bâtiment configuré — démarrez une bande pour le voir ici.</p>
+        <p className="empty-state">{loading ? "Chargement…" : "Aucun bâtiment configuré — démarrez une bande pour le voir ici."}</p>
       ) : (
         <div className="house-list">
           {houses.map((house) => {
@@ -236,7 +245,7 @@ export default function HomeDashboard({
         </button>
       </div>
       {alerts.length === 0 ? (
-        <p className="empty-state">Aucune alerte pour le moment.</p>
+        <p className="empty-state">{alertsLoading ? "Chargement…" : "Aucune alerte pour le moment."}</p>
       ) : (
         <div className="alert-feed">
           {alerts.map((alert) => {

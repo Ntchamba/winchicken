@@ -56,7 +56,8 @@ export default function SalairesSection({ onPaymentRecorded }) {
   const [hoursSaved, setHoursSaved] = useState(false);
 
   const loadPayments = () => paymentList.reload();
-  const loadEmployees = () => fetchAllPages(employeesApi.payrollList).then(setEmployees);
+  const [employeesLoaded, setEmployeesLoaded] = useState(false);
+  const loadEmployees = () => fetchAllPages(employeesApi.payrollList).then((rows) => { setEmployees(rows); setEmployeesLoaded(true); });
 
   useEffect(() => { loadEmployees(); }, []);
 
@@ -195,7 +196,7 @@ export default function SalairesSection({ onPaymentRecorded }) {
             })}
           </tbody>
         </table>
-        {employees.length === 0 && <p className="empty-state">Aucun employé.</p>}
+        {employees.length === 0 && <p className="empty-state">{employeesLoaded ? "Aucun employé." : "Chargement des employés…"}</p>}
       </div>
 
       <div className="section-row">

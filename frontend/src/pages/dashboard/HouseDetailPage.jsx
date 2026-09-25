@@ -33,6 +33,8 @@ export default function HouseDetailPage() {
 
   const [openCases, setOpenCases] = useState(null);
   const [growthSeries, setGrowthSeries] = useState([]);
+  // Hub figures read "Chargement…" until their data is in, not "Aucune pesée" / "0 faites".
+  const [loadedFor, setLoadedFor] = useState({ growth: null, tasks: null });
   const [tasksNow, setTasksNow] = useState({ dayOfCycle: null, tasks: [] });
   const [closing, setClosing] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
@@ -51,11 +53,11 @@ export default function HouseDetailPage() {
   const openCasesCount = openCases?.houseCode === houseCode ? openCases.count : null;
 
   const loadGrowthCurve = useCallback(() => {
-    batchesApi.growthCurves({ house_code: houseCode }).then(({ data }) => setGrowthSeries(data));
+    batchesApi.growthCurves({ house_code: houseCode }).then(({ data }) => { setGrowthSeries(data); setLoadedFor((l) => ({ ...l, growth: houseCode })); });
   }, [houseCode]);
 
   const loadTasksNow = useCallback(() => {
-    housesApi.tasksNow(houseCode).then(({ data }) => setTasksNow(data));
+    housesApi.tasksNow(houseCode).then(({ data }) => { setTasksNow(data); setLoadedFor((l) => ({ ...l, tasks: houseCode })); });
   }, [houseCode]);
 
   useEffect(() => {
@@ -86,12 +88,12 @@ export default function HouseDetailPage() {
     evolution: survival
       ? { value: `${formatNumber(survival.survivalPct, 1)} %`, unit: "survie", message: `Au jour ${survival.dayOfCycle} · croissance, indice de consommation, mortalité` }
       : { message: "Croissance, indice de consommation, mortalité" },
-    tasks: {
+    tasks: loadedFor.tasks !== houseCode ? { message: "Chargement…" } : {
       value: tasksToDo,
       unit: "à faire aujourd'hui",
       message: `${tasksDone} faite${tasksDone === 1 ? "" : "s"} · saisie du jour, alimentation, soins`,
     },
-    weighing: weighing
+    weighing: loadedFor.growth !== houseCode ? { message: "Chargement…" } : weighing
       ? { value: `${formatNumber(weighing.weightKg, 2)} kg`, unit: "poids moyen", message: `Dernière pesée au jour ${weighing.dayOfCycle}` }
       : { message: "Aucune pesée enregistrée" },
   };
@@ -136,7 +138,7 @@ export default function HouseDetailPage() {
       <div className="card house-card" style={{ marginBottom: 18 }}>
         <div className="section-heading">
           <div>
-            <span className="house-chip">{batch ? BATCH_STATUS_LABELS[batch.status] || batch.status : "AUCUNE BANDE ACTIVE"}</span>
+            <span className="house-chip">{batch === undefined ? "CHARGEMENT…" : batch ? BATCH_STATUS_LABELS[batch.status] || batch.status : "AUCUNE BANDE ACTIVE"}</span>
             <h1 style={{ margin: "7px 0 0", fontFamily: "'Space Grotesk',sans-serif", fontSize: 22 }}>{house?.name || houseCode}</h1>
             {batch && (
               <p className="schedule-note">

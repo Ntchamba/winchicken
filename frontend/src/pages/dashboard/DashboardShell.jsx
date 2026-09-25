@@ -22,7 +22,7 @@ export default function DashboardShell() {
 // useHousesContext() — the provider itself has to wrap this, not be inside it.
 function DashboardShellContent() {
   const { user, logout } = useAuth();
-  const { houses, refetch } = useHousesContext();
+  const { houses, loading: housesLoading, refetch } = useHousesContext();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -73,7 +73,7 @@ function DashboardShellContent() {
       onNavigate={(path) => navigate(path)}
       onLogout={handleLogout}
     >
-      <Outlet context={{ houses, refreshHouses: refetch }} />
+      <Outlet context={{ houses, housesLoading, refreshHouses: refetch }} />
     </DashboardLayout>
   );
 }

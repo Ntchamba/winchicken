@@ -34,13 +34,15 @@ export default function AssignmentsPanel({ houseCode, reloadKey, onChanged }) {
   const canAssign = CAN_ASSIGN_ROLES.includes(user.role);
   const [rows, setRows] = useState([]);
   const [removingId, setRemovingId] = useState(null);
+  // An empty list means "none" only once it has loaded (it used to say so while loading).
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
     if (!canAssign) return;
     housesApi
       .assignments(houseCode)
-      .then(({ data }) => setRows(data))
+      .then(({ data }) => { setRows(data); setLoaded(true); })
       .catch(() => setError("Impossible de charger les affectations."));
   }, [canAssign, houseCode]);
 
@@ -77,7 +79,9 @@ export default function AssignmentsPanel({ houseCode, reloadKey, onChanged }) {
       <div className="section-row"><h2>Affectations en cours</h2></div>
       <div className="card schedule-card" style={{ marginBottom: 18 }}>
         {error && <p className="field-error">{error}</p>}
-        {rows.length === 0 ? (
+        {!loaded && !error ? (
+          <p className="empty-state">Chargement des affectations…</p>
+        ) : rows.length === 0 ? (
           <p className="empty-state">Aucune tâche affectée dans ce bâtiment.</p>
         ) : (
           <div style={{ display: "grid", gap: 10 }}>

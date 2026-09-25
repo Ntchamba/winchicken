@@ -6,7 +6,7 @@ import QuickLinksBar from "../../components/QuickLinksBar";
 
 export default function HousesListPage() {
   useDocumentTitle("Bâtiments");
-  const { houses } = useOutletContext();
+  const { houses, housesLoading } = useOutletContext();
   const navigate = useNavigate();
 
   return (
@@ -14,7 +14,7 @@ export default function HousesListPage() {
       <QuickLinksBar />
       <div className="breadcrumb">Tableau de bord / <strong>Bâtiments</strong></div>
       {houses.length === 0 ? (
-        <p className="empty-state">Aucun bâtiment configuré pour le moment.</p>
+        <p className="empty-state">{housesLoading ? "Chargement des bâtiments…" : "Aucun bâtiment configuré pour le moment."}</p>
       ) : (
         <div className="house-list">
           {houses.map((house) => (
