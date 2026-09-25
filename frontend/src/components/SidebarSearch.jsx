@@ -91,6 +91,7 @@ export default function SidebarSearch({ onNavigate }) {
         type="text"
         value={query}
         placeholder="Rechercher…"
+        aria-label="Rechercher dans l'application"
         onChange={(e) => {
           setQuery(e.target.value);
           setOpen(true);

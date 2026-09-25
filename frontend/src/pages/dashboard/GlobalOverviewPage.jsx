@@ -6,6 +6,7 @@ import QuickLinksBar from "../../components/QuickLinksBar";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import { formatMoney } from "../../utils/money";
 import "./global-overview.css";
+import { TIER_WORD } from "../../utils/statusTier";
 
 // Each branch: where it goes, and how it is labelled. The *status* never comes from here —
 // it is computed server-side (apps/core/overview.py) so the rules live in one place.
@@ -15,7 +16,6 @@ const BRANCHES = [
   { key: "health", title: "Santé du cheptel", Icon: HeartPulse, to: "/dashboard/houses" },
 ];
 
-const TIER_WORD = { good: "Bon", watch: "À surveiller", critical: "Critique" };
 
 function formatValue(branch) {
   if (branch.key === "finance") return formatMoney(branch.value);
@@ -91,6 +91,7 @@ export default function GlobalOverviewPage() {
                   <span className="tree-node-value">{formatValue({ ...branch, key })}</span>
                   <span className="tree-node-unit">{branch.valueLabel}</span>
                   <span className="tree-node-message">{branch.message}</span>
+                  <span className={`tree-node-tier tree-node-tier--${branch.tier || "good"}`}>{TIER_WORD[branch.tier || "good"]}</span>
                 </button>
               </div>
             );

@@ -84,6 +84,7 @@ export default function UnusualCaseReportForm({ batchCode, onReported, startOpen
       <textarea
         value={description}
         onChange={(e) => setDescription(e.target.value)}
+        aria-label="Description du cas"
         placeholder="Décrire l'observation (symptômes, comportement…)"
         rows={3}
         style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 9, padding: 10, fontSize: 13.5, fontFamily: "inherit" }}

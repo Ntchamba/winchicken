@@ -151,6 +151,18 @@
 .tree-node--critical { border-color: #bc3b37; }
 .tree-node--critical .tree-node-icon { background: #ffe3dd; color: #9c2f2b; }
 
+/* The node's state in words, not only in colour (WCAG 1.4.1) — a status badge, not a control. */
+.tree-node-tier {
+  margin-top: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.tree-node-tier--good { background: #d7f5ec; color: #0b5137; }
+.tree-node-tier--watch { background: #fdf3d7; color: #6b5316; }
+.tree-node-tier--critical { background: #ffe3dd; color: #9c2f2b; }
+
 @keyframes tree-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(23, 184, 146, .38); }
   50% { box-shadow: 0 0 0 12px rgba(23, 184, 146, 0); }

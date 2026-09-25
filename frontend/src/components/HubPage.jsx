@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import "../pages/dashboard/global-overview.css";
 import "./hub-page.css";
+import { TIER_WORD } from "../utils/statusTier";
 
 /**
  * Hub-and-spoke landing view: one core node summarising the whole, one branch card per
@@ -40,6 +41,7 @@ export default function HubPage({ core, sections, ariaLabel }) {
               {value != null && value !== "" && <span className="tree-node-value">{value}</span>}
               {unit && <span className="tree-node-unit">{unit}</span>}
               {message && <span className="tree-node-message">{message}</span>}
+              {tier && <span className={`tree-node-tier tree-node-tier--${tier}`}>{TIER_WORD[tier]}</span>}
             </Link>
           </div>
         ))}

@@ -178,6 +178,7 @@ export default function SalairesSection({ onPaymentRecorded }) {
                   <td data-label="Taux horaire">
                     <input
                       type="number" min="0" step="0.01" value={value}
+                      aria-label={`Taux horaire de ${emp.name} (FCFA)`}
                       style={{ width: 100, padding: "4px 8px", borderRadius: 8, border: "1px solid var(--line)" }}
                       onChange={(e) => setRateEdits((prev) => ({ ...prev, [emp.id]: e.target.value }))}
                     />

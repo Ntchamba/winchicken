@@ -809,8 +809,8 @@ export default function HouseProtocolForm({
           {rows.map((row) => (
             <div key={row.id} className="schedule-row">
               <div className="bound-input">
-                <input type="number" value={row.fromValue} onChange={(e) => updateRow(row.id, "fromValue", e.target.value)} />
-                <select value={row.fromUnit} onChange={(e) => updateRow(row.id, "fromUnit", e.target.value)}>
+                <input type="number" aria-label="De (nombre)" value={row.fromValue} onChange={(e) => updateRow(row.id, "fromValue", e.target.value)} />
+                <select aria-label="De (unité)" value={row.fromUnit} onChange={(e) => updateRow(row.id, "fromUnit", e.target.value)}>
                   {UNITS.map((u) => (
                     <option key={u} value={u}>{UNIT_LABELS[u]}</option>
                   ))}
@@ -824,8 +824,8 @@ export default function HouseProtocolForm({
                 </div>
               ) : (
                 <div className="bound-input">
-                  <input type="number" value={row.toValue} onChange={(e) => updateRow(row.id, "toValue", e.target.value)} />
-                  <select value={row.toUnit} onChange={(e) => updateRow(row.id, "toUnit", e.target.value)}>
+                  <input type="number" aria-label="À (nombre)" value={row.toValue} onChange={(e) => updateRow(row.id, "toValue", e.target.value)} />
+                  <select aria-label="À (unité)" value={row.toUnit} onChange={(e) => updateRow(row.id, "toUnit", e.target.value)}>
                     {UNITS.map((u) => (
                       <option key={u} value={u}>{UNIT_LABELS[u]}</option>
                     ))}
@@ -836,11 +836,13 @@ export default function HouseProtocolForm({
               <input
                 value={row.what}
                 onChange={(e) => updateRow(row.id, "what", e.target.value)}
+                aria-label="Action"
                 placeholder="ex. Aliment démarrage"
               />
               <input
                 value={row.details}
                 onChange={(e) => updateRow(row.id, "details", e.target.value)}
+                aria-label="Détails"
                 placeholder="ex. 3000 kcal, 22,5% de protéines"
               />
               <button className="delete-button" aria-label="Supprimer la ligne" onClick={() => deleteRow(row.id)}>
