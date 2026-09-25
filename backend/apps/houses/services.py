@@ -205,8 +205,12 @@ def compute_month_schedule(farm, start, end):
         lines = lines_by_house.get(batch.house_id, [])
         if not lines:
             continue
+        # A cycle ends at its planned end date: "jusqu'à la fin du cycle" lines used to run on
+        # through every later month (live QA, 2026-09-25). Days already lived still show while a
+        # batch stays open past that date — the birds were still there.
+        last_day = max(batch.planned_end_date, timezone.localdate()) if batch.planned_end_date else end
         day = start
-        while day <= end:
+        while day <= min(end, last_day):
             day_of_cycle = cycle_day(batch, day)
             for line in lines:
                 if _protocol_line_occurrence(line, day_of_cycle) is None:

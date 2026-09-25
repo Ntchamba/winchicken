@@ -67,6 +67,35 @@ class ScheduleViewMultiDayTests(APITestCase):
         expected = [f'2026-03-{day:02d}' for day in range(21, 32)]
         self.assertEqual(cleaning_dates, expected)
 
+    def test_until_end_line_stops_at_the_planned_end_of_the_cycle(self):
+        """Live QA 2026-09-25: "jusqu'à la fin du cycle" lines ran on through every later month."""
+        from unittest import mock
+
+        ProtocolTemplate.objects.create(
+            house=self.house, category=self.category,
+            from_value=1, from_unit='DAY', until_end=True, what='Nettoyer les abreuvoirs',
+        )
+        PoultryBatch.objects.filter(pk=self.batch.pk).update(planned_end_date=date(2026, 3, 20))
+        with mock.patch('apps.houses.services.timezone.localdate', return_value=date(2026, 3, 1)):
+            march = self.client.get('/api/protocols/schedule/', {'month': '2026-03'}).data
+            april = self.client.get('/api/protocols/schedule/', {'month': '2026-04', 'view': 'summary'}).data
+        cleaning = sorted(e['date'] for e in march if e['what'] == 'Nettoyer les abreuvoirs')
+        self.assertEqual(cleaning[-1], '2026-03-20')
+        self.assertEqual(april['days'], {})
+
+    def test_a_batch_still_open_after_its_planned_end_keeps_the_days_already_lived(self):
+        from unittest import mock
+
+        ProtocolTemplate.objects.create(
+            house=self.house, category=self.category,
+            from_value=1, from_unit='DAY', until_end=True, what='Nettoyer les abreuvoirs',
+        )
+        PoultryBatch.objects.filter(pk=self.batch.pk).update(planned_end_date=date(2026, 3, 20))
+        with mock.patch('apps.houses.services.timezone.localdate', return_value=date(2026, 3, 25)):
+            march = self.client.get('/api/protocols/schedule/', {'month': '2026-03'}).data
+        cleaning = sorted(e['date'] for e in march if e['what'] == 'Nettoyer les abreuvoirs')
+        self.assertEqual(cleaning[-1], '2026-03-25')
+
     def add_second_house(self):
         house = PoultryHouse.objects.create(house_code='H-CAL-2', farm=self.farm, name='Salle 2', max_capacity=1000)
         vaccine = ProtocolCategory.objects.create(house=house, label='Vaccination', icon='Syringe')
