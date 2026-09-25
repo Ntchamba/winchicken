@@ -130,9 +130,20 @@ class FinanceTransactionsView(generics.ListAPIView):
         page = int(raw_page)
         page_size = 20
 
+        # Each source only needs its newest `start + page_size` rows: nothing older can reach
+        # this page of the merged list. Reading every row of all three tables to show 20 made
+        # the ledger slower with every sale ever recorded. `-id` makes a same-day tie order
+        # stable from one page to the next.
+        start = (page - 1) * page_size
+        limit = start + page_size
+        total = 0
+        expenses = Expense.objects.filter(farm=farm).order_by('-expense_date', '-id')
+        orders = PurchaseOrder.objects.filter(farm=farm, status=OrderStatus.RECEIVED).order_by('-order_date', '-order_code')
+        sales = Sale.objects.filter(farm=farm).order_by('-sale_date', '-id')
         rows = []
         if type_filter in ('all', 'out'):
-            for e in Expense.objects.filter(farm=farm):
+            total += expenses.count() + orders.count()
+            for e in expenses[:limit]:
                 rows.append({
                     'id': f'EXP-{e.id}', 'date': e.expense_date, 'category': e.category,
                     'counterparty': e.supplier, 'amount': -float(e.amount), 'status': 'OUT',
@@ -140,23 +151,21 @@ class FinanceTransactionsView(generics.ListAPIView):
             # RECEIVED purchase orders are money out too — the cash position subtracts them, so
             # the ledger has to list them or its rows never add up to it. Mapped to an expense
             # category the way the Achats breakdown does.
-            for o in PurchaseOrder.objects.filter(farm=farm, status=OrderStatus.RECEIVED).select_related('item__category'):
+            for o in orders.select_related('item__category')[:limit]:
                 rows.append({
                     'id': o.order_code, 'date': o.order_date,  # already "PO-{farm}-{n}"
                     'category': _ITEM_CATEGORY_TO_EXPENSE_CATEGORY.get(o.item.category.kind, ExpenseCategory.MISC),
                     'counterparty': o.supplier, 'amount': -float(o.amount), 'status': 'OUT',
                 })
         if type_filter in ('all', 'in'):
-            for s in Sale.objects.filter(farm=farm):
+            total += sales.count()
+            for s in sales[:limit]:
                 rows.append({
                     'id': f'SALE-{s.id}', 'date': s.sale_date, 'category': s.product_type,
                     'counterparty': s.customer, 'amount': float(s.total_amount), 'status': 'IN',
                 })
         rows.sort(key=lambda r: r['date'], reverse=True)
-
-        total = len(rows)
-        start = (page - 1) * page_size
-        paged = rows[start:start + page_size]
+        paged = rows[start:limit]
         return Response({'count': total, 'page': page, 'pageSize': page_size, 'results': paged})
 
 
