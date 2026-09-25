@@ -708,6 +708,34 @@ class StockXlsxImportTests(APITestCase):
         resp = self._upload(self._xlsx([['X', 'Aliment', '', 'kg', 1, 1, '']]))
         self.assertEqual(resp.status_code, 403)
 
+    def test_name_match_is_case_insensitive_and_sees_rows_created_earlier_in_the_file(self):
+        resp = self._upload(self._xlsx([
+            ['PROVENDE', 'Aliment', '', '', 70, 410, ''],       # existing, other case -> update
+            ['Son de blé', 'Aliment', '', 'kg', 5, 100, ''],    # new
+            ['son de blé', 'Aliment', '', '', 9, 120, ''],      # the row above -> update, not a twin
+        ]))
+        self.assertEqual((resp.data['updated'], resp.data['created']), (2, 1), resp.data)
+        self.assertEqual(StockItem.objects.filter(farm=self.farm, name__iexact='son de blé').count(), 1)
+        self.assertEqual(StockItem.objects.get(farm=self.farm, name='Son de blé').alert_threshold, 9)
+        self.existing.refresh_from_db()
+        self.assertEqual(self.existing.alert_threshold, 70)
+
+    def test_queries_do_not_grow_per_row_beyond_the_write_itself(self):
+        """Load test 2026-09-25: 6 queries per row, 22 s for 2 000 rows. What is left per row is
+        the savepoint pair and the INSERT — the lookups happen once per file."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        def run(n, tag):
+            rows = [[f'{tag} {i}', 'Aliment', '', 'kg', 1, 1, 'Agrivet'] for i in range(n)]
+            with CaptureQueriesContext(connection) as ctx:
+                resp = self._upload(self._xlsx(rows))
+            self.assertEqual(resp.data['created'], n, resp.data)
+            return len(ctx.captured_queries)
+
+        small, large = run(5, 'Petit'), run(15, 'Grand')
+        self.assertLessEqual(large - small, 3 * 10)
+
 
 class StockImportRemappingTests(StockXlsxImportTests):
     """Column remapping + dry-run preview for the Stock import (Prompt 2)."""

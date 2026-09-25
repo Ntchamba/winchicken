@@ -19,6 +19,7 @@ from apps.stock.import_columns import COLUMNS
 from apps.stock.models import FeedStage, StockCategory, StockItem, Supplier
 from apps.stock.serializers import _KIND_PREFIX  # noqa: F401 (used via next_free_item_code)
 from apps.stock.serializers import StockItemSerializer, next_free_item_code
+from rest_framework import serializers
 
 # Exact French headers the template ships with. Accepted spellings beyond these live in
 # apps/stock/import_columns.py.
@@ -121,6 +122,22 @@ def parse_and_apply_stock_import(farm, file_obj, dry_run=False) -> dict:
     return _import_rows(farm, rows_iter, get, report)
 
 
+class _ResolvedRelatedField(serializers.PrimaryKeyRelatedField):
+    """Accepts the category / supplier instance the importer already resolved (farm-scoped by
+    `_resolve_category` / `_resolve_supplier`) instead of re-fetching it by primary key: at 2,000
+    rows those two lookups were a third of the import's queries."""
+
+    def to_internal_value(self, data):
+        if isinstance(data, self.get_queryset().model):
+            return data
+        return super().to_internal_value(data)
+
+
+class _ImportStockItemSerializer(StockItemSerializer):
+    category = _ResolvedRelatedField(queryset=StockCategory.objects.all())
+    supplier = _ResolvedRelatedField(queryset=Supplier.objects.all(), required=False, allow_null=True)
+
+
 class _DryRunRollback(Exception):
     """Carries the would-be result out of the transaction that is being rolled back."""
 
@@ -132,6 +149,11 @@ class _DryRunRollback(Exception):
 def _import_rows(farm, rows_iter, get, report) -> dict:
     cat_cache, sup_cache = {}, {}
     used_codes = set(StockItem.objects.filter(farm=farm).values_list('item_code', flat=True))
+    # One query for every existing article instead of one per row. Keyed like `name__iexact`;
+    # the first row per name wins, as `.first()` did.
+    items_by_name = {}
+    for item in StockItem.objects.filter(farm=farm).order_by('pk'):
+        items_by_name.setdefault(item.name.lower(), item)
     updated = created = 0
     skipped = []
 
@@ -155,7 +177,7 @@ def _import_rows(farm, rows_iter, get, report) -> dict:
             skipped.append({'line': line, 'reason': threshold_error or price_error})
             continue
 
-        existing = StockItem.objects.filter(farm=farm, name__iexact=name).first()
+        existing = items_by_name.get(name.lower())
         unit = clean(get(raw, 'unit'))
         if existing is None and not unit:
             skipped.append({'line': line, 'reason': 'unité manquante'})
@@ -169,7 +191,7 @@ def _import_rows(farm, rows_iter, get, report) -> dict:
             with transaction.atomic():
                 category = _resolve_category(farm, category_label, cat_cache)
                 fields = {
-                    'category': category.id,
+                    'category': category,
                     'alert_threshold': threshold,
                     'unit_price': _to_decimal(price),
                     **_detail_fields(category.kind, get(raw, 'detail')),
@@ -181,23 +203,27 @@ def _import_rows(farm, rows_iter, get, report) -> dict:
                     fields['unit'] = unit
                 if 'supplier' in report.index or existing is None:
                     supplier = _resolve_supplier(farm, clean(get(raw, 'supplier')), sup_cache)
-                    fields['supplier'] = supplier.id if supplier else None
+                    fields['supplier'] = supplier
 
                 if existing:
                     # Parameter update only — StockItemSerializer has no quantity field, so a
                     # partial update cannot touch stock level / StockMovement history.
-                    ser = StockItemSerializer(existing, data=fields, partial=True)
+                    ser = _ImportStockItemSerializer(existing, data=fields, partial=True)
                     ser.is_valid(raise_exception=True)
                     ser.save()
                     updated += 1
                 else:
                     code = next_free_item_code(farm.id, category, used_codes)
-                    ser = StockItemSerializer(data={**fields, 'name': name})
+                    ser = _ImportStockItemSerializer(data={**fields, 'name': name})
                     ser.is_valid(raise_exception=True)
-                    ser.save(farm=farm, item_code=code)
+                    items_by_name[name.lower()] = ser.save(farm=farm, item_code=code)
                     used_codes.add(code)
                     created += 1
         except Exception as exc:  # serializer ValidationError, integrity, etc. — skip this row
+            if existing is not None:
+                # The failed update already assigned this row's values onto the cached instance;
+                # re-read it so a later row naming the same article doesn't save them after all.
+                items_by_name[name.lower()] = StockItem.objects.filter(pk=existing.pk).first()
             cat_cache.clear()
             cat_cache.update(cat_before)
             sup_cache.clear()
