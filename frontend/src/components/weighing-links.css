@@ -34,9 +34,8 @@
 .weighing-link-house {
   margin-left: auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: right;
+  overflow-wrap: anywhere;
   font-size: 13px;
   font-weight: 500;
   color: var(--muted);

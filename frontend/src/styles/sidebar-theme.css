@@ -120,6 +120,12 @@
   /* Closed, the drawer is off-screen but its ~20 links stayed in the Tab order (and in a screen
      reader's reading order): hidden once the slide-out has finished. */
   .sidebar:not(.open){visibility:hidden;transition:transform .2s,visibility 0s linear .2s}
+  /* In the drawer the bell sits mid-row: a 320px panel anchored to it ran 116px off a 375px
+     screen. Pinned to the viewport instead. */
+  .notification-panel{position:fixed;top:64px;left:12px;right:12px;width:auto;max-width:420px}
+  .notification-row{flex-wrap:wrap}
+  .notification-row-text{flex-basis:calc(100% - 26px)}
+  .notification-row-mark{margin-left:18px}
   .dashboard-content{padding:20px}
 
   /* Sticky, so the menu is still one tap away after scrolling down a long list — the reason

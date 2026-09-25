@@ -1,13 +1,12 @@
-/* Cross-section shortcuts. Scrolls sideways on a phone rather than wrapping into a block
-   that pushes the page content off the first screen. */
+/* Cross-section shortcuts. Wraps onto a second row on a phone (2026-09-25): it used to scroll
+   sideways, and a shortcut off the right edge ("Pesée") is one a farmer never finds. */
 .quick-links {
   display: flex;
   gap: 8px;
   align-items: center;
   margin: 0 0 20px;
+  flex-wrap: wrap;
   padding-bottom: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 
 .quick-links::-webkit-scrollbar {
