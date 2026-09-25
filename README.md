@@ -65,6 +65,22 @@ CLI to a `rootless` context automatically. Run the setup tool's own
 `loginctl enable-linger` command if you want it to keep running without
 an active login session.
 
+### If `docker compose up` fails with "port is already allocated"
+
+Something on your machine already uses one of the four host ports (often a
+local Redis on 6379). Pick free ones in a `.env` file at the repo root —
+the UI's API address and CORS follow automatically:
+
+```bash
+WINCHICKEN_DB_PORT=5436
+WINCHICKEN_REDIS_PORT=6382
+WINCHICKEN_API_PORT=8020     # API then at http://localhost:8020/api/
+WINCHICKEN_UI_PORT=5190      # open http://localhost:5190/
+```
+
+Run `docker compose up -d --force-recreate` afterwards: a container whose
+port publish failed can come back up with no network otherwise.
+
 ### Local (non-Docker) backend dev
 
 `backend/.venv` can run Django tooling (`makemigrations`, `test`, etc.)
