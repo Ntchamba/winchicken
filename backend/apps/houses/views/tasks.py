@@ -1,3 +1,4 @@
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
@@ -295,7 +296,19 @@ class MyTasksView(APIView):
 
     def get(self, request):
         results = []
-        for house in PoultryHouse.objects.filter(farm=request.user.farm):
+        # Only houses where this user holds an assignment can yield a task for them — the two
+        # places an assignment lives are the ones `compute_tasks_now` reads `assignedTo` from.
+        # Computing every other house's full task list just to discard it cost ~5 queries per
+        # house on every poll of this screen.
+        # Two IN-subqueries, not an OR across both joins: that multiplied every assignee row of
+        # every line by every rule row (~400 000 rows at 20 000 employees) before filtering.
+        houses = PoultryHouse.objects.filter(farm=request.user.farm).filter(
+            Q(house_code__in=ProtocolTemplate.objects.filter(assignees=request.user).values('house_id'))
+            | Q(house_code__in=AlertRule.objects.filter(
+                assignees=request.user, rule_type=AlertRuleType.WEIGHING_REMINDER,
+            ).values('batch__house_id')),
+        )
+        for house in houses:
             _, tasks = compute_tasks_now(house)
             for task in tasks:
                 # `assignedTo` is a list since FIX 7 — the same occurrence appears for every
