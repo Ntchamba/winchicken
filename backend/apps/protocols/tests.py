@@ -67,6 +67,55 @@ class ScheduleViewMultiDayTests(APITestCase):
         expected = [f'2026-03-{day:02d}' for day in range(21, 32)]
         self.assertEqual(cleaning_dates, expected)
 
+    def add_second_house(self):
+        house = PoultryHouse.objects.create(house_code='H-CAL-2', farm=self.farm, name='Salle 2', max_capacity=1000)
+        vaccine = ProtocolCategory.objects.create(house=house, label='Vaccination', icon='Syringe')
+        line = ProtocolTemplate.objects.create(
+            house=house, category=vaccine, from_value=1, from_unit='DAY', to_value=3, to_unit='DAY',
+            until_end=False, what='Vaccin',
+        )
+        ProtocolTimeSlot.objects.create(protocol_line=line, start_time='06:30', end_time='07:30')
+        ProtocolTimeSlot.objects.create(protocol_line=line, start_time='17:00', end_time='18:00')
+        PoultryBatch.objects.create(
+            batch_code='BATCH-CAL-2', house=house, production_type=ProductionType.BROILER,
+            initial_count=500, start_date=date(2026, 3, 1),
+        )
+
+    def test_summary_counts_each_day_and_previews_three_from_the_same_entries(self):
+        """2026-09-25: the flat month was 4.4 MB at 50 houses for a grid showing 3 pills a day."""
+        self.add_second_house()
+        full = self.client.get('/api/protocols/schedule/', {'month': '2026-03'}).data
+        summary = self.client.get('/api/protocols/schedule/', {'month': '2026-03', 'view': 'summary'}).data
+
+        per_day = {}
+        for entry in full:
+            per_day.setdefault(entry['date'], []).append(entry)
+        self.assertEqual({d: v['count'] for d, v in summary['days'].items()}, {d: len(v) for d, v in per_day.items()})
+        self.assertEqual(summary['days']['2026-03-02']['count'], 3)  # 1 feed + 2 vaccine slots
+        self.assertEqual(
+            [p['id'] for p in summary['days']['2026-03-02']['preview']],
+            [e['id'] for e in per_day['2026-03-02'][:3]],
+        )
+        self.assertEqual(summary['categories'], list(dict.fromkeys(e['category'] for e in full)))
+
+    def test_one_day_is_exactly_that_days_part_of_the_month(self):
+        self.add_second_house()
+        full = self.client.get('/api/protocols/schedule/', {'month': '2026-03'}).data
+        day = self.client.get('/api/protocols/schedule/', {'date': '2026-03-03'}).data
+        self.assertEqual(day, [e for e in full if e['date'] == '2026-03-03'])
+        self.assertEqual(self.client.get('/api/protocols/schedule/', {'date': '03/03/2026'}).status_code, 400)
+
+    def test_queries_do_not_grow_with_the_number_of_houses(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as one:
+            self.client.get('/api/protocols/schedule/', {'month': '2026-03', 'view': 'summary'})
+        self.add_second_house()
+        with CaptureQueriesContext(connection) as two:
+            self.client.get('/api/protocols/schedule/', {'month': '2026-03', 'view': 'summary'})
+        self.assertEqual(len(two.captured_queries), len(one.captured_queries))
+
 
 class OnboardingTimeSlotTests(APITestCase):
     """POST /api/protocols/onboarding/ also writes `ProtocolTimeSlot` rows (Bug 1 fix,

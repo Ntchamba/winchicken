@@ -191,13 +191,18 @@ def compute_month_schedule(farm, start, end):
     from apps.protocols.models import ProtocolTemplate
 
     entries = []
-    batches = PoultryBatch.objects.filter(house__farm=farm, status=BatchStatus.ACTIVE).select_related('house')
+    batches = list(PoultryBatch.objects.filter(house__farm=farm, status=BatchStatus.ACTIVE).select_related('house'))
+    # Every house's lines in one query (plus one for their slots), not one query per house.
+    lines_by_house = {}
+    for line in (
+        ProtocolTemplate.objects.filter(house_id__in={batch.house_id for batch in batches})
+        .select_related('category')
+        .prefetch_related('time_slots')
+        .order_by('house_id', 'pk')
+    ):
+        lines_by_house.setdefault(line.house_id, []).append(line)
     for batch in batches:
-        lines = list(
-            ProtocolTemplate.objects.filter(house=batch.house)
-            .select_related('category')
-            .prefetch_related('time_slots')
-        )
+        lines = lines_by_house.get(batch.house_id, [])
         if not lines:
             continue
         day = start
@@ -232,6 +237,29 @@ def compute_month_schedule(farm, start, end):
                         })
             day += timedelta(days=1)
     return entries
+
+
+def summarize_month_schedule(entries, preview=3):
+    """The month grid's view of `compute_month_schedule`'s entries: per day, how many tasks and
+    the first `preview` of them (what a grid cell shows), plus every category in first-seen
+    order so the grid colours them exactly as it did from the full list.
+
+    The full list was 4.4 MB a month at 50 houses (load test, 2026-09-25) for a grid that shows
+    three pills a day; the day's complete list is fetched on tap (`?date=`) instead. Built from
+    the same entries, never a second computation of what is due.
+    """
+    categories = []
+    seen = set()
+    days = {}
+    for entry in entries:
+        if entry['category'] not in seen:
+            seen.add(entry['category'])
+            categories.append(entry['category'])
+        day = days.setdefault(entry['date'], {'count': 0, 'preview': []})
+        day['count'] += 1
+        if len(day['preview']) < preview:
+            day['preview'].append({key: entry[key] for key in ('id', 'startTime', 'houseName', 'what', 'category')})
+    return {'categories': categories, 'days': days}
 
 
 def compute_cycle_milestones(house, batch=None, lines=None):

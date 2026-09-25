@@ -17,7 +17,7 @@ from apps.houses.serializers import generate_house_code
 from apps.protocols.models import ProtocolCategory, ProtocolTemplate, ProtocolTimeSlot
 from apps.protocols.serializers import ProtocolCategorySerializer, ProtocolTemplateSerializer
 from apps.batches.services import sync_weighing_reminder
-from apps.houses.services import compute_month_schedule
+from apps.houses.services import compute_month_schedule, summarize_month_schedule
 from apps.protocols.services import UNIT_TO_DAYS, expand_protocol_to_alert_rules
 from apps.protocols.xlsx_import import ImportError as XlsxImportError
 from apps.protocols.xlsx_import import build_template_workbook, parse_protocol_rows
@@ -212,11 +212,24 @@ class ScheduleView(APIView):
     defaults to the current month. Open to any authenticated user of the farm (like
     HouseTasksNowView), not Admin/Farm-Manager-only like AlertRuleListCreateView — this is task
     visibility, not rule management.
+
+    Two lighter forms for the month grid (2026-09-25 — the flat list was 4.4 MB at 50 houses):
+    `?month=YYYY-MM&view=summary` returns `{categories, days: {date: {count, preview}}}`
+    (`summarize_month_schedule`), and `?date=YYYY-MM-DD` returns the flat list for that one day,
+    fetched when a day is opened.
     """
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        day_param = request.query_params.get('date')
+        if day_param:
+            try:
+                day = date.fromisoformat(day_param)
+            except ValueError:
+                return Response({'detail': 'date must be formatted YYYY-MM-DD'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(compute_month_schedule(request.user.farm, day, day))
+
         month_param = request.query_params.get('month')
         try:
             if month_param:
@@ -230,7 +243,10 @@ class ScheduleView(APIView):
 
         end = date(year, month, monthrange(year, month)[1])
 
-        return Response(compute_month_schedule(request.user.farm, start, end))
+        entries = compute_month_schedule(request.user.farm, start, end)
+        if request.query_params.get('view') == 'summary':
+            return Response(summarize_month_schedule(entries))
+        return Response(entries)
 
 
 CONTENT_TYPE_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'

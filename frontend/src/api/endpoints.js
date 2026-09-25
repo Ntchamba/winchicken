@@ -109,6 +109,9 @@ export const auditLogApi = {
 
 export const scheduleApi = {
   month: (month) => client.get("/protocols/schedule/", { params: { month } }),
+  // The grid's form: per-day counts + the pills a cell shows. The day's full list is `day`.
+  monthSummary: (month) => client.get("/protocols/schedule/", { params: { month, view: "summary" } }),
+  day: (date) => client.get("/protocols/schedule/", { params: { date } }),
 };
 
 export const onboardingApi = {

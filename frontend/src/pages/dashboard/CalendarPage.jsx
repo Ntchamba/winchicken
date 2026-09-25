@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
 import { scheduleApi } from "../../api/endpoints";
 import { iconFor } from "../../components/HouseProtocolForm";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
@@ -37,6 +37,10 @@ function buildGrid(monthDate) {
  * directly (apps.houses.services.compute_month_schedule), the same day-in-range logic the
  * per-house "tâches à effectuer maintenant" panel uses — so a multi-day line (e.g. day 1-15)
  * now correctly appears on every one of those days, not just the first.
+ *
+ * The grid reads the month's summary (per-day count + the first pills) and a day's full list
+ * is fetched when it is opened (2026-09-25): the whole month was 4.4 MB at 50 houses, for a
+ * grid that shows three pills a day.
  */
 export default function CalendarPage() {
   useDocumentTitle("Calendrier");
@@ -45,27 +49,37 @@ export default function CalendarPage() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-  const [entries, setEntries] = useState([]);
+  const [summary, setSummary] = useState({ month: null, categories: [], days: {} });
   const [expandedDay, setExpandedDay] = useState(null);
+  // {date, entries} — `entries` null while that day is loading.
+  const [dayDetail, setDayDetail] = useState(null);
+  const [dayError, setDayError] = useState("");
 
   useEffect(() => {
-    scheduleApi.month(monthParam(monthDate)).then(({ data }) => setEntries(data));
+    const month = monthParam(monthDate);
+    let live = true;
+    scheduleApi.monthSummary(month).then(({ data }) => { if (live) setSummary({ month, ...data }); });
+    return () => { live = false; };
   }, [monthDate]);
 
-  const byDay = useMemo(() => {
-    const map = {};
-    for (const entry of entries) (map[entry.date] ||= []).push(entry);
-    return map;
-  }, [entries]);
+  const openDay = (key) => {
+    setExpandedDay(key);
+    setDayError("");
+    setDayDetail({ date: key, entries: null });
+    scheduleApi.day(key)
+      .then(({ data }) => setDayDetail((current) => (current?.date === key ? { date: key, entries: data } : current)))
+      .catch(() => setDayError("Les tâches de ce jour n'ont pas pu être chargées."));
+  };
 
+  // A previous month's summary is not shown under the new month's heading while it loads.
+  const summaryDays = summary.month === monthParam(monthDate) ? summary.days : {};
   const days = useMemo(() => buildGrid(monthDate), [monthDate]);
   const monthLabel = monthDate.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
   const today = dateKey(new Date());
-  const expandedEntries = expandedDay ? byDay[expandedDay] || [] : [];
+  const expandedEntries = dayDetail?.date === expandedDay ? dayDetail.entries : null;
 
   const categoryColor = (category) => {
-    const categories = [...new Set(entries.map((e) => e.category))];
-    const index = categories.indexOf(category);
+    const index = summary.categories.indexOf(category);
     return CATEGORY_DOT[index % CATEGORY_DOT.length] || "#5f7377";
   };
 
@@ -104,15 +118,15 @@ export default function CalendarPage() {
         {days.map((day, index) => {
           if (!day) return <div key={`blank-${index}`} className="calendar-day blank" />;
           const key = dateKey(day);
-          const dayEntries = byDay[key] || [];
-          const visible = dayEntries.slice(0, VISIBLE_PER_DAY);
-          const overflow = dayEntries.length - visible.length;
+          const dayCount = summaryDays[key]?.count ?? 0;
+          const visible = (summaryDays[key]?.preview ?? []).slice(0, VISIBLE_PER_DAY);
+          const overflow = dayCount - visible.length;
           return (
             <button
               key={key}
               type="button"
-              className={`calendar-day ${dayEntries.length > 0 ? "has-tasks" : ""}`}
-              onClick={() => dayEntries.length > 0 && setExpandedDay(key)}
+              className={`calendar-day ${dayCount > 0 ? "has-tasks" : ""}`}
+              onClick={() => dayCount > 0 && openDay(key)}
             >
               <span className={`calendar-day-number ${key === today ? "today" : ""}`}>{day.getDate()}</span>
               {visible.map((entry) => (
@@ -148,8 +162,14 @@ export default function CalendarPage() {
               </button>
             </div>
 
+            {dayError && <p className="field-error" role="alert">{dayError}</p>}
+            {expandedEntries === null && !dayError && (
+              <p className="empty-state" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Loader2 size={15} className="spin" /> Chargement…
+              </p>
+            )}
             <div style={{ display: "grid", gap: 10 }}>
-              {expandedEntries.map((entry) => {
+              {(expandedEntries ?? []).map((entry) => {
                 const Icon = iconFor(entry.icon);
                 return (
                   <div key={entry.id} className="alert-item info" style={{ borderLeftColor: categoryColor(entry.category) }}>
