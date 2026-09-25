@@ -90,6 +90,16 @@ class EmployeeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Un compte utilise déjà cet email.')
         return value
 
+    def validate_password(self, value):
+        # Every non-admin account is created/edited here, and this path never checked password
+        # strength — a worker could be given the password "1" (security review 2026-09-26,
+        # MEDIUM-3). FarmCreateSerializer already runs the same Django validators for the admin;
+        # `password` is optional on update, so an empty/omitted value skips this and keeps the
+        # current one (see update()). The generated import temp-password (~12 url-safe chars)
+        # passes these validators, so bulk import is unaffected.
+        validate_password(value)
+        return value
+
     def create(self, validated_data):
         farm = self.context['farm']
         password = validated_data.pop('password')
