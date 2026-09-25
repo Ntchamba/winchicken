@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "../../components/DashboardLayout";
 import { HousesProvider, useHousesContext } from "../../context/HousesContext";
@@ -35,7 +35,14 @@ function DashboardShellContent() {
   // navigation — cheap, and catches any change made through a path that doesn't call refetch
   // itself. refetchCounts (2026-08-26) rides the same trigger — one shared refresh mechanism
   // for the house list and the bell/badge counts, not two independent ones.
+  //
+  // Only on an actual change of route: both hooks already fetch when they mount, and firing here
+  // on the first render too sent every sidebar request twice per page load (four times in dev,
+  // where StrictMode doubles effects) — seen in live QA, 2026-09-25.
+  const refreshedFor = useRef(location.pathname);
   useEffect(() => {
+    if (refreshedFor.current === location.pathname) return;
+    refreshedFor.current = location.pathname;
     refetch();
     refetchCounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
