@@ -126,11 +126,12 @@ def finance_branch(farm):
 def health_branch(farm):
     """Delegates to the existing farm health score (mortality trend, FCR trend, open alerts)."""
     from apps.batches.models import BatchStatus, PoultryBatch
+    from apps.batches.services import with_current_count
 
     score = farm_health_score(farm)
     birds = sum(
         b.current_count
-        for b in PoultryBatch.objects.filter(house__farm=farm, status=BatchStatus.ACTIVE)
+        for b in with_current_count(PoultryBatch.objects.filter(house__farm=farm, status=BatchStatus.ACTIVE))
     )
     return {
         'tier': score['tier'],

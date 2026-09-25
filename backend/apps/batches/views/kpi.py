@@ -51,7 +51,7 @@ class GrowthCurvesView(APIView):
                 'houseName': batch.house.name,
                 'points': growth_curve(batch),
             }
-            for batch in qs.select_related('house')
+            for batch in qs.select_related('house').prefetch_related('daily_logs')
         ]
         return Response(results)
 
@@ -93,7 +93,9 @@ class WeeklyKpiView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, batch_code):
-        batch = get_object_or_404(PoultryBatch, batch_code=batch_code, house__farm=request.user.farm)
+        batch = get_object_or_404(
+            PoultryBatch.objects.prefetch_related('daily_logs'), batch_code=batch_code, house__farm=request.user.farm,
+        )
         return Response(weekly_kpi(batch))
 
 

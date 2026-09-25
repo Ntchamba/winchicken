@@ -91,9 +91,20 @@ class PoultryBatch(models.Model):
         """`initial_count` minus the sum of every logged `DailyLog.mortality` for this batch —
         computed fresh on every access rather than stored (see class docstring). Clamped at 0,
         matching the old stored field's `max(0, ...)` guard in its write paths, even though a
-        correctly-behaving app should never actually reach a negative raw total."""
-        from django.db.models import Sum
-        total_mortality = self.daily_logs.aggregate(total=Sum('mortality'))['total'] or 0
+        correctly-behaving app should never actually reach a negative raw total.
+
+        The sum is read from wherever it is already at hand, so a list of batches does not cost
+        one aggregate query each: the `total_mortality` annotation that
+        `apps.batches.services.with_current_count` adds, else prefetched `daily_logs`, else one
+        aggregate query. All three are the same SUM over the same rows."""
+        total_mortality = getattr(self, 'total_mortality', None)
+        if total_mortality is None:
+            prefetched = getattr(self, '_prefetched_objects_cache', {}).get('daily_logs')
+            if prefetched is not None:
+                total_mortality = sum(log.mortality for log in prefetched)
+            else:
+                from django.db.models import Sum
+                total_mortality = self.daily_logs.aggregate(total=Sum('mortality'))['total'] or 0
         return max(0, self.initial_count - total_mortality)
 
 

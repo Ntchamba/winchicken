@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from apps.batches.calculations import build_closing_report
 from apps.batches.models import BatchStatus, PoultryBatch
 from apps.batches.serializers import BatchClosingReportSerializer, PoultryBatchQuickEditSerializer, PoultryBatchSerializer
-from apps.batches.services import finalize_new_batch, sync_weighing_reminder
+from apps.batches.services import finalize_new_batch, sync_weighing_reminder, with_current_count
 from apps.core.permissions import CanEditHouseProtocol, IsAdminOrFarmManager
 from apps.core.services import record_audit_log
 
@@ -35,7 +35,7 @@ class PoultryBatchListCreateView(generics.ListCreateAPIView):
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        qs = PoultryBatch.objects.filter(house__farm=self.request.user.farm)
+        qs = with_current_count(PoultryBatch.objects.filter(house__farm=self.request.user.farm))
         house_code = self.request.query_params.get('house_code')
         if house_code:
             qs = qs.filter(house_id=house_code)

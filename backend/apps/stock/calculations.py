@@ -90,9 +90,11 @@ def coverage_for(item, quantity_per_day, days, dose_per_bird=None):
     ).aggregate(total=Sum('quantity_per_day'))['total'] or 0
     if dose_per_bird is not None:
         # current_count is a computed @property (not a column) — sum it in Python.
+        from apps.batches.services import with_current_count
+
         birds = sum(
             b.current_count
-            for b in PoultryBatch.objects.filter(house__farm=item.farm, status=BatchStatus.ACTIVE)
+            for b in with_current_count(PoultryBatch.objects.filter(house__farm=item.farm, status=BatchStatus.ACTIVE))
         )
         own_rate = float(dose_per_bird) * float(birds)
     else:

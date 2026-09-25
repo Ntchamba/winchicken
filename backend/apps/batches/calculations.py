@@ -34,12 +34,15 @@ def feed_conversion_ratio(batch, up_to_date=None):
     Reference range 2.10 (favorable) to 2.30 (unfavorable) — see FCR_REFERENCE_RANGE.
     """
     logs = batch.daily_logs.all()
-    flock = batch.current_count
     if up_to_date:
         logs = [log for log in logs if log.log_date <= up_to_date]
         # A past week's FCR divides by the flock alive *then*: deaths logged in later weeks must
         # not shrink an earlier week's flock after the fact (that inflated early weeks' FCR).
         flock = max(0, batch.initial_count - sum(log.mortality for log in logs))
+    else:
+        # Read only here: it used to be read unconditionally and then discarded whenever
+        # `up_to_date` was given — one wasted aggregate query per week of `weekly_kpi`.
+        flock = batch.current_count
     total_feed = sum(log.feed_consumed_kg for log in logs)
     latest_weight = None
     for log in sorted(logs, key=lambda entry: entry.log_date):
@@ -193,7 +196,10 @@ def farm_health_score(farm):
     from apps.alerts.models import Alert, AlertStatus
     from apps.batches.models import BatchStatus, PoultryBatch
 
-    active_batches = list(PoultryBatch.objects.filter(house__farm=farm, status=BatchStatus.ACTIVE))
+    # Logs fetched once for every batch: weekly_kpi and feed_conversion_ratio each walk them.
+    active_batches = list(
+        PoultryBatch.objects.filter(house__farm=farm, status=BatchStatus.ACTIVE).prefetch_related('daily_logs')
+    )
     breaches = []  # [(batch, 'mortalité'|'IC')]
     for batch in active_batches:
         kpi = weekly_kpi(batch)

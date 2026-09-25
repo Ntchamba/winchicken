@@ -10,6 +10,19 @@ from apps.batches.calculations import MORTALITY_REFERENCE_RANGE, mortality_pct
 from apps.batches.models import BatchStatus, DailyLog
 
 
+def with_current_count(batches):
+    """`batches` (a PoultryBatch queryset) with each row's summed mortality computed in the same
+    query, so `current_count` on a list of N batches costs one query instead of N. Read paths
+    only: the figure is a snapshot, and code that logs mortality and then re-checks the flock
+    needs a fresh batch."""
+    from django.db.models import Sum
+    from django.db.models.functions import Coalesce
+
+    # Django drops Meta.ordering from an aggregating query — keep the order the list had.
+    ordering = batches.query.order_by or batches.model._meta.ordering
+    return batches.annotate(total_mortality=Coalesce(Sum('daily_logs__mortality'), 0)).order_by(*ordering)
+
+
 def finalize_new_batch(batch):
     """Runs after a `PoultryBatch` row is created, from every creation path (onboarding, the
     plain `POST /api/batches/`) — expands the house's current protocol into this batch's
