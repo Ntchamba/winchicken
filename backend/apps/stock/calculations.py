@@ -1,19 +1,40 @@
 """Stock calculations — implementation-detail spec section 5.2, plus the 2026-08-28 stock
 restructure (evolution series + protocol-driven consumption coverage)."""
-from django.db.models import Sum
+from django.db.models import FloatField, Q, Sum
+from django.db.models.functions import Coalesce
 
 from apps.stock.models import MovementType
+
+
+def _on_hand():
+    """`SUM(IN) - SUM(OUT)` over an item's movements, as one SQL expression — the single
+    definition both `current_quantity` and `with_current_quantity` evaluate."""
+    moved = lambda kind: Coalesce(  # noqa: E731
+        Sum('movements__quantity', filter=Q(movements__movement_type=kind)), 0.0, output_field=FloatField(),
+    )
+    return moved(MovementType.IN) - moved(MovementType.OUT)
+
+
+def with_current_quantity(items):
+    """`items` (a StockItem queryset) with each row's on-hand quantity computed in the same
+    query, so a list of N articles costs one query instead of 2N. `current_quantity` reads it
+    back. Only for read paths: the value is a snapshot, and a caller that writes a movement and
+    then asks again needs a fresh read (a plain, un-annotated item)."""
+    # Django drops Meta.ordering from an aggregating query — keep the order the list had.
+    ordering = items.query.order_by or items.model._meta.ordering
+    return items.annotate(on_hand_quantity=_on_hand()).order_by(*ordering)
 
 
 def current_quantity(item):
     """On-hand quantity for a StockItem: `SUM(StockMovement.quantity WHERE type=IN) -
     SUM(StockMovement.quantity WHERE type=OUT)` (implementation-detail spec 5.2). Computed at
-    read time by aggregation on every call — not cached/denormalized on StockItem, so this is
-    always consistent but re-scans all movements for the item each time it's called."""
-    movements = item.movements
-    stock_in = movements.filter(movement_type=MovementType.IN).aggregate(total=Sum('quantity'))['total'] or 0
-    stock_out = movements.filter(movement_type=MovementType.OUT).aggregate(total=Sum('quantity'))['total'] or 0
-    return stock_in - stock_out
+    read time by aggregation — not cached/denormalized on StockItem, so it is always consistent.
+    An item loaded through `with_current_quantity` already carries the figure; any other item
+    costs one aggregate query."""
+    annotated = getattr(item, 'on_hand_quantity', None)
+    if annotated is not None:
+        return annotated
+    return type(item).objects.filter(pk=item.pk).aggregate(on_hand=_on_hand())['on_hand']
 
 
 def is_low(quantity, threshold):

@@ -245,14 +245,14 @@ def farm_wide_indicators(farm, range_param='6m'):
 
     from apps.batches.models import DailyLog
     from apps.maintenance.models import EquipmentFault, UnusualCase
-    from apps.stock.calculations import current_quantity
+    from apps.stock.calculations import current_quantity, with_current_quantity
     from apps.stock.models import StockItem
 
     period_start = _month_range(range_param)[0]
 
     stock_value = sum(
         current_quantity(item) * float(item.unit_price)
-        for item in StockItem.objects.filter(farm=farm).select_related('category')
+        for item in with_current_quantity(StockItem.objects.filter(farm=farm))
     )
     logs = DailyLog.objects.filter(batch__house__farm=farm, log_date__gte=period_start)
     mortality = logs.aggregate(n=Sum('mortality'))['n'] or 0

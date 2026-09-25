@@ -1,6 +1,7 @@
 import math
 
 from django.db import transaction
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import generics, serializers, status
@@ -12,7 +13,7 @@ from rest_framework.views import APIView
 from apps.core.models import Farm
 from apps.core.permissions import IsAdminOrFarmManagerOrFarmer
 from apps.core.services import record_audit_log
-from apps.stock.calculations import current_quantity, is_low
+from apps.stock.calculations import current_quantity, is_low, with_current_quantity
 from apps.stock.models import (
     StockCategory, StockComposition, StockItem, StockMovement, Supplier, Vaccination,
 )
@@ -62,7 +63,7 @@ class FarmStockItemsView(APIView):
     @extend_schema(responses=_StockItemsPayload)
     def get(self, request, farm_id):
         farm = get_object_or_404(Farm, pk=farm_id)
-        items = StockItem.objects.filter(farm=farm).select_related('category', 'supplier')
+        items = with_current_quantity(StockItem.objects.filter(farm=farm).select_related('category', 'supplier'))
         return Response({'items': StockItemSerializer(items, many=True).data})
 
     @extend_schema(
@@ -185,7 +186,7 @@ class FarmStockItemsView(APIView):
             # deletion the user asked for, unlike the old blanket delete of every row.
             StockItem.objects.filter(farm=farm).exclude(item_code__in=kept_codes).delete()
         record_audit_log(request.user, 'stock.updated', f'Paramètres de stock ({len(kept_codes)} article(s))')
-        items = StockItem.objects.filter(farm=farm).select_related('category', 'supplier')
+        items = with_current_quantity(StockItem.objects.filter(farm=farm).select_related('category', 'supplier'))
         return Response({'items': StockItemSerializer(items, many=True).data})
 
 
@@ -252,6 +253,12 @@ class FarmSuppliersView(generics.ListCreateAPIView):
         serializer.save(farm=self.get_farm())
 
 
+def _ingredient_items_with_quantity():
+    """Each ingredient's item with its on-hand quantity already computed — the ingredient rows
+    show it, and reading it item by item was two queries per ingredient."""
+    return Prefetch('ingredients__item', queryset=with_current_quantity(StockItem.objects.all()))
+
+
 class FarmStockCompositionsView(generics.ListCreateAPIView):
     """GET/POST /api/farms/{farmId}/stock-compositions/ — the farm's composition "recipes".
     GET open to any farm user; POST reserved to Admin/Farm Manager/Farmer. POST creates the
@@ -272,7 +279,7 @@ class FarmStockCompositionsView(generics.ListCreateAPIView):
         return (
             StockComposition.objects.filter(farm=self.get_farm())
             .select_related('output_item')
-            .prefetch_related('ingredients__item')
+            .prefetch_related(_ingredient_items_with_quantity())
         )
 
     def perform_create(self, serializer):
@@ -303,7 +310,7 @@ class StockCompositionDetailView(generics.RetrieveDestroyAPIView):
     def get_queryset(self):
         return (
             StockComposition.objects.filter(farm=self.request.user.farm)
-            .select_related('output_item').prefetch_related('ingredients__item')
+            .select_related('output_item').prefetch_related(_ingredient_items_with_quantity())
         )
 
     def patch(self, request, *args, **kwargs):
@@ -460,7 +467,7 @@ class StockItemsLowCountView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        items = StockItem.objects.filter(farm=request.user.farm)
+        items = with_current_quantity(StockItem.objects.filter(farm=request.user.farm))
         count = sum(1 for item in items if is_low(current_quantity(item), item.alert_threshold))
         return Response({'count': count})
 

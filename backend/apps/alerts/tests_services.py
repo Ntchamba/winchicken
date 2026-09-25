@@ -114,8 +114,9 @@ class LowStockTests(AlertsBase):
     def test_reads_the_on_hand_quantity_once(self):
         self.move(20)
         StockMovement.objects.create(item=self.item, movement_type=MovementType.OUT, quantity=15, movement_date=START)
-        # Two aggregate queries (IN, OUT) for the quantity; it used to be computed three times.
-        with self.assertNumQueries(2):
+        # One aggregate query (IN minus OUT) for the quantity; it used to be computed three times,
+        # then twice (one query per movement type).
+        with self.assertNumQueries(1):
             with patch('apps.alerts.services.trigger_alert'):
                 check_low_stock(self.item)
 

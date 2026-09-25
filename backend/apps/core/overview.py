@@ -24,7 +24,7 @@ exactly the divergence this delegation avoids.
 """
 from apps.batches.calculations import farm_health_score
 from apps.finance.calculations import cash_on_hand, monthly_summary
-from apps.stock.calculations import current_quantity, is_low
+from apps.stock.calculations import current_quantity, is_low, with_current_quantity
 
 # ---------------------------------------------------------------------------
 # Thresholds — proposed defaults, documented so they can be reviewed and tuned.
@@ -67,7 +67,7 @@ def stock_branch(farm):
     """Stock levels against each article's own reorder threshold."""
     from apps.stock.models import StockItem
 
-    items = list(StockItem.objects.filter(farm=farm))
+    items = list(with_current_quantity(StockItem.objects.filter(farm=farm)))
     low, empty = [], []
     for item in items:
         quantity = current_quantity(item)
