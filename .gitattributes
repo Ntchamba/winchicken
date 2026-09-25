@@ -1,0 +1,15 @@
+# Everything that runs inside the Linux containers or the build must keep LF line endings, even
+# when cloned on Windows, where Git's default (core.autocrlf=true) converts text files to CRLF:
+# `sh scripts/start-prod-web.sh` then dies on "set: -\r: invalid option", and CRLF in .env
+# files and nginx/compose config leaks a stray \r into values. The repo is already all-LF;
+# this only stops a Windows checkout from changing that.
+* text=auto eol=lf
+
+# Binary files, never converted.
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
+*.docx binary
+*.xlsx binary
+*.dump binary
