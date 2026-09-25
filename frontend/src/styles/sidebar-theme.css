@@ -28,7 +28,7 @@
    a narrow slice reads sparser than the full-screen surfaces, which is expected. */
 .sidebar-fireflies{z-index:-1}
 .sidebar-brand{display:flex;align-items:center;gap:10px;padding:0 8px 24px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:20px}
-.sidebar-section-label{margin:18px 8px 8px;font-size:11px;font-weight:700;letter-spacing:.1em;color:rgba(255,255,255,.45);text-transform:uppercase}
+.sidebar-section-label{margin:18px 8px 8px;font-size:11px;font-weight:700;letter-spacing:.1em;color:rgba(255,255,255,.6);text-transform:uppercase}
 .sidebar-nav{display:flex;flex-direction:column;gap:2px}
 .sidebar .sidebar-link{display:flex;align-items:center;gap:10px;min-height:44px;padding:11px 12px;border-radius:10px;font-size:13.5px;font-weight:500;color:rgba(255,255,255,.82);text-decoration:none;border:0;background:none;width:100%;text-align:left;cursor:pointer;transition:.15s}
 .sidebar .sidebar-link:hover{background:rgba(23,184,146,.16);color:#5eead4}
@@ -83,7 +83,9 @@
 
 .sidebar-search{position:relative;padding:16px 8px 4px}
 .sidebar-search input{width:100%;box-sizing:border-box;padding:8px 10px 8px 32px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:#fff;font-size:13px;outline:none;transition:.15s}
-.sidebar-search input::placeholder{color:rgba(255,255,255,.35)}
+.sidebar-search input::placeholder{color:rgba(255,255,255,.6)}
+/* The page eyebrow's mint is for white pages; on the navy sidebar it read at 4.3:1. */
+.sidebar .eyebrow{color:#5eead4}
 .sidebar-search input:focus{border-color:#5eead4;box-shadow:0 0 0 3px rgba(94,234,212,.18)}
 .sidebar-search-icon{position:absolute;left:18px;top:24px;color:rgba(255,255,255,.35);pointer-events:none}
 .sidebar-search-dropdown{position:absolute;left:8px;right:8px;top:100%;margin-top:4px;background:#fff;border-radius:12px;box-shadow:0 20px 48px rgba(0,0,0,.35);z-index:60;max-height:360px;overflow-y:auto;color:#10242c;padding:6px}
@@ -100,7 +102,7 @@
 .incident-shortcut{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;padding:12px;border-radius:10px;border:1px solid rgba(214,67,63,.4);background:rgba(214,67,63,.14);color:#ffb4b0;font-size:13px;font-weight:700;cursor:pointer;margin-top:4px}
 .incident-shortcut:hover{background:rgba(214,67,63,.22)}
 
-.sidebar-version{margin:8px 0 0;padding:0 8px;font-size:10.5px;color:rgba(255,255,255,.25);text-align:center}
+.sidebar-version{margin:8px 0 0;padding:0 8px;font-size:10.5px;color:rgba(255,255,255,.6);text-align:center}
 
 .dashboard-main{flex:1;min-width:0;display:flex;flex-direction:column}
 .dashboard-content{flex:1;min-width:0;padding:32px 40px}

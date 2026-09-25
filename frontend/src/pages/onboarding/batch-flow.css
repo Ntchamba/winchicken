@@ -200,14 +200,14 @@
 }
 
 .import-preview-row--ok { border-left-color: #1f9d76; }
-.import-preview-row--warn { border-left-color: #b9790c; }
+.import-preview-row--warn { border-left-color: #94610a; }
 .import-preview-row--muted { border-left-color: #9bb0ad; }
-.import-preview-row--bad { border-left-color: #d6433f; }
+.import-preview-row--bad { border-left-color: #bc3b37; }
 
 .import-preview-row--ok .import-preview-icon { color: #1f9d76; }
-.import-preview-row--warn .import-preview-icon { color: #b9790c; }
-.import-preview-row--muted .import-preview-icon { color: #7c918e; }
-.import-preview-row--bad .import-preview-icon { color: #d6433f; }
+.import-preview-row--warn .import-preview-icon { color: #94610a; }
+.import-preview-row--muted .import-preview-icon { color: #637371; }
+.import-preview-row--bad .import-preview-icon { color: #bc3b37; }
 
 .import-preview-mapping {
   display: flex;

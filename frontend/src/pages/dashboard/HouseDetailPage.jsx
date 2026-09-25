@@ -141,7 +141,7 @@ export default function HouseDetailPage() {
             {batch && (
               <p className="schedule-note">
                 {batch.name ? (
-                  <>Bande {batch.name} <span style={{ opacity: .6 }}>({batch.batch_code})</span></>
+                  <>Bande {batch.name} <span style={{ color: "var(--muted)" }}>({batch.batch_code})</span></>
                 ) : (
                   <>Bande {batch.batch_code}</>
                 )}

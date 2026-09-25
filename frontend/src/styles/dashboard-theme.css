@@ -203,9 +203,10 @@
    0) — the pulse stops on its own once resolved/read, because the badge itself stops rendering;
    nothing here needs a separate "stop pulsing" code path. See root README.md for the full
    accessibility rationale. */
+/* Only the ring pulses: fading the badge itself took its number down to 2.5:1 mid-pulse. */
 @keyframes pulse-alert{
-  0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(214,67,63,.45)}
-  50%{opacity:.6;box-shadow:0 0 0 5px rgba(214,67,63,0)}
+  0%,100%{box-shadow:0 0 0 0 rgba(214,67,63,.45)}
+  50%{box-shadow:0 0 0 5px rgba(214,67,63,0)}
 }
 .pulse-alert{animation:pulse-alert 1.3s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){

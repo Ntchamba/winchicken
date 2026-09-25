@@ -2,6 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
+// After App, so its app-wide accessibility rules follow every page's own stylesheet.
+import './styles/accessibility.css'
 import { registerServiceWorker, serviceWorkerSupported } from './pwa/serviceWorker.js'
 // Side effect: catches the one-shot `beforeinstallprompt` before Paramètres is ever opened.
 import './pwa/installPrompt.js'

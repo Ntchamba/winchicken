@@ -43,9 +43,9 @@
   opacity: .72;
 }
 
-.tree-core--good { background: #d7f5ec; border-color: #17b892; }
-.tree-core--watch { background: #fdf3d7; border-color: #d9a326; }
-.tree-core--critical { background: #ffe3dd; border-color: #d6433f; }
+.tree-core--good { background: #d7f5ec; border-color: #12a07e; }
+.tree-core--watch { background: #fdf3d7; border-color: #b8891f; }
+.tree-core--critical { background: #ffe3dd; border-color: #bc3b37; }
 
 /* --- connectors ------------------------------------------------------- */
 
@@ -133,7 +133,7 @@
 
 .tree-node-unit {
   font-size: 12px;
-  color: #7c918e;
+  color: #637371;
 }
 
 .tree-node-message {
@@ -143,11 +143,12 @@
   color: #53696d;
 }
 
-.tree-node--good { border-color: #17b892; }
+/* Status borders at 3:1 or more against white (WCAG 1.4.11); they were 2.5 and 2.3. */
+.tree-node--good { border-color: #12a07e; }
 .tree-node--good .tree-node-icon { background: #d7f5ec; color: #0b5137; }
-.tree-node--watch { border-color: #d9a326; }
-.tree-node--watch .tree-node-icon { background: #fdf3d7; color: #8a6d1f; }
-.tree-node--critical { border-color: #d6433f; }
+.tree-node--watch { border-color: #b8891f; }
+.tree-node--watch .tree-node-icon { background: #fdf3d7; color: #7a601b; }
+.tree-node--critical { border-color: #bc3b37; }
 .tree-node--critical .tree-node-icon { background: #ffe3dd; color: #9c2f2b; }
 
 @keyframes tree-pulse {

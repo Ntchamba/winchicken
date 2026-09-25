@@ -1,0 +1,6 @@
+/* App-wide accessibility rules (phone use in a poultry house: dirty hands, poor light).
+   Cross-cutting only — a rule about one component lives in that component's stylesheet. */
+
+/* Placeholders at 4.5:1 or more on the light field background (#f1f5f4). The browser default
+   (#757575) read at 4.2:1. Scoped stylesheets that restyle their own placeholder still win. */
+::placeholder { color: #676e70; opacity: 1; }
