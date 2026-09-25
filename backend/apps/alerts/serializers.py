@@ -44,6 +44,7 @@ class AlertSerializer(serializers.ModelSerializer):
     houseCode = serializers.CharField(source='batch.house_id', read_only=True, default=None)
     houseName = serializers.CharField(source='batch.house.name', read_only=True, default=None)
     batchName = serializers.CharField(source='batch.name', read_only=True, default=None)
+    message = serializers.SerializerMethodField()
 
     class Meta:
         model = Alert
@@ -52,6 +53,11 @@ class AlertSerializer(serializers.ModelSerializer):
             'triggered_at', 'status', 'message', 'severity', 'is_read',
         ]
         read_only_fields = ['id', 'triggered_at']
+
+    def get_message(self, alert) -> str:
+        from apps.alerts.services import alert_display_message
+
+        return alert_display_message(alert)
 
 
 class SmsMessageSerializer(serializers.ModelSerializer):

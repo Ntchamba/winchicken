@@ -63,3 +63,54 @@ class TaskRemindersAreNotOpenProblemsTests(APITestCase):
         score = self.client.get('/api/batches/health-score/').data
         self.assertEqual(score['tier'], 'watch')
         self.assertIn('2 alertes ouvertes', score['reason'])
+
+
+class EmptyMessageAlertTests(APITestCase):
+    """Live QA 2026-09-25: a reminder stored with an empty message (before the unaddressed-reminder
+    fix) showed as a card with only a date on the Alertes page."""
+
+    def setUp(self):
+        from datetime import date
+
+        from apps.batches.models import PoultryBatch, ProductionType
+        from apps.houses.models import PoultryHouse
+        from apps.protocols.models import ProtocolCategory, ProtocolTemplate
+
+        self.farm = Farm.objects.create(name='Ferme Messages')
+        admin = User.objects.create_user(email='admin@messages.local', password='x', name='A', role=UserRole.ADMIN, farm=self.farm)
+        create_role_profile(admin)
+        self.client.force_authenticate(user=admin)
+        house = PoultryHouse.objects.create(house_code='H-MSG-1', farm=self.farm, name='Salle 1', max_capacity=100)
+        cat = ProtocolCategory.objects.create(house=house, label='Alimentation', icon='Soup')
+        line = ProtocolTemplate.objects.create(house=house, category=cat, from_value=1, what='Aliment démarrage')
+        batch = PoultryBatch.objects.create(batch_code='B-MSG-1', house=house, production_type=ProductionType.BROILER,
+                                            initial_count=50, start_date=date(2026, 9, 1))
+        self.task_rule = AlertRule.objects.create(farm=self.farm, rule_type=AlertRuleType.PROTOCOL_TASK,
+                                                  trigger_mode=TriggerMode.SCHEDULED, batch=batch, protocol_line=line)
+        self.stock_rule = AlertRule.objects.create(farm=self.farm, rule_type=AlertRuleType.LOW_STOCK, trigger_mode=TriggerMode.EVENT)
+
+    def test_an_empty_reminder_reads_as_the_task_that_came_due(self):
+        Alert.objects.create(rule=self.task_rule, message='')
+        row = self.client.get('/api/alerts/').data['results'][0]
+        self.assertEqual(row['message'], 'Tâche à effectuer : Aliment démarrage à Salle 1.')
+
+    def test_an_empty_problem_alert_reads_as_its_type_in_french(self):
+        Alert.objects.create(rule=self.stock_rule, message='')
+        self.assertEqual(self.client.get('/api/alerts/').data['results'][0]['message'], 'Stock bas')
+
+    def test_a_message_is_left_as_it_is(self):
+        Alert.objects.create(rule=self.stock_rule, message='Provende sous le seuil')
+        self.assertEqual(self.client.get('/api/alerts/').data['results'][0]['message'], 'Provende sous le seuil')
+
+    def test_describing_empty_alerts_costs_no_query_per_row(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        Alert.objects.create(rule=self.task_rule, message='')
+        with CaptureQueriesContext(connection) as one:
+            self.client.get('/api/alerts/')
+        for _ in range(5):
+            Alert.objects.create(rule=self.task_rule, message='')
+        with CaptureQueriesContext(connection) as six:
+            self.client.get('/api/alerts/')
+        self.assertEqual(len(six.captured_queries), len(one.captured_queries))

@@ -37,11 +37,13 @@ def _notify(farm_id, *, title, body, url='/', tag=None):
 def push_on_alert(sender, instance, created, **kwargs):
     if not created:
         return
+    from apps.alerts.services import alert_display_message
+
     rule = instance.rule
     _notify(
         rule.farm_id,
         title='Nouvelle alerte',
-        body=instance.message or rule.get_rule_type_display(),
+        body=alert_display_message(instance),
         url='/dashboard/alerts',
         tag=f'alert-{instance.pk}',
     )

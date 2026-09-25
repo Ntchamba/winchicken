@@ -222,9 +222,36 @@ def open_problem_alerts(farm):
     )
 
 
-def _unaddressed_reminder(rule):
+def _task_due_text(rule):
     what = rule.protocol_line.what if rule.protocol_line_id else 'la pesée d’un échantillon de la bande'
-    return f'Tâche à effectuer : {what} à {rule.batch.house.name} (personne n’est assigné).'
+    where = f' à {rule.batch.house.name}' if rule.batch_id else ''
+    return f'Tâche à effectuer : {what}{where}'
+
+
+def _unaddressed_reminder(rule):
+    return f'{_task_due_text(rule)} (personne n’est assigné).'
+
+
+# French, for an alert that carries no message of its own (the choice labels are English).
+_RULE_TYPE_TEXT = {
+    AlertRuleType.LOW_STOCK: 'Stock bas',
+    AlertRuleType.VACCINE_DUE: 'Vaccination à prévoir',
+    AlertRuleType.CONSUMPTION_DEVIATION: 'Consommation eau/aliment hors norme',
+    AlertRuleType.PROFITABILITY_THRESHOLD: 'Seuil de rentabilité',
+    AlertRuleType.SANITARY_VOID_END: 'Fin du vide sanitaire',
+}
+
+
+def alert_display_message(alert):
+    """What an alert says, everywhere it is shown (bell, Alertes page, dashboard, push). Reminders
+    fired before 2026-09-25 with nobody to address were stored with an empty message and showed as
+    a card with only a date (live QA): they now read as the task that came due."""
+    if alert.message:
+        return alert.message
+    rule = alert.rule
+    if rule.rule_type in REMINDER_RULE_TYPES:
+        return f'{_task_due_text(rule)}.'
+    return _RULE_TYPE_TEXT.get(rule.rule_type, 'Alerte')
 
 
 def _queue_reminder_sms(alert, reminders):

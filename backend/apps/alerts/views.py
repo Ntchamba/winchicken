@@ -40,7 +40,8 @@ class AlertListView(generics.ListAPIView):
             qs = open_problem_alerts(self.request.user.farm)
         else:
             qs = Alert.objects.filter(rule__farm=self.request.user.farm)
-        qs = qs.select_related('rule', 'batch__house')
+        # rule's batch/line: what an alert with no message of its own is described by.
+        qs = qs.select_related('rule__batch__house', 'rule__protocol_line', 'batch__house')
         batch_code = self.request.query_params.get('batch_code')
         if batch_code:
             qs = qs.filter(batch_id=batch_code)
