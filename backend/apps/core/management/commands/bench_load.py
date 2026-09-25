@@ -23,6 +23,7 @@ import time
 from datetime import datetime, timedelta
 
 from django.conf import settings
+from django.core.cache import caches
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 from django.test import Client, override_settings
@@ -54,7 +55,7 @@ SCREENS = {
         '/api/batches/{batch}/kpi/weekly/',
     ],
     'Bâtiment – Tâches': [
-        '/api/houses/{house}/assignments/', '/api/tasks/assignable-users/',
+        '/api/houses/{house}/assignments/', '/api/tasks/assignable-users/?q=&limit=50',
         '/api/houses/{house}/tasks-now/', '/api/batches/?house_code={house}',
     ],
     'Bâtiment – Pesée': [
@@ -79,7 +80,8 @@ SCREENS = {
     'Employés': ['/api/employees/'],
     'Caisse': ['/api/sales/?sale_date={today}&page={page}'],
     'Alertes': ['/api/alerts/'],
-    'Calendrier': ['/api/protocols/schedule/?month={month}'],
+    # The grid reads the month's summary; a day's list loads when it is opened (2026-09-25).
+    'Calendrier': ['/api/protocols/schedule/?month={month}&view=summary', '/api/protocols/schedule/?date={today}'],
     'Mes tâches (ouvrier)': ['@worker', '/api/tasks/mine/'],
     'Journal d’audit': ['/api/audit-log/?page=1'],
 }
@@ -120,6 +122,10 @@ class Command(BaseCommand):
         parser.add_argument('--import-rows', type=int, default=2000)
         # Separate, smaller default: every new account hashes a generated password (~1 s each).
         parser.add_argument('--employee-import-rows', type=int, default=100)
+        parser.add_argument(
+            '--warm-cache', action='store_true',
+            help='Keep the aggregate response cache between repeats (default: cleared, so each run computes).',
+        )
         parser.add_argument('--email', default='admin@load.local')
         parser.add_argument('--password', default='LoadTest123!')
 
@@ -157,6 +163,9 @@ class Command(BaseCommand):
     def _measure(self, client, headers, method, url, **kw):
         times, last = [], None
         for _ in range(self.o['repeat'] if method == 'get' else 1):
+            if not self.o['warm_cache']:
+                # Time the work, not a hit of the short-lived aggregate cache (apps.core.cache).
+                caches['responses'].clear()
             with _QueryCounter() as ctx:
                 t0 = time.perf_counter()
                 resp = getattr(client, method)(url, **headers, **kw)
