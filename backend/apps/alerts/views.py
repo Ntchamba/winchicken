@@ -34,7 +34,7 @@ class AlertListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        qs = Alert.objects.filter(rule__farm=self.request.user.farm)
+        qs = Alert.objects.filter(rule__farm=self.request.user.farm).select_related('rule', 'batch__house')
         batch_code = self.request.query_params.get('batch_code')
         if batch_code:
             qs = qs.filter(batch_id=batch_code)

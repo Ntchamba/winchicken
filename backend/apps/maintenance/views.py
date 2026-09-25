@@ -27,7 +27,9 @@ class EquipmentFaultListCreateView(generics.ListCreateAPIView):
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        qs = EquipmentFault.objects.filter(house__farm=self.request.user.farm)
+        qs = EquipmentFault.objects.filter(house__farm=self.request.user.farm).select_related(
+            'house', 'technician', 'resolved_by',
+        )
         status_param = self.request.query_params.get('status')
         if status_param == 'OPEN':
             qs = qs.exclude(status='RESOLVED')
@@ -75,7 +77,9 @@ class UnusualCaseListCreateView(generics.ListCreateAPIView):
     serializer_class = UnusualCaseSerializer
 
     def get_queryset(self):
-        qs = UnusualCase.objects.filter(batch__house__farm=self.request.user.farm)
+        qs = UnusualCase.objects.filter(batch__house__farm=self.request.user.farm).select_related(
+            'batch__house', 'farmer', 'worker', 'resolved_by',
+        )
         resolved_param = self.request.query_params.get('resolved')
         if resolved_param is not None:
             qs = qs.filter(resolved=resolved_param.lower() == 'true')

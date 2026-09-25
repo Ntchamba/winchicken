@@ -240,7 +240,7 @@ class PurchaseOrderListCreateView(generics.ListCreateAPIView):
         return [IsAuthenticated()]
 
     def get_queryset(self):
-        qs = PurchaseOrder.objects.filter(farm=self.request.user.farm).select_related('item')
+        qs = PurchaseOrder.objects.filter(farm=self.request.user.farm).select_related('item__category')
         status_param = self.request.query_params.get('status')
         if status_param:
             qs = qs.filter(status=status_param)
