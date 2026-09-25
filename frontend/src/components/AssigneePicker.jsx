@@ -118,7 +118,7 @@ export default function AssigneePicker({
               <input
                 type="search"
                 value={query}
-                placeholder="Rechercher un nom"
+                placeholder="Rechercher"
                 aria-label="Rechercher un employé"
                 onChange={(e) => setQuery(e.target.value)}
               />

@@ -102,3 +102,21 @@
 }
 
 .assignee-picker-hint { margin: 6px 0 4px; font-size: 14px; color: var(--muted); }
+
+/* 375px (live QA 2026-09-25): flex/grid items default to min-width: auto, so the open picker's
+   search box and rows widened the task card past its panel and scrolled the page sideways. */
+.alert-item:has(.assignee-picker),
+.alert-item:has(.assignee-picker) .alert-text,
+.card:has(.assignee-picker),
+.assignee-picker,
+.assignee-picker-list { min-width: 0; max-width: 100%; }
+
+.assignee-picker-option span { min-width: 0; overflow-wrap: anywhere; }
+
+/* ...but the "Affectations en cours" card also holds a "Retirer" button that is 100% wide under
+   480px: with the text allowed to shrink it took the whole row and the text went to 0 px. The
+   button wraps onto its own line instead. */
+@media (max-width: 480px) {
+  .alert-item:has(.assignee-picker):has(> .task-undo-button) { flex-wrap: wrap; }
+  .alert-item:has(.assignee-picker) > .alert-text { flex-basis: 0; min-width: min(100%, 180px); }
+}
