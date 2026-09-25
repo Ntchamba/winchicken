@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { batchesApi, housesApi } from "../api/endpoints";
+import { fetchAllPages } from "../api/pagination";
 
 // PoultryHouse has no productionType of its own (only PoultryBatch does) — the sidebar's
 // Egg-vs-Bird icon is derived from each house's active batch, defaulting to Broiler for a
@@ -21,9 +22,12 @@ export default function useHouses() {
   const refetch = useCallback(async () => {
     setLoading(true);
     try {
-      const [housesRes, batchesRes] = await Promise.all([housesApi.list(), batchesApi.listActive()]);
-      const houseResults = housesRes.data.results || housesRes.data;
-      const batchResults = batchesRes.data.results || batchesRes.data;
+      // Every page: from the 21st house on, a house (and its batch) vanished from the sidebar,
+      // the dashboard and every house picker (load test, 2026-09-25).
+      const [houseResults, batchResults] = await Promise.all([
+        fetchAllPages(housesApi.list),
+        fetchAllPages(batchesApi.listActive),
+      ]);
       const activeBatchByHouse = Object.fromEntries(
         batchResults.filter((b) => b.status === "ACTIVE").map((b) => [b.house_code, b])
       );

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Check, ChevronDown, ChevronUp, History, Loader2, Wrench } from "lucide-react";
 import { maintenanceApi } from "../api/endpoints";
+import { fetchAllPages } from "../api/pagination";
+import LoadMoreButton from "./LoadMoreButton";
 import { getServerErrorMessage } from "../api/errors";
 
 const DESCRIPTION_CLAMP = 120;
@@ -58,18 +60,36 @@ export default function IncidentsPanel({ houseCode, reloadKey }) {
   // answer to that is to tap again (or re-report the same case).
   const [resolveError, setResolveError] = useState(null);
   const [loadError, setLoadError] = useState("");
+  // History tab only: the next page to read of each list, null once exhausted.
+  const [morePages, setMorePages] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
+  // Open incidents are read in full — the list and the "N cas ouverts" badge must both count
+  // every one of them, and only the first 20 were read before (2026-09-25). The resolved
+  // history only grows, so it comes 20 + 20 at a time behind "Afficher plus".
   const load = () => {
     const scope = houseCode ? { house_code: houseCode } : {};
     const open = tab === "open";
+    const casesParams = { ...scope, resolved: open ? "false" : "true" };
+    const faultsParams = { ...scope, status: open ? "OPEN" : "RESOLVED" };
     setLoaded(false);
     setLoadError("");
-    return Promise.all([
-      maintenanceApi.cases({ ...scope, resolved: open ? "false" : "true" }),
-      maintenanceApi.faults({ ...scope, status: open ? "OPEN" : "RESOLVED" }),
-    ]).then(([casesRes, faultsRes]) => {
-      setCases(casesRes.data.results || casesRes.data);
-      setFaults(faultsRes.data.results || faultsRes.data);
+    setMorePages(null);
+    const request = open
+      ? Promise.all([
+        fetchAllPages(maintenanceApi.cases, casesParams),
+        fetchAllPages(maintenanceApi.faults, faultsParams),
+      ])
+      : Promise.all([
+        maintenanceApi.cases({ ...casesParams, page: 1 }),
+        maintenanceApi.faults({ ...faultsParams, page: 1 }),
+      ]).then(([casesRes, faultsRes]) => {
+        setMorePages({ cases: casesRes.data.next ? 2 : null, faults: faultsRes.data.next ? 2 : null });
+        return [casesRes.data.results || casesRes.data, faultsRes.data.results || faultsRes.data];
+      });
+    return request.then(([caseRows, faultRows]) => {
+      setCases(caseRows);
+      setFaults(faultRows);
       setLoaded(true);
     }).catch((err) => {
       // Without this the panel sits on "Chargement…" forever and the rejection is unhandled —
@@ -82,6 +102,29 @@ export default function IncidentsPanel({ houseCode, reloadKey }) {
   };
 
   useEffect(() => { load(); }, [houseCode, tab, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadMore = async () => {
+    if (!morePages || loadingMore) return;
+    const scope = houseCode ? { house_code: houseCode } : {};
+    setLoadingMore(true);
+    try {
+      const [casesRes, faultsRes] = await Promise.all([
+        morePages.cases ? maintenanceApi.cases({ ...scope, resolved: "true", page: morePages.cases }) : null,
+        morePages.faults ? maintenanceApi.faults({ ...scope, status: "RESOLVED", page: morePages.faults }) : null,
+      ]);
+      if (casesRes) setCases((prev) => [...prev, ...casesRes.data.results]);
+      if (faultsRes) setFaults((prev) => [...prev, ...faultsRes.data.results]);
+      setMorePages({
+        cases: casesRes?.data.next ? morePages.cases + 1 : null,
+        faults: faultsRes?.data.next ? morePages.faults + 1 : null,
+      });
+    } catch (err) {
+      setLoadError(getServerErrorMessage(err, "Les cas signalés n'ont pas pu être chargés."));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+  const hasMore = tab === "history" && morePages != null && (morePages.cases != null || morePages.faults != null);
 
   const items = [
     ...cases.map((c) => ({
@@ -199,6 +242,9 @@ export default function IncidentsPanel({ houseCode, reloadKey }) {
             );
           })}
         </div>
+      )}
+      {loaded && (
+        <LoadMoreButton hasMore={hasMore} loading={loadingMore} onClick={loadMore} shown={items.length} total={null} />
       )}
     </div>
   );

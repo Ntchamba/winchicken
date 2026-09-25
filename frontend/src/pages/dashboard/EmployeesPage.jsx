@@ -1,9 +1,15 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { Pencil, Trash2, UserPlus, Loader2, FileSpreadsheet, Download } from "lucide-react";
 import { employeesApi } from "../../api/endpoints";
 import { getServerErrorMessage } from "../../api/errors";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import QuickLinksBar from "../../components/QuickLinksBar";
+import LoadMoreButton from "../../components/LoadMoreButton";
+import usePagedList from "../../hooks/usePagedList";
+
+// Page by page: only page 1 (20 accounts) was ever read, so from the 21st employee on the
+// list silently stopped (load test, 2026-09-25).
+const fetchEmployeesPage = (page) => employeesApi.list({ page });
 
 const ROLES = [
   { value: "FARMER", label: "Fermier" },
@@ -18,7 +24,8 @@ const EMPTY_FORM = { name: "", civility: "M", email: "", role: "FARMER", passwor
 
 export default function EmployeesPage() {
   useDocumentTitle("Employés");
-  const [employees, setEmployees] = useState([]);
+  const employeeList = usePagedList(fetchEmployeesPage);
+  const employees = employeeList.rows;
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -43,11 +50,10 @@ export default function EmployeesPage() {
 
   // Caught on purpose: a create can succeed and this refresh still fail, which used to leave
   // the new account off the list with no message — indistinguishable from a lost submission.
-  const load = () =>
-    employeesApi
-      .list()
-      .then(({ data }) => setEmployees(data.results || data))
-      .catch((err) => setError(getServerErrorMessage(err, "La liste des employés n'a pas pu être rechargée.")));
+  const load = () => employeeList.reload();
+  const listError = employeeList.error
+    ? getServerErrorMessage(employeeList.error, "La liste des employés n'a pas pu être rechargée.")
+    : "";
 
   const handleImportFile = async (e) => {
     const file = e.target.files?.[0];
@@ -67,7 +73,6 @@ export default function EmployeesPage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
 
   // `saving` is the in-flight guard: the button carried none, so a second tap during a slow
   // save sent the request twice and the operator had no way to tell a save was running at all
@@ -277,7 +282,14 @@ export default function EmployeesPage() {
         )}
         </Fragment>
       ))}
-      {employees.length === 0 && <p className="empty-state">Aucun compte employé pour le moment.</p>}
+      {employees.length === 0 && !employeeList.loading && <p className="empty-state">Aucun compte employé pour le moment.</p>}
+      <LoadMoreButton
+        hasMore={employeeList.hasMore}
+        loading={employeeList.loading}
+        onClick={employeeList.loadMore}
+        shown={employees.length}
+        total={employeeList.count}
+      />
 
       <form className="card schedule-card" style={{ marginTop: 20 }} onSubmit={submit}>
         <p className="schedule-note" style={{ marginBottom: 14 }}>{editingId ? "Modifier l'employé" : "Ajouter un nouvel employé"}</p>
@@ -310,7 +322,7 @@ export default function EmployeesPage() {
           <span>{editingId ? "Nouveau mot de passe (laisser vide pour ne pas le changer)" : "Mot de passe"}</span>
           <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
         </label>
-        {error && <p className="field-error" style={{ marginTop: 8 }} role="alert">{error}</p>}
+        {(error || listError) && <p className="field-error" style={{ marginTop: 8 }} role="alert">{error || listError}</p>}
         {saved && <p className="save-confirmation" role="status">{saved}</p>}
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button className="save-button" type="submit" disabled={saving}>

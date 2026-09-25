@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Check, Loader2, Play, Plus, Trash2, X } from "lucide-react";
 import { stockApi } from "../api/endpoints";
+import { fetchAllPages } from "../api/pagination";
 import { getServerErrorMessage } from "../api/errors";
 import { useAuth } from "../context/AuthContext";
 import ResourceCombobox from "./ResourceCombobox";
@@ -35,7 +36,8 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const load = () => stockApi.compositions(farmId).then(({ data }) => setCompositions(data.results || data));
+  // Every page — recipes past the 20th were not listed (2026-09-25).
+  const load = () => fetchAllPages((params) => stockApi.compositions(farmId, params)).then(setCompositions);
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [farmId]);
 
   const createInlineItem = async (itemName) => {

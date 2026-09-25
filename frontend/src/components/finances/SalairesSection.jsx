@@ -3,6 +3,14 @@ import { payrollApi, employeesApi } from "../../api/endpoints";
 import { getServerErrorMessage } from "../../api/errors";
 import { formatMoney } from "../../utils/money";
 import { useDateDefaultingToToday } from "../../hooks/useTodayISO";
+import { fetchAllPages } from "../../api/pagination";
+import usePagedList from "../../hooks/usePagedList";
+import LoadMoreButton from "../LoadMoreButton";
+
+// Payments grow every month, so they come 20 at a time; the employee list feeds a <select>
+// and the hourly-rate table, which must hold everyone. Both read page 1 only before
+// (2026-09-25): from the 21st employee on, hours could not be logged at all.
+const fetchPaymentsPage = (page) => payrollApi.salaryPayments({ page });
 
 const MONTH_LABELS = [
   "", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
@@ -31,7 +39,8 @@ const MONTH_LABELS = [
  * form exists, posting `POST /api/work-hours/` with an explicit `user` id.
  */
 export default function SalairesSection({ onPaymentRecorded }) {
-  const [payments, setPayments] = useState([]);
+  const paymentList = usePagedList(fetchPaymentsPage);
+  const payments = paymentList.rows;
   const [employees, setEmployees] = useState([]);
   const [rateEdits, setRateEdits] = useState({});
   const [calculating, setCalculating] = useState(false);
@@ -45,10 +54,10 @@ export default function SalairesSection({ onPaymentRecorded }) {
   const [savingHours, setSavingHours] = useState(false);
   const [hoursSaved, setHoursSaved] = useState(false);
 
-  const loadPayments = () => payrollApi.salaryPayments().then(({ data }) => setPayments(data.results || data));
-  const loadEmployees = () => employeesApi.payrollList().then(({ data }) => setEmployees(data.results || data));
+  const loadPayments = () => paymentList.reload();
+  const loadEmployees = () => fetchAllPages(employeesApi.payrollList).then(setEmployees);
 
-  useEffect(() => { loadPayments(); loadEmployees(); }, []);
+  useEffect(() => { loadEmployees(); }, []);
 
   const calculate = async () => {
     setCalculating(true);
@@ -67,8 +76,9 @@ export default function SalairesSection({ onPaymentRecorded }) {
     setPayingId(id);
     setError("");
     try {
-      await payrollApi.markPaid(id);
-      await loadPayments();
+      const { data: paid } = await payrollApi.markPaid(id);
+      // Replaced in place: reloading would fold the pages already opened back to the first 20.
+      paymentList.setRows((rows) => rows.map((p) => (p.id === id ? { ...p, ...paid } : p)));
       // Marking paid just created a LABOR Expense (see SalaryPaymentPayView) — Achats/Globale,
       // already mounted and fetched on this same page, need to know to refetch.
       onPaymentRecorded?.();
@@ -220,7 +230,14 @@ export default function SalairesSection({ onPaymentRecorded }) {
             ))}
           </tbody>
         </table>
-        {payments.length === 0 && <p className="empty-state">Aucun salaire calculé pour le moment.</p>}
+        {payments.length === 0 && !paymentList.loading && <p className="empty-state">Aucun salaire calculé pour le moment.</p>}
+        <LoadMoreButton
+          hasMore={paymentList.hasMore}
+          loading={paymentList.loading}
+          onClick={paymentList.loadMore}
+          shown={payments.length}
+          total={paymentList.count}
+        />
       </div>
     </>
   );

@@ -35,7 +35,7 @@ export const authApi = {
 };
 
 export const employeesApi = {
-  list: () => client.get("/employees/"),
+  list: (params) => client.get("/employees/", params ? { params } : undefined),
   // A per-request timeout (the client has none globally): on a phone with a dropped
   // connection the promise would otherwise never settle, leaving the form spinning with
   // nothing to tell the user (FIX 6). An aborted request has no `err.response`, so
@@ -44,7 +44,7 @@ export const employeesApi = {
   update: (id, payload) => client.put(`/employees/${id}/`, payload, { timeout: 20000 }),
   remove: (id) => client.delete(`/employees/${id}/`),
   setHourlyRate: (id, hourlyRate) => client.patch(`/employees/${id}/hourly-rate/`, { hourly_rate: hourlyRate }),
-  payrollList: () => client.get("/employees/payroll/"),
+  payrollList: (params) => client.get("/employees/payroll/", params ? { params } : undefined),
   // Excel import — update-or-create by Email (never deletes, never resets an existing
   // password; new accounts get a temp password returned in `newAccounts`).
   importXlsx: (file) => {
@@ -56,7 +56,7 @@ export const employeesApi = {
 };
 
 export const housesApi = {
-  list: () => client.get("/houses/"),
+  list: (params) => client.get("/houses/", params ? { params } : undefined),
   create: (payload) => client.post("/houses/", payload),
   detail: (houseCode) => client.get(`/houses/${houseCode}/`),
   update: (houseCode, payload) => client.patch(`/houses/${houseCode}/`, payload),
@@ -119,7 +119,7 @@ export const batchesApi = {
   list: (houseCode) => client.get("/batches/", { params: houseCode ? { house_code: houseCode } : {} }),
   // Farm-wide "each house's current batch": the unfiltered list is paginated newest-first and a
   // long-running layer flock falls off page 1; there is at most one ACTIVE batch per house.
-  listActive: () => client.get("/batches/", { params: { status: "ACTIVE" } }),
+  listActive: (params) => client.get("/batches/", { params: { ...params, status: "ACTIVE" } }),
   create: (payload) => client.post("/batches/", payload),
   updateName: (batchCode, name) => client.patch(`/batches/${batchCode}/`, { name }),
   quickEdit: (batchCode, fields) => client.patch(`/batches/${batchCode}/`, fields),
@@ -139,7 +139,7 @@ export const stockApi = {
   putItems: (farmId, items) => client.put(`/farms/${farmId}/stock-items/`, { items }, { timeout: 30000 }),
   addItem: (farmId, payload) => client.post(`/farms/${farmId}/stock-items/`, payload),
   updateItem: (itemCode, payload) => client.patch(`/stock-items/${itemCode}/`, payload),
-  compositions: (farmId) => client.get(`/farms/${farmId}/stock-compositions/`),
+  compositions: (farmId, params) => client.get(`/farms/${farmId}/stock-compositions/`, params ? { params } : undefined),
   addComposition: (farmId, payload) => client.post(`/farms/${farmId}/stock-compositions/`, payload),
   updateComposition: (id, payload) => client.patch(`/stock-compositions/${id}/`, payload),
   removeComposition: (id) => client.delete(`/stock-compositions/${id}/`),
@@ -207,7 +207,7 @@ export const financeApi = {
 export const payrollApi = {
   workHours: (params) => client.get("/work-hours/", { params }),
   logHours: (payload) => client.post("/work-hours/", payload),
-  salaryPayments: () => client.get("/salary-payments/"),
+  salaryPayments: (params) => client.get("/salary-payments/", params ? { params } : undefined),
   calculateSalaries: (month, year) => client.post("/salary-payments/calculate/", { month, year }),
   markPaid: (id) => client.post(`/salary-payments/${id}/pay/`),
 };
@@ -219,6 +219,7 @@ export const alertsApi = {
   // Unresolved alerts only, newest first: filtering page 1 of every alert lost an old open one
   // as soon as 20 newer alerts existed.
   listOpen: () => client.get("/alerts/", { params: { open: 1 } }),
+  listPage: (page) => client.get("/alerts/", { params: { page } }),
   unreadCount: () => client.get("/alerts/unread-count/"),
   markRead: (id) => client.post(`/alerts/${id}/mark-read/`),
   markAllRead: () => client.post("/alerts/mark-all-read/"),

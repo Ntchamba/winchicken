@@ -1,0 +1,17 @@
+/* "Afficher plus" under a paged list (usePagedList). Centred, full-width tap target on a phone. */
+.load-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 14px;
+  margin: 14px 0 4px;
+}
+
+.load-more-count { font-size: 14px; color: var(--muted); }
+
+.load-more .task-undo-button { gap: 6px; }
+
+@media (max-width: 480px) {
+  .load-more .task-undo-button { flex: 1 1 100%; justify-content: center; }
+}

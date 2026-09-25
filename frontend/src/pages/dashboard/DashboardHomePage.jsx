@@ -3,6 +3,7 @@ import { useNavigate, useOutletContext } from "react-router-dom";
 import HomeDashboard from "../../components/HomeDashboard";
 import ProtocolEditModal from "../../components/ProtocolEditModal";
 import { alertsApi, batchesApi } from "../../api/endpoints";
+import { fetchAllPages } from "../../api/pagination";
 import { useAuth } from "../../context/AuthContext";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import { enrichHouses } from "../../utils/dashboardHouses";
@@ -19,8 +20,8 @@ export default function DashboardHomePage() {
   const [editingHouseCode, setEditingHouseCode] = useState(null);
 
   const loadBatches = useCallback(() => {
-    batchesApi.listActive().then(({ data }) => {
-      const batches = data.results || data;
+    // Every page, like useHouses: a farm with more than 20 active batches lost the rest here.
+    fetchAllPages(batchesApi.listActive).then((batches) => {
       const active = batches.filter((b) => b.status === "ACTIVE");
       setEnrichedHouses(enrichHouses(houses, batches));
       setActiveBatches(

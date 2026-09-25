@@ -6,6 +6,7 @@ import CompositionsSection from "../../components/CompositionsSection";
 import SuppliersSection from "../../components/SuppliersSection";
 import StockParametersModal from "../../components/StockParametersModal";
 import { stockApi } from "../../api/endpoints";
+import { fetchAllPages } from "../../api/pagination";
 import { useAuth } from "../../context/AuthContext";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import QuickLinksBar from "../../components/QuickLinksBar";
@@ -32,13 +33,14 @@ export default function StockPage() {
     return Promise.all([
       stockApi.evolution(farmId),
       stockApi.items(farmId),
-      stockApi.suppliers(farmId),
-      stockApi.compositions(farmId),
-    ]).then(([evoRes, itemsRes, supRes, compRes]) => {
+      // Every page: both lists were cut at 20 (2026-09-25).
+      fetchAllPages((params) => stockApi.suppliers(farmId, params)),
+      fetchAllPages((params) => stockApi.compositions(farmId, params)),
+    ]).then(([evoRes, itemsRes, supRows, compRows]) => {
       setEvolution(evoRes.data);
       setItems(itemsRes.data.items || []);
-      setSuppliers(supRes.data.results || supRes.data);
-      setCompositions(compRes.data.results || compRes.data);
+      setSuppliers(supRows);
+      setCompositions(compRows);
       setLoading(false);
     });
   }, [farmId]);
