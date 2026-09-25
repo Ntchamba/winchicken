@@ -66,9 +66,9 @@ export default function MyHoursShortcut() {
             alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.4)",
           }}
         >
-          <div className="card schedule-card" style={{ width: 360, maxWidth: "90vw" }}>
+          <div className="card schedule-card" role="dialog" aria-modal="true" aria-labelledby="my-hours-title" style={{ width: 360, maxWidth: "90vw" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#10242c" }}>Enregistrer mes heures</h2>
+              <h2 id="my-hours-title" style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#10242c" }}>Enregistrer mes heures</h2>
               <button onClick={reset} aria-label="Fermer" style={{ border: 0, background: "none", color: "var(--muted)", cursor: "pointer", padding: 0, display: "grid", placeItems: "center", minWidth: 44, minHeight: 44, marginRight: -12 }}>
                 <X size={18} />
               </button>

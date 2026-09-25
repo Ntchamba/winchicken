@@ -30,3 +30,7 @@ main:focus { outline: none; }
   text-decoration: none;
 }
 .skip-link:focus { top: 12px; }
+
+/* Confirmation green ("Notifications activées", "Application installée"): referenced as
+   var(--success, #16a34a) but never defined, so the fallback's 3.3:1 on white applied. */
+:root { --success: #15803d; }

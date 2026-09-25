@@ -1,5 +1,5 @@
 import { Calendar, ClipboardCheck, FileClock, Home, Wallet, Package, Users, Wallet2, Plus, Settings, LogOut, Bird, Egg, Menu, X, HelpCircle, Truck, ChevronDown, LayoutGrid, Warehouse } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "../styles/house-protocol-theme-light.css";
 import "../styles/dashboard-theme.css";
 import "../styles/sidebar-theme.css";
@@ -112,6 +112,21 @@ export default function DashboardLayout({
     };
   }, [mobileOpen]);
 
+  // Keyboard and screen reader follow the drawer: focus moves into it when it opens (it used to
+  // stay on the opener, the next Tab landing in the page behind the overlay) and goes back to
+  // the opener when it closes. The page behind is inert meanwhile (see <main> below).
+  const closeButtonRef = useRef(null);
+  const openerRef = useRef(null);
+  useEffect(() => {
+    if (mobileOpen) {
+      openerRef.current = document.activeElement;
+      closeButtonRef.current?.focus();
+    } else if (openerRef.current) {
+      openerRef.current.focus?.();
+      openerRef.current = null;
+    }
+  }, [mobileOpen]);
+
   // A route change must close the drawer even when it did not come from a drawer link —
   // the browser back button, a cross-link in the page body, or a redirect all land here.
   useEffect(() => {
@@ -140,6 +155,7 @@ export default function DashboardLayout({
         {/* Closing from inside the drawer: once it is open it covers the top bar's hamburger,
             so the only other way out would be the scrim, which is not discoverable on its own. */}
         <button
+          ref={closeButtonRef}
           className="sidebar-close-button"
           onClick={() => setMobileOpen(false)}
           aria-label="Fermer le menu"
@@ -433,7 +449,7 @@ export default function DashboardLayout({
           </nav>
         </header>
         <ConnectionBanner />
-        <main id="contenu" tabIndex={-1} className="dashboard-content">{children}</main>
+        <main id="contenu" tabIndex={-1} className="dashboard-content" inert={mobileOpen || undefined}>{children}</main>
       </div>
     </div>
   );

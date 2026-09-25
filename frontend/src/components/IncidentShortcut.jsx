@@ -62,9 +62,9 @@ export default function IncidentShortcut({ houses, openCasesCount = 0 }) {
             alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.4)",
           }}
         >
-          <div className="card schedule-card" style={{ width: 360, maxWidth: "90vw" }}>
+          <div className="card schedule-card" role="dialog" aria-modal="true" aria-labelledby="incident-shortcut-title" style={{ width: 360, maxWidth: "90vw" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#10242c" }}>Signaler un cas</h2>
+              <h2 id="incident-shortcut-title" style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#10242c" }}>Signaler un cas</h2>
               <button
                 onClick={reset}
                 aria-label="Fermer"
