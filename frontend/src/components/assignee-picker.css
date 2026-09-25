@@ -71,3 +71,33 @@
 .assignee-picker-status--ok { color: #0b5137; font-weight: 600; }
 
 .assignee-picker-error { margin: 0; font-size: 12.5px; }
+
+/* Search box of the self-loading picker (load test 2026-09-25): stays at the top of the
+   scrolling list; 16px text so iOS does not zoom the page on focus. */
+.assignee-picker-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -10px 4px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.assignee-picker-search input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: #10242c;
+  font-size: 16px;
+}
+
+.assignee-picker-hint { margin: 6px 0 4px; font-size: 14px; color: var(--muted); }

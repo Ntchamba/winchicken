@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import AssigneePicker from "./AssigneePicker";
-import { housesApi, tasksApi } from "../api/endpoints";
+import { housesApi } from "../api/endpoints";
 // Reuses the secondary-button style TaskCompleteButton already defines (44px touch target)
 // rather than growing a second copy of it.
 import "./task-complete-button.css";
@@ -33,7 +33,6 @@ export default function AssignmentsPanel({ houseCode, reloadKey, onChanged }) {
   const { user } = useAuth();
   const canAssign = CAN_ASSIGN_ROLES.includes(user.role);
   const [rows, setRows] = useState([]);
-  const [employees, setEmployees] = useState([]);
   const [removingId, setRemovingId] = useState(null);
   const [error, setError] = useState("");
 
@@ -46,13 +45,6 @@ export default function AssignmentsPanel({ houseCode, reloadKey, onChanged }) {
   }, [canAssign, houseCode]);
 
   useEffect(() => { load(); }, [load, reloadKey]);
-
-  useEffect(() => {
-    if (!canAssign) return;
-    tasksApi.assignableUsers()
-      .then(({ data }) => setEmployees(data.results || data))
-      .catch(() => setError("Impossible de charger la liste des employés."));
-  }, [canAssign]);
 
   if (!canAssign) return null;
 
@@ -102,7 +94,6 @@ export default function AssignmentsPanel({ houseCode, reloadKey, onChanged }) {
                     {row.periodLabel ? ` — ${row.periodLabel}` : ""}
                   </p>
                   <AssigneePicker
-                    users={employees}
                     assignedTo={row.assignedTo ?? []}
                     assignedToNames={row.assignedToNames ?? []}
                     currentUserId={user.id}

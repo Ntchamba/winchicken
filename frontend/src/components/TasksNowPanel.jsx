@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { iconFor } from "./HouseProtocolForm";
 import AssigneePicker from "./AssigneePicker";
 import TaskCompleteButton from "./TaskCompleteButton";
-import { housesApi, tasksApi } from "../api/endpoints";
-import { getServerErrorMessage } from "../api/errors";
+import { housesApi } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 
 // Section 8 permission matrix: same role set as CanEditHouseProtocol server-side
@@ -41,20 +40,9 @@ const CAN_ASSIGN_ROLES = ["ADMIN", "FARM_MANAGER", "FARMER"];
 export default function TasksNowPanel({ tasksNow, houseCode, onAssigned }) {
   const { user } = useAuth();
   const canAssign = houseCode && CAN_ASSIGN_ROLES.includes(user.role);
-  const [employees, setEmployees] = useState([]);
   const [savingId, setSavingId] = useState(null);
-  const [employeesError, setEmployeesError] = useState("");
-
-  useEffect(() => {
-    if (!canAssign) return;
-    // Without the catch a failed fetch is an unhandled rejection AND an empty picker that
-    // looks like a farm with no employees; handleAssign itself deliberately stays catch-less
-    // because AssigneePicker displays what it re-throws.
-    tasksApi
-      .assignableUsers()
-      .then(({ data }) => { setEmployees(data.results || data); setEmployeesError(""); })
-      .catch((err) => { setEmployees([]); setEmployeesError(getServerErrorMessage(err, "La liste des employés n'a pas pu être chargée.")); });
-  }, [canAssign]);
+  // The assignee list is loaded by each AssigneePicker when it is opened, searched server-side
+  // (load test 2026-09-25: every account, 1 MB at 20 000 staff, was fetched on every visit).
 
   // Takes the whole set: the endpoint `set()`s it, so what the picker shows is what is sent.
   // Errors are surfaced by `AssigneePicker` itself, which is why this re-throws instead of
@@ -71,7 +59,6 @@ export default function TasksNowPanel({ tasksNow, houseCode, onAssigned }) {
 
   return (
     <div className="card schedule-card" style={{ marginBottom: 18 }}>
-      {employeesError && <p className="field-error" role="alert" style={{ margin: "0 0 10px" }}>{employeesError}</p>}
       {tasksNow.dayOfCycle != null && (
         <p style={{ margin: "0 0 12px", fontSize: 12.5, color: "var(--muted)" }}>Jour {tasksNow.dayOfCycle} du cycle</p>
       )}
@@ -109,7 +96,6 @@ export default function TasksNowPanel({ tasksNow, houseCode, onAssigned }) {
                   <div style={{ marginTop: 6 }}>
                     {canAssign ? (
                       <AssigneePicker
-                        users={employees}
                         assignedTo={assignedTo}
                         assignedToNames={assignedToNames}
                         currentUserId={user.id}

@@ -275,13 +275,29 @@ class AssignableUsersView(APIView):
     Admin/Secondary-Admin-only gate — this is task-assignee visibility, not account management.
     Every role (including the requester) is listed; nothing here restricts *who can be chosen*
     as an assignee.
+
+    Optional `?q=` (name contains, case-insensitive) and `?limit=` (capped at
+    `ASSIGNABLE_USERS_MAX`): the picker searches as the user types instead of downloading every
+    account — 1 MB and 390 ms at 20 000 staff in the 2026-09-25 load test. Without either
+    parameter the full list comes back, unchanged.
     """
 
     permission_classes = [CanEditHouseProtocol]
+    ASSIGNABLE_USERS_MAX = 100
 
     def get(self, request):
-        users = User.objects.filter(farm=request.user.farm).order_by('name')
-        return Response([{'id': u.id, 'name': u.name, 'role': u.role} for u in users])
+        users = User.objects.filter(farm=request.user.farm).order_by('name', 'id')
+        query = (request.query_params.get('q') or '').strip()
+        if query:
+            users = users.filter(name__icontains=query)
+        limit = request.query_params.get('limit')
+        if limit is not None:
+            try:
+                limit = int(limit)
+            except ValueError:
+                return Response({'limit': 'Nombre entier attendu.'}, status=status.HTTP_400_BAD_REQUEST)
+            users = users[:max(1, min(limit, self.ASSIGNABLE_USERS_MAX))]
+        return Response(list(users.values('id', 'name', 'role')))
 
 
 @extend_schema(responses=inline_serializer('MyTasksResponse', {}, many=False))

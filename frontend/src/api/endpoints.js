@@ -84,7 +84,8 @@ export const housesApi = {
 export const tasksApi = {
   mine: () => client.get("/tasks/mine/"),
   upcoming: () => client.get("/tasks/upcoming/"),
-  assignableUsers: () => client.get("/tasks/assignable-users/"),
+  // `{q, limit}` narrows the list server-side; with no params every account comes back.
+  assignableUsers: (params) => client.get("/tasks/assignable-users/", params ? { params } : undefined),
   // "Marquer comme fait" — records the completion and, when the protocol line links a
   // resource, deducts it. Without `force`, an insufficient stock level comes back as
   // {status: 'insufficient_stock', shortfall} and nothing is written; the caller confirms and

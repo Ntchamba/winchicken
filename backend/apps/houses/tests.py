@@ -249,6 +249,20 @@ class AssignableUsersViewTests(APITestCase):
         response = self.client.get('/api/tasks/assignable-users/')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_search_filters_by_name_case_insensitively(self):
+        self.client.force_authenticate(user=self.farmer)
+        response = self.client.get('/api/tasks/assignable-users/', {'q': 'fERM'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([u['name'] for u in response.data], ['Fermier'])
+        self.assertEqual(set(response.data[0]), {'id', 'name', 'role'})
+
+    def test_limit_cuts_the_alphabetical_list_and_is_capped(self):
+        self.client.force_authenticate(user=self.farmer)
+        response = self.client.get('/api/tasks/assignable-users/', {'limit': 2})
+        self.assertEqual([u['name'] for u in response.data], ['Admin', 'Fermier'])
+        self.assertEqual(len(self.client.get('/api/tasks/assignable-users/', {'limit': 10**6}).data), 3)
+        self.assertEqual(self.client.get('/api/tasks/assignable-users/', {'limit': 'x'}).status_code, 400)
+
 
 class CycleMilestonesTests(APITestCase):
     """GET /api/houses/{houseCode}/milestones/ and /api/tasks/upcoming/ (docs/deviations.md
