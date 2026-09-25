@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from apps.core.models import AuditLogEntry, ContactMessage, Farm, NewsletterSubscriber, User
+from apps.core.cache import cached_farm_response
 from apps.core.overview import farm_overview
 from apps.core.permissions import IsAdmin, IsAdminOrFarmManager, IsAdminOrSecondaryAdmin
 from apps.core.serializers import (
@@ -225,6 +226,7 @@ class FarmOverviewView(APIView):
 
     permission_classes = [permissions.IsAuthenticated]
 
+    @cached_farm_response
     def get(self, request):
         if not request.user.farm_id:
             return Response({'detail': "Aucune ferme associée à ce compte."}, status=status.HTTP_400_BAD_REQUEST)

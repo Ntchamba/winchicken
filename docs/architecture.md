@@ -206,6 +206,33 @@ unrelated reason, per that task's own scoping rule, rather than as a standalone 
 - Repeated UI patterns (a destructive-action confirm card, previously duplicated three times)
   get pulled into a shared component (`components/ConfirmDialog.jsx`) rather than a fourth copy.
 
+## Scale: pagination, cache, background jobs (2026-09-25 load test)
+
+Measured with `backend/scripts/load_test.sh` (`seed_load_farm` + `bench_load`, `*_load` databases
+only); `apps/core/tests_query_scaling.py` keeps per-row queries from coming back.
+
+- **Pagination.** Every list endpoint pages by 20 through `apps.core.pagination.
+  StablePageNumberPagination`, which appends the primary key to the view's ordering — tied
+  dates otherwise let a row appear on two pages and another on none. On the frontend, a short
+  reference list is read in full with `api/pagination.js` `fetchAllPages`; a list that only grows
+  (employees, alerts, incident history, salary payments) uses `hooks/usePagedList.js` +
+  `components/LoadMoreButton.jsx` ("Afficher plus", "N sur M affichés"). Reading page 1 only is
+  the bug this replaced — it hid the 21st employee.
+- **Response cache.** `apps/core/cache.py`: `@cached_farm_response` on the "Bilan global" tree,
+  the health score and the growth curves — 30 s in the `responses` cache (Redis), keyed by a
+  farm-wide data version + the farm-local date. The version is bumped after commit by any model
+  save/delete/m2m change (signals, so Celery writes count) and by any successful unsafe request
+  (`InvalidateOnWriteMiddleware`, which catches `update()`/`bulk_create`). Unreachable Redis =
+  no cache, never an error. Switched off (DummyCache) under the test runner; `tests_cache.py`
+  switches it on.
+- **Background import.** The employee Excel import is a Celery job — see
+  `docs/excel-import.md`. The job's state, and nothing else, uses the `default` cache.
+- **Calendar.** `GET /api/protocols/schedule/?month=&view=summary` (per-day count + the pills a
+  cell shows) and `?date=` (one day) are both cut from `compute_month_schedule`; the flat month
+  was 4.4 MB at 50 houses.
+- **Assignee picker.** `GET /api/tasks/assignable-users/?q=&limit=`; `AssigneePicker` searches
+  instead of downloading every account.
+
 ## Maintainability note
 
 `docs/api-reference.md` and the OpenAPI schema (`GET /api/schema/`,

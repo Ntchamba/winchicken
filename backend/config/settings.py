@@ -45,6 +45,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'apps.core.cache.InvalidateOnWriteMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -246,10 +247,14 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TIMEZONE = FARM_TIME_ZONE
 
 # Cache — the stack's Redis (already there for Celery), shared by web and worker: background
-# import jobs keep their progress here. `memory://` (load_test.sh, no broker) and the test runner
-# get an in-process cache instead, so a test never reads or writes the live stack's keys. String
-# checks only: nothing here may raise at import time.
+# import jobs keep their progress here, and the overview/dashboard aggregates are cached for a
+# few seconds. `memory://` (load_test.sh, no broker) and the test runner get an in-process
+# cache instead, so a test never reads or writes the live stack's keys. String checks only:
+# nothing here may raise at import time.
 _REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
+# `responses` holds the cached aggregate responses (apps.core.cache) apart from `default`, so the
+# test runner can switch that one off: tests write through the ORM inside transactions that never
+# commit, and the invalidation runs on commit.
 if _REDIS_URL.startswith(('redis://', 'rediss://')):
     CACHES = {
         'default': {
@@ -258,9 +263,18 @@ if _REDIS_URL.startswith(('redis://', 'rediss://')):
             'KEY_PREFIX': 'winchicken',
             'TIMEOUT': 300,
         },
+        'responses': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': _REDIS_URL,
+            'KEY_PREFIX': 'winchicken-resp',
+            'TIMEOUT': 30,
+        },
     }
 else:
-    CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
+    CACHES = {
+        'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'},
+        'responses': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'LOCATION': 'responses', 'TIMEOUT': 30},
+    }
 
 # SMS provider — never hardcoded, always from env
 SMS_PROVIDER = config('SMS_PROVIDER', default='console')
@@ -300,4 +314,7 @@ if RUNNING_TESTS:
     WEB_PUSH_ENABLED = False
     CELERY_TASK_ALWAYS_EAGER = True
     CELERY_BROKER_URL = 'memory://'
-    CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
+    CACHES = {
+        'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'},
+        'responses': {'BACKEND': 'django.core.cache.backends.dummy.DummyCache'},
+    }

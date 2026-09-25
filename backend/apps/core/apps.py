@@ -13,3 +13,11 @@ class CoreConfig(AppConfig):
         from apps.core.fields import FiniteFloatField
 
         serializers.ModelSerializer.serializer_field_mapping[models.FloatField] = FiniteFloatField
+
+        # Any write invalidates the cached aggregate screens (apps.core.cache).
+        from django.db.models.signals import m2m_changed, post_delete, post_save
+
+        from apps.core.cache import on_model_change
+
+        for name, signal in (('save', post_save), ('delete', post_delete), ('m2m', m2m_changed)):
+            signal.connect(on_model_change, dispatch_uid=f'winchicken-cache-{name}')

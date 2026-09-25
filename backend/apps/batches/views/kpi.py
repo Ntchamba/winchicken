@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from apps.batches.calculations import farm_health_score, growth_curve, weekly_kpi
 from apps.batches.models import BatchStatus, PoultryBatch
+from apps.core.cache import cached_farm_response
 
 
 @extend_schema(
@@ -34,6 +35,7 @@ class GrowthCurvesView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @cached_farm_response
     def get(self, request):
         qs = PoultryBatch.objects.filter(house__farm=request.user.farm, status=BatchStatus.ACTIVE)
         batch_code = request.query_params.get('batch_code')
@@ -112,5 +114,6 @@ class FarmHealthScoreView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @cached_farm_response
     def get(self, request):
         return Response(farm_health_score(request.user.farm))
