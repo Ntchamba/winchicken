@@ -234,7 +234,7 @@ def compute_month_schedule(farm, start, end):
     return entries
 
 
-def compute_cycle_milestones(house):
+def compute_cycle_milestones(house, batch=None, lines=None):
     """`(cycle_length, day_of_cycle, milestones)` for `house`'s active batch — every
     `ProtocolTemplate` line's start day projected across the *whole* remaining cycle, not just
     "is it due today" (2026-08-26, docs/deviations.md Part 16, Part B). Deliberately scoped to
@@ -255,12 +255,17 @@ def compute_cycle_milestones(house):
     length to render even without it, rather than crashing or rendering a zero-width bar.
 
     Returns `(None, None, [])` if the house has no active batch.
+
+    `batch` (the house's active batch) and `lines` (its protocol lines, `category` loaded) may be
+    passed in by a caller that already fetched them for every house at once — the farm-wide 48h
+    widget, which otherwise cost three queries per house. Left out, both are read here.
     """
     from apps.batches.models import BatchStatus, PoultryBatch
     from apps.protocols.models import ProtocolTemplate
     from apps.protocols.services import to_days
 
-    batch = PoultryBatch.objects.filter(house=house, status=BatchStatus.ACTIVE).first()
+    if batch is None:
+        batch = PoultryBatch.objects.filter(house=house, status=BatchStatus.ACTIVE).first()
     if not batch:
         return None, None, []
 
@@ -268,7 +273,9 @@ def compute_cycle_milestones(house):
 
     day_of_cycle = cycle_day(batch)
     milestones = []
-    for line in ProtocolTemplate.objects.filter(house=house).select_related('category'):
+    if lines is None:
+        lines = ProtocolTemplate.objects.filter(house=house).select_related('category')
+    for line in lines:
         from_day = to_days(line.from_value, line.from_unit)
         milestones.append({
             'id': str(line.id),

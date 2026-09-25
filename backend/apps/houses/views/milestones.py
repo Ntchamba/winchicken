@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
@@ -8,6 +10,7 @@ from rest_framework.views import APIView
 from apps.batches.models import PoultryBatch
 from apps.houses.models import PoultryHouse
 from apps.houses.services import compute_cycle_milestones
+from apps.protocols.models import ProtocolTemplate
 
 
 @extend_schema(
@@ -59,12 +62,19 @@ class Upcoming48hView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        farm = request.user.farm
+        # Every house's active batch and protocol lines in two queries, handed to the shared
+        # helper — it used to look both up again for each house (three queries per house).
+        batches = {b.house_id: b for b in PoultryBatch.objects.filter(house__farm=farm, status='ACTIVE')}
+        lines = defaultdict(list)
+        for line in ProtocolTemplate.objects.filter(house__farm=farm).select_related('category'):
+            lines[line.house_id].append(line)
         results = []
-        for house in PoultryHouse.objects.filter(farm=request.user.farm):
-            _, day_of_cycle, milestones = compute_cycle_milestones(house)
-            if day_of_cycle is None:
+        for house in PoultryHouse.objects.filter(farm=farm):
+            batch = batches.get(house.house_code)
+            if batch is None:
                 continue
-            batch = PoultryBatch.objects.filter(house=house, status='ACTIVE').first()
+            _, day_of_cycle, milestones = compute_cycle_milestones(house, batch=batch, lines=lines[house.house_code])
             for m in milestones:
                 offset = m['day'] - day_of_cycle
                 if not (0 <= offset <= 2):
