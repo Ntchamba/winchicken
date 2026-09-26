@@ -90,7 +90,7 @@ pub fn run(shared: &Shared) -> Result<(), Problem> {
     let upgrading = write_env(&env_path, &version, &docker).map_err(|p| fail(shared, "config", p))?;
     let compose = resources_dir().join("docker-compose.prod.yml");
     let env = read_env(&env_path);
-    let port: u16 = env.get("WINCHICKEN_PORT").and_then(|p| p.parse().ok()).unwrap_or(8080);
+    let mut port: u16 = env.get("WINCHICKEN_PORT").and_then(|p| p.parse().ok()).unwrap_or(8080);
     step(shared, "config", StepState::Done, &format!("Port {port}"));
 
     // 6. Backup before an upgrade changes the database.
@@ -118,21 +118,63 @@ pub fn run(shared: &Shared) -> Result<(), Problem> {
 
     // 7. Start (or update) the stack.
     step(shared, "start", StepState::Running, "Démarrage des services…");
-    let out = docker::run(&docker, &refs(&compose_args(&["up", "-d", "--no-build", "--pull", "never", "--remove-orphans"])));
+    let up = || docker::run(&docker, &refs(&compose_args(&["up", "-d", "--no-build", "--pull", "never", "--remove-orphans"])));
+    // A publish that failed on a taken port leaves `frontend` (the only service with a host
+    // port) created but with its network torn down; a later `up` just restarts that container,
+    // networkless, and nginx loops on "host not found in upstream web" — measured 2026-09-25.
+    // Removing it makes the next `up` (fallback now, or Réessayer later) create it cleanly.
+    let drop_half_started = || docker::run(&docker, &refs(&compose_args(&["rm", "-f", "-s", "frontend"])));
+    // A frontend already left networkless (by an earlier launch, or a launcher version without
+    // the cleanup above) starts "successfully" — nothing left to publish — and never answers:
+    // every launch would then end in health_timeout. Heal it before starting.
+    if frontend_lost_network(&docker, &refs(&compose_args(&["ps", "-a", "-q", "frontend"]))) {
+        crate::log("frontend sans réseau (démarrage précédent interrompu) : recréé");
+        let _ = drop_half_started();
+    }
+    let mut out = up();
+    let mut moved_from: Option<u16> = None;
+    // Fallback: the port was free when .env was written, but something took it since (another
+    // server installed later, a dev tool left running). Move to the next free port once, rather
+    // than asking a farmer to edit a settings file; the ready page shows the new address + QR.
+    if !out.as_ref().map(|o| o.status.success()).unwrap_or(false) {
+        let stderr = out.as_ref().map(|o| String::from_utf8_lossy(&o.stderr).to_string()).unwrap_or_default();
+        if is_port_conflict(&stderr) {
+            let _ = drop_half_started();
+            if let Some(free) = (8080..=8099).find(|p| *p != port && platform::port_is_free(*p)) {
+                set_env_port(&env_path, free).map_err(|p| fail(shared, "start", p))?;
+                crate::log(&format!("port {port} occupé par un autre programme -> port {free}"));
+                step(shared, "start", StepState::Running, &format!("Port {port} occupé, passage au port {free}…"));
+                moved_from = Some(port);
+                port = free;
+                out = up();
+            }
+        }
+    }
     if !out.as_ref().map(|o| o.status.success()).unwrap_or(false) {
         let stderr = out.map(|o| String::from_utf8_lossy(&o.stderr).to_string()).unwrap_or_default();
-        let port_taken = stderr.contains("port is already allocated") || stderr.contains("address already in use");
+        let port_taken = is_port_conflict(&stderr);
+        if port_taken {
+            let _ = drop_half_started();
+        }
         return Err(fail(shared, "start", if port_taken {
-            Problem::new("port_taken", "Le port est déjà utilisé",
-                &format!("Un autre programme utilise le port {port}. Fermez-le puis cliquez sur Réessayer, \
-                          ou changez WINCHICKEN_PORT dans {} .", env_path.display()), &[RETRY])
+            // Reached only once the fallback found nothing free in 8080–8099: the fix is closing
+            // programs, not editing a settings file (the path stays in the log for support).
+            Problem::new("port_taken", "Aucun port libre pour Winchicken",
+                &format!("D'autres programmes occupent le port {port} et tous les ports de 8080 à 8099. \
+                          Fermez les autres logiciels serveur (ou redémarrez l'ordinateur), puis cliquez sur Réessayer. \
+                          Si cela recommence, copiez le rapport (Détails techniques) et envoyez-le au support."), &[RETRY])
         } else {
             Problem::new("start_failed", "Winchicken n'a pas pu démarrer",
                 "Docker a refusé de démarrer les services. Cliquez sur Réessayer ; si cela recommence, \
                  redémarrez l'ordinateur, puis copiez le rapport (Détails techniques) pour le support.", &[RETRY])
         }));
     }
-    step(shared, "start", StepState::Done, "Services démarrés");
+    let started_note = match moved_from {
+        // Phones that saved the old address need the new one: say so where the QR code is.
+        Some(old) => format!("Services démarrés — nouvelle adresse : le port {old} était pris, Winchicken utilise maintenant le port {port}"),
+        None => "Services démarrés".to_string(),
+    };
+    step(shared, "start", StepState::Done, &started_note);
 
     // 8. Wait until the app answers through nginx (migrations run on the first start).
     step(shared, "health", StepState::Running, "La première fois, cela peut prendre quelques minutes…");
@@ -158,6 +200,45 @@ pub fn run(shared: &Shared) -> Result<(), Problem> {
     let lan_urls = platform::lan_ip().map(|ip| vec![format!("http://{ip}:{port}")]).unwrap_or_default();
     shared.lock().unwrap().ready = Some(Ready { local_url: format!("http://localhost:{port}"), lan_urls });
     Ok(())
+}
+
+/// Docker's wording for "that host port is taken" differs per engine and OS: container vs
+/// container, the Linux userland proxy, Docker Desktop's port forwarder, and Windows' own
+/// socket errors (including Hyper-V/WSL reserved port ranges, which refuse the bind outright).
+fn is_port_conflict(stderr: &str) -> bool {
+    let text = stderr.to_lowercase();
+    [
+        "port is already allocated",
+        "address already in use",
+        "ports are not available",
+        "only one usage of each socket address",
+        "forbidden by its access permissions",
+    ]
+    .iter()
+    .any(|needle| text.contains(needle))
+}
+
+/// Rewrites only the WINCHICKEN_PORT line; secrets and comments stay byte-for-byte.
+fn set_env_port(path: &Path, port: u16) -> Result<(), Problem> {
+    let io_err = |e: std::io::Error| Problem::new("env_write", "Réglages impossibles à enregistrer", &format!("{} : {e}", path.display()), &[RETRY]);
+    let text = std::fs::read_to_string(path).map_err(io_err)?;
+    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    match lines.iter_mut().find(|l| l.starts_with("WINCHICKEN_PORT=")) {
+        Some(line) => *line = format!("WINCHICKEN_PORT={port}"),
+        None => lines.push(format!("WINCHICKEN_PORT={port}")),
+    }
+    std::fs::write(path, lines.join("\n") + "\n").map_err(io_err)
+}
+
+/// True when the frontend container exists but is attached to no network at all.
+fn frontend_lost_network(docker: &Path, ps_args: &[&str]) -> bool {
+    let id = docker::run(docker, ps_args).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    if id.is_empty() {
+        return false;
+    }
+    docker::run(docker, &["inspect", "-f", "{{len .NetworkSettings.Networks}}", &id])
+        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "0")
+        .unwrap_or(false)
 }
 
 fn refs(v: &[String]) -> Vec<&str> {
@@ -328,6 +409,42 @@ mod tests {
         std::fs::write(&path, body).unwrap();
         assert!(!write_env(&path, "1.0.0", Path::new("/nonexistent/docker")).unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), body);
+    }
+
+    #[test]
+    fn port_conflicts_are_recognised_in_every_engines_wording() {
+        for msg in [
+            "Bind for 0.0.0.0:8080 failed: port is already allocated",
+            "Error starting userland proxy: listen tcp4 0.0.0.0:8080: bind: address already in use",
+            "Ports are not available: exposing port TCP 0.0.0.0:8080 -> 127.0.0.1:0: listen tcp 0.0.0.0:8080: bind: address already in use",
+            "Ports are not available: exposing port TCP 0.0.0.0:8080 -> 0.0.0.0:0: listen tcp 0.0.0.0:8080: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.",
+            "listen tcp 0.0.0.0:8080: bind: An attempt was made to access a socket in a way forbidden by its access permissions.",
+        ] {
+            assert!(is_port_conflict(msg), "{msg}");
+        }
+        assert!(!is_port_conflict("no such image: winchicken/backend:1.0.0"));
+    }
+
+    #[test]
+    fn port_fallback_rewrites_only_the_port_line() {
+        let path = tmp("port");
+        std::fs::write(&path, "# note\nSECRET_KEY=abc\nWINCHICKEN_PORT=8080\nDB_PASSWORD=keep-me\n").unwrap();
+        set_env_port(&path, 8081).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# note\nSECRET_KEY=abc\nWINCHICKEN_PORT=8081\nDB_PASSWORD=keep-me\n");
+    }
+
+    #[test]
+    fn a_loopback_only_listener_makes_the_port_not_free() {
+        // The case a wildcard bind alone misses on Windows and macOS.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(!platform::port_is_free(port));
+        drop(listener);
+        assert!(platform::port_is_free(port));
+        // A dev server bound to "localhost" as [::1] only: invisible to any IPv4 check.
+        if let Ok(v6) = std::net::TcpListener::bind("[::1]:0") {
+            assert!(!platform::port_is_free(v6.local_addr().unwrap().port()));
+        }
     }
 
     #[test]

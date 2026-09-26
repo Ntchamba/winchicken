@@ -134,8 +134,18 @@ pub fn lan_ip() -> Option<String> {
     }
 }
 
+/// Whether Docker will be able to publish `port`. Binding the wildcard address alone misses
+/// programs listening on loopback only: Windows lets a wildcard bind coexist with a listener on
+/// 127.0.0.1, macOS does too because Rust sets SO_REUSEADDR, and nothing IPv4 sees a listener
+/// on [::1] (a local dev server bound to "localhost"). Docker's publish then fails, or the
+/// browser's "localhost" reaches the other program. So also knock on both loopbacks.
 pub fn port_is_free(port: u16) -> bool {
-    TcpListener::bind(("0.0.0.0", port)).is_ok()
+    if TcpListener::bind(("0.0.0.0", port)).is_err() {
+        return false;
+    }
+    let knock = Duration::from_millis(300);
+    let loopbacks: [SocketAddr; 2] = [([127, 0, 0, 1], port).into(), (std::net::Ipv6Addr::LOCALHOST, port).into()];
+    loopbacks.iter().all(|addr| TcpStream::connect_timeout(addr, knock).is_err())
 }
 
 /// Minimal HTTP GET returning the status code — enough to poll /api/health/ without a client
