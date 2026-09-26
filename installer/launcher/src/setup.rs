@@ -76,6 +76,9 @@ pub fn run(shared: &Shared) -> Result<(), Problem> {
     step(shared, "docker_start", StepState::Running, "Démarrage de Docker…");
     cap_wsl_memory();
     docker::start_and_wait(&docker, shared).map_err(|p| fail(shared, "docker_start", p))?;
+    if !docker::compose_ready(&docker) {
+        return Err(fail(shared, "docker_start", docker::compose_missing()));
+    }
     step(shared, "docker_start", StepState::Done, "Docker répond");
 
     // 4. Images, from the installer itself (no internet needed).
