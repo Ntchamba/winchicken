@@ -191,6 +191,29 @@ Point it at another stack with `REG_API_URL` / `REG_UI_URL` (and
 `REG_COMPOSE` for the backend step); credentials via `REG_ADMIN_EMAIL` etc.
 The Live UI part is skipped automatically when no Chrome/Chromium is on PATH.
 
+### Smoke test before every deployment (one command, ~15 s)
+
+`scripts/smoke.sh` is the fast sanity check — the critical path only, stopping at
+the first broken link. Run it before every deployment; if it fails, do not deploy.
+
+```bash
+./scripts/smoke.sh           # API critical path + browser
+./scripts/smoke.sh --no-ui   # API only (no Chrome on this machine)
+```
+
+| Half | Steps |
+|---|---|
+| API (`scripts/smoke_api.py`) | app boots (`/api/health/`) → login → dashboard endpoints load → a batch is visible → a task can be completed → stock moves (exactly the line's quantity) → a sale records |
+| Browser (`scripts/smoke_ui.mjs`) | SPA boots → the **real login form** logs in → the dashboard renders an active batch → no JS exception and no failed API call |
+
+The API half builds its own throwaway fixture named `SMOKE-<epoch>` (house, batch
+starting today, stock item with 10 kg opening stock, one protocol line consuming
+2 kg/day), so it does not depend on the farm's data; it deletes the house (which
+cascades the batch, line and completion) and then removes the sale and stock item
+through `manage.py`. The browser half needs one ACTIVE batch on the farm. Config:
+`SMOKE_API_URL` / `SMOKE_UI_URL` / `SMOKE_COMPOSE` (empty = skip DB cleanup) /
+`SMOKE_ADMIN_EMAIL` / `SMOKE_ADMIN_PASSWORD` (an Admin or Farm Manager).
+
 ## Recent work
 
 - **Scheduled task reminders — made real end to end (2026-08-31):** the trigger from the
