@@ -140,3 +140,43 @@ describe("api client — 401 handling", () => {
     expect(getTokens()).toEqual({ access: "A1", refresh: "R1" });
   });
 });
+
+// A double-tapped submit fires the same POST twice before React re-renders the button disabled:
+// two stock IN movements (and, with a price, two expenses) were recorded live (campaign 9, B14).
+describe("api client — identical in-flight writes are coalesced", () => {
+  const slow = (config, data) => new Promise((resolve) => setTimeout(() => resolve({ data, status: 201, statusText: "", headers: {}, config }), 20));
+
+  test("two identical POSTs in flight reach the server once and both callers get the answer", async () => {
+    let calls = 0;
+    routes = { "/stock-movements/": (c) => { calls += 1; return slow(c, { id: 9 }); } };
+    const body = { item: "FEE-1-001", movement_type: "IN", quantity: 3 };
+    const [a, b] = await Promise.all([client.post("/stock-movements/", body), client.post("/stock-movements/", body)]);
+    expect(calls).toBe(1);
+    expect(a.data).toEqual({ id: 9 });
+    expect(b.data).toEqual({ id: 9 });
+  });
+
+  test("different bodies, or the same body once the first has answered, both go through", async () => {
+    let calls = 0;
+    routes = { "/stock-movements/": (c) => { calls += 1; return slow(c, {}); } };
+    await Promise.all([client.post("/stock-movements/", { quantity: 1 }), client.post("/stock-movements/", { quantity: 2 })]);
+    expect(calls).toBe(2);
+    await client.post("/stock-movements/", { quantity: 1 });
+    expect(calls).toBe(3);
+  });
+
+  test("reads are never coalesced", async () => {
+    let calls = 0;
+    routes = { "/houses/": (c) => { calls += 1; return slow(c, []); } };
+    await Promise.all([client.get("/houses/"), client.get("/houses/")]);
+    expect(calls).toBe(2);
+  });
+
+  test("a failed write is released, so retrying it after the error goes through", async () => {
+    let calls = 0;
+    routes = { "/sales/": (c) => { calls += 1; return calls === 1 ? answer(c, 400, { quantity: ["x"] }) : answer(c, 201, { id: 1 }); } };
+    await expect(client.post("/sales/", { quantity: 1 })).rejects.toBeTruthy();
+    await expect(client.post("/sales/", { quantity: 1 })).resolves.toBeTruthy();
+    expect(calls).toBe(2);
+  });
+});

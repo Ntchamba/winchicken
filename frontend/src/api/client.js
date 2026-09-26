@@ -34,6 +34,39 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
+// A double-tapped submit fires the same write twice in one tick, before React has re-rendered
+// the button as disabled: a stock "Ajouter" recorded two IN movements (and, with a price, two
+// expenses) live (campaign 9, finding B14). Rather than a guard in every form, an *identical*
+// write — same method, URL and serialized body — made while the first is still in flight gets
+// the first one's promise instead of reaching the server again. Reads are never coalesced; a
+// write that has answered (success or error) is released, so a deliberate retry goes through;
+// a non-string body (a file upload) is left alone.
+const inFlightWrites = new Map();
+
+function coalescing(adapter) {
+  if (adapter?.coalescing) return adapter; // the 401 retry re-sends an already wrapped config
+  const send = axios.getAdapter(adapter);
+  const wrapped = (config) => {
+    const method = (config.method || "get").toLowerCase();
+    if (method === "get" || method === "head" || method === "options" || typeof config.data !== "string") {
+      return send(config);
+    }
+    const key = `${method} ${config.baseURL || ""}${config.url} ${config.data}`;
+    const pending = inFlightWrites.get(key);
+    if (pending) return pending;
+    const request = Promise.resolve(send(config)).finally(() => inFlightWrites.delete(key));
+    inFlightWrites.set(key, request);
+    return request;
+  };
+  wrapped.coalescing = true;
+  return wrapped;
+}
+
+client.interceptors.request.use((config) => {
+  config.adapter = coalescing(config.adapter);
+  return config;
+});
+
 let refreshPromise = null;
 
 // "/" (the landing page), not "/login": it re-checks GET /api/farm/exists/ on its own and shows
