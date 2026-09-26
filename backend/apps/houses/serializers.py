@@ -24,6 +24,23 @@ class PoultryHouseSerializer(serializers.ModelSerializer):
             'last_disinfection_date': {'help_text': 'Date of the last sanitary-void disinfection, if any.'},
         }
 
+    def validate_name(self, value):
+        # Two houses with the same name was always a mistake, never a layout: a first-time user
+        # who stepped back to "1. Bâtiments" to fix something and pressed "Suivant" again got a
+        # second "Bâtiment 1" with a second batch, silently (campaign 9, finding B17).
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Le nom du bâtiment est requis.")
+        request = self.context.get('request')
+        farm = getattr(getattr(request, 'user', None), 'farm', None)
+        if farm is not None:
+            clash = PoultryHouse.objects.filter(farm=farm, name__iexact=value)
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise serializers.ValidationError(f"Un bâtiment s'appelle déjà « {value} ».")
+        return value
+
     def create(self, validated_data):
         farm = self.context['request'].user.farm
         validated_data['farm'] = farm

@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import HouseProtocolForm from "../../components/HouseProtocolForm";
 import BatchHeaderStep from "../../components/onboarding/BatchHeaderStep";
 import BatchMethodChoice from "../../components/onboarding/BatchMethodChoice";
 import BatchExcelImportScreen from "../../components/onboarding/BatchExcelImportScreen";
-import { onboardingApi } from "../../api/endpoints";
+import { housesApi, onboardingApi } from "../../api/endpoints";
 import { useAuth } from "../../context/AuthContext";
 import { useOnboarding } from "../../context/OnboardingContext";
 import { todayISO } from "../../utils/localDate";
@@ -85,6 +85,20 @@ export default function OnboardingProtocolPage() {
   // farm's existing stock items. Also: exactly one house/batch per invocation
   // (matches the button's own singular name) — no multi-batch loop here.
   const isAddingHouse = user?.is_configured;
+
+  // First-time onboarding reopened after a house was already created (the phone's back button,
+  // or the "1. Bâtiments" step tab from Stock): list what exists, with the way on to Stock,
+  // instead of a blank form whose "Suivant" made a second copy of the same house
+  // (campaign 9, finding B17 — the server now refuses a duplicate name as well).
+  useEffect(() => {
+    if (isAddingHouse || !user) return;
+    housesApi.list()
+      .then(({ data }) => {
+        const existing = (data.results || data || []).map((h) => ({ name: h.name }));
+        if (existing.length) setAddedHouses((prev) => (prev.length ? prev : existing));
+      })
+      .catch(() => {});
+  }, [isAddingHouse, user]);
 
   const handleSave = async (payload) => {
     setSaving(true);

@@ -119,7 +119,7 @@ class OnboardingView(APIView):
             'name': house_data.get('name'),
             'size_m2': house_data.get('sizeM2'),
             'max_capacity': house_data.get('maxCapacity') or batch_data.get('initialCount') or 0,
-        })
+        }, context={'request': request})
         if not house_serializer.is_valid():
             return Response({'house': house_serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
         house_values = house_serializer.validated_data

@@ -56,7 +56,7 @@ vi.mock("../../../api/endpoints", () => ({
   onboardingApi: { submit: vi.fn() },
   protocolImportApi: { parse: vi.fn(), templateUrl: "" },
   stockApi: { addItem: vi.fn() },
-  housesApi: { addProtocolCategory: vi.fn() },
+  housesApi: { addProtocolCategory: vi.fn(), list: vi.fn(() => Promise.resolve({ data: { results: [] } })) },
 }));
 
 function mockOnboardingContext() {
@@ -189,6 +189,15 @@ describe("OnboardingProtocolPage — '+ Nouvelle bande' add-house flow (is_confi
     expect(screen.getByRole("spinbutton", { name: /poussins mis en place/i })).toHaveValue(500);
     expect(screen.getByRole("textbox", { name: /nom du bâtiment/i })).toHaveValue("Bâtiment A");
     expect(screen.getByRole("combobox", { name: /type de protocole/i })).toHaveValue("LAYER");
+  });
+
+  test("reopened after a house was created, it lists that house with the way on to Stock", async () => {
+    const { housesApi } = await import("../../../api/endpoints");
+    housesApi.list.mockResolvedValueOnce({ data: { results: [{ house_code: "H-1-001", name: "Bâtiment 1" }] } });
+    useAuth.mockReturnValue({ user: { is_configured: false }, refreshMe: vi.fn() }); // first-time onboarding
+    render(<OnboardingProtocolPage />);
+    expect(await screen.findByText("Bâtiment 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continuer sans ajouter d'autre bâtiment" })).toBeInTheDocument();
   });
 
   test("the phone's back button steps back through the wizard instead of leaving it", async () => {

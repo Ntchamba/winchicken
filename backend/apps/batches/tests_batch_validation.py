@@ -129,6 +129,15 @@ class OnboardingEndpointTests(BatchValidationBase):
     def test_unknown_cycle_unit(self):
         self.assertRefused(self.post(batch={'growthCycleUnit': 'YEAR'}))
 
+    def test_a_second_house_with_the_same_name_is_refused(self):
+        # Going back to step 1 of the first-time onboarding and pressing "Suivant" again made a
+        # second "Bâtiment" with a second batch (campaign 9, B17).
+        self.assertEqual(self.post().status_code, 201)
+        response = self.post(house={'name': '  bâtiment '})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('déjà', str(response.data['house']))
+        self.assertEqual(PoultryHouse.objects.count(), 1)
+
     def test_errors_are_french_and_keyed_by_section(self):
         response = self.post(batch={'initialCount': 10 ** 9})
         self.assertIn('batch', response.data)
