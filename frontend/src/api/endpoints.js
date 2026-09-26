@@ -68,7 +68,10 @@ export const housesApi = {
   // 30s, not the 20s of the single-row submissions: this sends a whole protocol at once over
   // the same phone connection (FIX 8, group 3). Without any timeout the promise never settles
   // and the form spins forever on a dropped link.
-  putProtocol: (houseCode, lines) => client.put(`/houses/${houseCode}/protocol/`, { lines }, { timeout: 30000 }),
+  // `knownIds`: the line ids the editor loaded. Only those can be deleted by omission, so a
+  // stale tab cannot wipe a line added meanwhile elsewhere (campaign 9, B13).
+  putProtocol: (houseCode, lines, knownIds) =>
+    client.put(`/houses/${houseCode}/protocol/`, { lines, ...(knownIds ? { known_ids: knownIds } : {}) }, { timeout: 30000 }),
   listProtocolCategories: (houseCode, params) => client.get(`/houses/${houseCode}/protocol-categories/`, { params }),
   addProtocolCategory: (houseCode, payload) => client.post(`/houses/${houseCode}/protocol-categories/`, payload),
   removeProtocolCategory: (houseCode, categoryId) => client.delete(`/houses/${houseCode}/protocol-categories/${categoryId}/`),
@@ -142,7 +145,9 @@ export const batchesApi = {
 
 export const stockApi = {
   items: (farmId) => client.get(`/farms/${farmId}/stock-items/`),
-  putItems: (farmId, items) => client.put(`/farms/${farmId}/stock-items/`, { items }, { timeout: 30000 }),
+  // `knownCodes`: the item codes the form loaded — same stale-tab guard as putProtocol.
+  putItems: (farmId, items, knownCodes) =>
+    client.put(`/farms/${farmId}/stock-items/`, { items, ...(knownCodes ? { known_codes: knownCodes } : {}) }, { timeout: 30000 }),
   addItem: (farmId, payload) => client.post(`/farms/${farmId}/stock-items/`, payload),
   updateItem: (itemCode, payload) => client.patch(`/stock-items/${itemCode}/`, payload),
   compositions: (farmId, params) => client.get(`/farms/${farmId}/stock-compositions/`, params ? { params } : undefined),

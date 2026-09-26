@@ -29,6 +29,8 @@ export default function OnboardingStockPage() {
           categories,
           data: buildStockRows(itemRes.data.items, categories),
           suppliers,
+          // The save may delete only the articles loaded here (stale-tab guard, campaign 9).
+          knownCodes: (itemRes.data.items || []).map((i) => i.item_code),
         });
       });
   }, [user.farm]);
@@ -42,6 +44,7 @@ export default function OnboardingStockPage() {
       // onboarding reading 0 of everything it had just declared.
       await saveStockItemsWithQuantities(user.farm, payload.items, {
         note: "Stock d'ouverture (configuration initiale)",
+        knownCodes: state?.knownCodes,
       });
       navigate("/onboarding/employees");
     } finally {

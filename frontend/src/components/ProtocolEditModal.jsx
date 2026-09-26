@@ -60,6 +60,8 @@ export default function ProtocolEditModal({ houseCode, onClose, onSaved }) {
   const reduceMotion = useReducedMotion();
   const panelRef = useRef(null);
   const dirtyRef = useRef(false);
+  // Ids of the protocol lines loaded here: the save may delete only these by leaving them out.
+  const knownLineIdsRef = useRef(null);
   const triggerRef = useRef(null);
   const { refetch: refetchHouses } = useHousesContext();
   const { user } = useAuth();
@@ -95,6 +97,7 @@ export default function ProtocolEditModal({ houseCode, onClose, onSaved }) {
       const batches = batchesRes.data.results || batchesRes.data;
       const batch = batches.find((b) => b.status === "ACTIVE") || null;
       setCategories(cats);
+      knownLineIdsRef.current = (protocolRes.data || []).map((l) => l.id);
       setStockItems((stockRes.data.items || []).map(toStockItemOption));
       setSchedules(buildProtocolSchedules(cats, protocolRes.data));
       setActiveBatch(batch);
@@ -150,7 +153,7 @@ export default function ProtocolEditModal({ houseCode, onClose, onSaved }) {
     setSaving(true);
     setSaveError("");
     try {
-      const requests = [housesApi.putProtocol(houseCode, payload.protocolLines)];
+      const requests = [housesApi.putProtocol(houseCode, payload.protocolLines, knownLineIdsRef.current)];
 
       // The "Nom du bâtiment" field was editable but its value (payload.house.buildingName)
       // was never persisted — PATCH /api/houses/{code}/ (HouseDetailView) exists but nothing

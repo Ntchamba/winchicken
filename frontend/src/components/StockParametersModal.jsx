@@ -37,6 +37,8 @@ export default function StockParametersModal({ open, farmId, compositions = [], 
   const [saveError, setSaveError] = useState("");
 
   const importInputRef = useRef(null);
+  // Codes of the articles this form loaded: the save may delete only these by leaving them out.
+  const loadedCodesRef = useRef([]);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null); // { updated, created, skipped:[{line,reason}] }
   const [importError, setImportError] = useState("");
@@ -56,6 +58,7 @@ export default function StockParametersModal({ open, farmId, compositions = [], 
     ])
       .then(([cats, itemRes, sups]) => {
         setCategories(cats);
+        loadedCodesRef.current = (itemRes.data.items || []).map((i) => i.item_code);
         setData(buildStockRows(itemRes.data.items, cats));
         setSuppliers(sups);
       });
@@ -126,6 +129,7 @@ export default function StockParametersModal({ open, farmId, compositions = [], 
     try {
       await saveStockItemsWithQuantities(farmId, payload.items, {
         note: "Saisie via « Mettre à jour le stock »",
+        knownCodes: loadedCodesRef.current,
       });
 
       dirtyRef.current = false;

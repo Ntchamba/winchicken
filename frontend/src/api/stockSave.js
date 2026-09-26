@@ -20,12 +20,14 @@ import { todayISO } from "../utils/localDate";
  *
  * @param {number} farmId
  * @param {object[]} items - rows from `StockParametersForm`'s payload.
- * @param {{note: string}} options - French note recorded on each movement, naming the origin.
+ * @param {{note: string, knownCodes?: string[]}} options - French note recorded on each movement,
+ *   naming the origin; `knownCodes`, the item codes the form loaded (only those can be deleted by
+ *   leaving them out — a stale tab must not delete an article added meanwhile elsewhere).
  * @returns {Promise<object>} the PUT response body (items with their `item_code`s).
  */
-export async function saveStockItemsWithQuantities(farmId, items, { note }) {
+export async function saveStockItemsWithQuantities(farmId, items, { note, knownCodes }) {
   // 1. Persist the item definitions (upsert, keyed on item_code).
-  const { data } = await stockApi.putItems(farmId, items);
+  const { data } = await stockApi.putItems(farmId, items, knownCodes);
 
   // 2. Move the stock to the level the user typed. Until FIX 3.5 the PUT deleted and recreated
   //    every StockItem, cascading its movements away, so this re-posted each row's *whole*

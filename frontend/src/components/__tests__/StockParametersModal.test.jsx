@@ -38,7 +38,7 @@ describe("StockParametersModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     stockApi.categories.mockResolvedValue({ data: [{ id: 1, label: "Aliment", icon: "Wheat", kind: "FEED" }] });
-    stockApi.items.mockResolvedValue({ data: { items: [] } });
+    stockApi.items.mockResolvedValue({ data: { items: [{ item_code: "FEE-7-001", name: "Aliment", category: 1, unit: "kg" }] } });
     stockApi.suppliers.mockResolvedValue({ data: [] });
     stockApi.putItems.mockResolvedValue({ data: { items: [] } });
   });
@@ -49,7 +49,9 @@ describe("StockParametersModal", () => {
     const saveButton = await screen.findByText("Fake Save");
     await userEvent.click(saveButton);
 
-    await waitFor(() => expect(stockApi.putItems).toHaveBeenCalledWith(7, [{ category: 1, name: "Aliment", unit: "kg" }]));
+    // Third argument: the codes this form loaded — only those may be deleted by omission, so a
+    // stale tab cannot delete an article created meanwhile elsewhere (campaign 9, B13).
+    await waitFor(() => expect(stockApi.putItems).toHaveBeenCalledWith(7, [{ category: 1, name: "Aliment", unit: "kg" }], ["FEE-7-001"]));
     expect(onSaved).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });

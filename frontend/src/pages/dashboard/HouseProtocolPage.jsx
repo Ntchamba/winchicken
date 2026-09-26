@@ -21,6 +21,9 @@ export default function HouseProtocolPage() {
   const [categories, setCategories] = useState(null);
   const [schedules, setSchedules] = useState(null);
   const [saving, setSaving] = useState(false);
+  // Ids of the lines loaded here: the save may delete only these by leaving them out (a stale
+  // tab must not wipe a line added meanwhile elsewhere — campaign 9, B13).
+  const [knownLineIds, setKnownLineIds] = useState(null);
   const { user } = useAuth();
   // Without these the Consommation selector knew no article (and offered to create duplicates)
   // and "Créer « … »" posted to /farms/undefined/.
@@ -35,6 +38,7 @@ export default function HouseProtocolPage() {
     ]).then(([categoriesRes, protocolRes]) => {
       const cats = categoriesRes;
       setCategories(cats);
+      setKnownLineIds((protocolRes.data || []).map((l) => l.id));
       setSchedules(buildProtocolSchedules(cats, protocolRes.data));
     });
   }, [houseCode]);
@@ -42,7 +46,7 @@ export default function HouseProtocolPage() {
   const handleSave = async (payload) => {
     setSaving(true);
     try {
-      await housesApi.putProtocol(houseCode, payload.protocolLines);
+      await housesApi.putProtocol(houseCode, payload.protocolLines, knownLineIds);
       // Navigate back to the house view rather than staying in place — it re-fetches on mount,
       // so the "tâches à effectuer maintenant" panel there reflects this save immediately.
       navigate(`/dashboard/houses/${houseCode}`);

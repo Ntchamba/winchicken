@@ -31,6 +31,14 @@ def _sync_time_slots(line, slots):
     line.time_slots.exclude(id__in=kept_ids).delete()
 
 
+def _known_keys(raw):
+    """`known_ids` from a PUT body: None when absent (old full-replace rule), else the set of ids
+    the client loaded. Anything that is not a list of ints is treated as absent."""
+    if not isinstance(raw, list):
+        return None
+    return {k for k in raw if isinstance(k, int) and not isinstance(k, bool)}
+
+
 class HouseProtocolView(APIView):
     """GET/PUT /api/houses/{houseCode}/protocol/ — read or save a house's protocol lines.
 
@@ -103,7 +111,16 @@ class HouseProtocolView(APIView):
                 kept_ids.add(line.id)
                 _sync_time_slots(line, slots)
 
-            ProtocolTemplate.objects.filter(house=house).exclude(id__in=kept_ids).delete()
+            # Only lines the client *knew about* and left out are deleted. The editor sends
+            # `known_ids` — the lines it loaded — so a line added meanwhile from another tab or
+            # phone (the app stays open all day) is not wiped by a stale save, with its task
+            # completions CASCADEd away (campaign 9, finding B13). Without `known_ids` the old
+            # rule stands: every line not sent is removed.
+            removed = ProtocolTemplate.objects.filter(house=house).exclude(id__in=kept_ids)
+            known_ids = _known_keys(request.data.get('known_ids'))
+            if known_ids is not None:
+                removed = removed.filter(id__in=known_ids)
+            removed.delete()
 
             # Regenerate this house's active batch's scheduled PROTOCOL_TASK AlertRule rows from
             # the protocol just saved — otherwise they'd keep pointing at the schedule that

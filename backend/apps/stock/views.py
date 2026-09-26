@@ -234,7 +234,16 @@ class FarmStockItemsView(APIView):
             # Only rows the client actually left out are removed. Deleting one still cascades
             # to its movements, purchase orders, vaccinations and compositions — that is a
             # deletion the user asked for, unlike the old blanket delete of every row.
-            StockItem.objects.filter(farm=farm).exclude(item_code__in=kept_codes).delete()
+            #
+            # And only rows the client *knew about*: the form sends `known_codes` — the articles
+            # it loaded — so an article created meanwhile from another tab or phone (the app
+            # stays open all day) is not deleted, with its movements, by a stale save (campaign
+            # 9, finding B13). Without `known_codes` every row not sent is removed, as before.
+            removed = StockItem.objects.filter(farm=farm).exclude(item_code__in=kept_codes)
+            known_codes = request.data.get('known_codes')
+            if isinstance(known_codes, list):
+                removed = removed.filter(item_code__in=[c for c in known_codes if isinstance(c, str)])
+            removed.delete()
         record_audit_log(request.user, 'stock.updated', f'Paramètres de stock ({len(kept_codes)} article(s))')
         items = with_current_quantity(StockItem.objects.filter(farm=farm).select_related('category', 'supplier'))
         return Response({'items': StockItemSerializer(items, many=True).data})
