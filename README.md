@@ -157,6 +157,40 @@ npm test QuickEntryPanel   # filter by filename
 job (Postgres 16 service → `pytest`) and a frontend job (`npm ci` →
 `npm run lint` → `npm test` → `npm run build`), in parallel.
 
+### Regression suite (one command)
+
+`scripts/regression.sh` proves, in a single run, that the whole app still works
+after a change — the unit and integration suites **plus** live checks against a
+running stack, so a regression that only shows up through the deployed API or in
+a real browser is caught too. It re-verifies the FIX 1–7 behaviours and the four
+UI items this project has a history of reporting "fixed" while they weren't
+(sidebar scroll, factory-reset button, batch-name validation, button alignment).
+
+```bash
+# with the verification stack up (winchicken-test on :8010 / :5180)
+docker compose -p winchicken-test -f docker-compose.yml -f docker-compose.test.yml up -d
+docker compose -p winchicken-test -f docker-compose.yml -f docker-compose.test.yml \
+  exec -T web python manage.py migrate
+
+./scripts/regression.sh            # backend + frontend + live API + live UI
+./scripts/regression.sh --quick    # skip the long backend suite (fast inner loop)
+./scripts/regression.sh --no-ui    # skip the browser checks (no Chrome installed)
+```
+
+It exits non-zero if any section fails, and prints a per-section PASS/FAIL
+summary. The four parts:
+
+| Part | What it runs | Proves |
+|---|---|---|
+| Backend | `manage.py test` (unit + `tests_integration_*`) | task completion + stock deduction + **undo**, twice-daily time-slot occurrences, shortfall handling, orphaned assignments — at the ORM level |
+| Frontend | `npm test` (vitest) | component logic incl. batch-name validation and submission feedback |
+| Live API | `scripts/regression_api.py` | the same FIX behaviours through the running API: farm-local dates, multiple assignees, opening stock, complete/undo |
+| Live UI | `scripts/regression_ui.mjs` (headless Chrome over CDP) | the recurring-four + no false "server unreachable" on the stock panel |
+
+Point it at another stack with `REG_API_URL` / `REG_UI_URL` (and
+`REG_COMPOSE` for the backend step); credentials via `REG_ADMIN_EMAIL` etc.
+The Live UI part is skipped automatically when no Chrome/Chromium is on PATH.
+
 ## Recent work
 
 - **Scheduled task reminders — made real end to end (2026-08-31):** the trigger from the
