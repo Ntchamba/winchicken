@@ -12,8 +12,8 @@ const CATEGORY_COLORS = {
 // row.category (transactions table) is the raw ExpenseCategory/ProductType backend enum —
 // displayed only through this French label map, never shown raw.
 const CATEGORY_LABELS = {
-  FEED: "Aliment", VETERINARY: "Vétérinaire", MISC: "Divers", DEPRECIATION: "Amortissement", LABOR: "Main-d'œuvre",
-  BIRD: "Volaille", EGG: "Œufs", CULL: "Réforme", MANURE: "Fumier",
+  FEED: "Aliment", VETERINARY: "Vétérinaire", MISC: "Divers", DEPRECIATION: "Usure du matériel", LABOR: "Main-d'œuvre",
+  BIRD: "Volaille", EGG: "Œufs", CULL: "Poules réformées", MANURE: "Fumier",
 };
 
 const TREND_ICON = { up: TrendingUp, down: TrendingDown, flat: Minus };

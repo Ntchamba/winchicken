@@ -19,7 +19,7 @@ import useDocumentTitle from "../../hooks/useDocumentTitle";
 export default function HouseTasksPage() {
   const { houseCode } = useParams();
   const { house, batch } = useOutletContext();
-  useDocumentTitle(`Tâches — ${house?.name || houseCode}`);
+  useDocumentTitle(`Tâches — ${house?.name || "Bâtiment sans nom"}`);
 
   // `null` until the first response: rendering the empty list meanwhile read as "À faire (0)"
   // and "Aucune tâche prévue pour aujourd'hui" on a slow phone connection.

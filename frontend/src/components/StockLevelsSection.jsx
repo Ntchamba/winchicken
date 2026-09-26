@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { getServerErrorMessage } from "../api/errors";
-import { Plus, Loader2, Check, X } from "lucide-react";
+import { Plus, Loader2, Check, X, TriangleAlert } from "lucide-react";
 import { stockApi } from "../api/endpoints";
 import { useAuth } from "../context/AuthContext";
 import { compositionByOutput } from "../utils/compositions";
@@ -132,7 +132,8 @@ export default function StockLevelsSection({ items = [], compositions = [], onCh
               return [
                 <tr key={it.item_code}>
                   <td>{it.name}</td>
-                  <td style={low ? { color: "var(--danger)", fontWeight: 700 } : undefined}>
+                  <td style={low ? { color: "var(--danger)", fontWeight: 700, display: "flex", alignItems: "center", gap: 6 } : undefined}>
+                    {low && <TriangleAlert size={14} strokeWidth={2.2} aria-hidden="true" />}
                     {it.current_quantity} {it.unit}
                     {low && " · sous le seuil"}
                   </td>
@@ -144,7 +145,7 @@ export default function StockLevelsSection({ items = [], compositions = [], onCh
                         onClick={() => (openFor === it.item_code ? cancel() : open(it))}
                         type="button"
                       >
-                        <Plus size={13} strokeWidth={2.5} /> Ajouter Ici!
+                        <Plus size={13} strokeWidth={2.5} /> Ajouter du stock
                       </button>
                     </td>
                   )}

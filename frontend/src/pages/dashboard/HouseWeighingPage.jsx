@@ -14,7 +14,7 @@ import useDocumentTitle from "../../hooks/useDocumentTitle";
 export default function HouseWeighingPage() {
   const { houseCode } = useParams();
   const { house, batch } = useOutletContext();
-  useDocumentTitle(`Pesée — ${house?.name || houseCode}`);
+  useDocumentTitle(`Pesée — ${house?.name || "Bâtiment sans nom"}`);
 
   // Stored with the house it was loaded for, so another house never shows a stale curve.
   const [growth, setGrowth] = useState(null);

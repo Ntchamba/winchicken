@@ -16,6 +16,16 @@ const ROLES = [
   { value: "FARM_MANAGER", label: "Gérant de ferme" },
 ];
 
+// Same wording as pages/dashboard/EmployeesPage.jsx's ROLE_DESCRIPTIONS — keep the two in sync.
+const ROLE_DESCRIPTIONS = {
+  FARMER: "Suit les bandes au quotidien : mortalité, pesées, alimentation.",
+  WORKER: "Aide aux tâches du jour dans les bâtiments, sans accès aux finances.",
+  TECHNICIAN: "Suit les vaccinations et signale les pannes de matériel.",
+  CASHIER: "Enregistre les ventes et les dépenses à la caisse.",
+  SECONDARY_ADMIN: "Mêmes droits que vous, sauf réinitialiser la ferme ou changer les paramètres critiques.",
+  FARM_MANAGER: "Supervise tous les bâtiments et peut clôturer une bande.",
+};
+
 const EMPTY_FORM = { name: "", civility: "M", email: "", role: "FARMER", password: "" };
 
 export default function OnboardingEmployeesPage() {
@@ -146,6 +156,11 @@ export default function OnboardingEmployeesPage() {
                 <option key={r.value} value={r.value}>{r.label}</option>
               ))}
             </select>
+            {ROLE_DESCRIPTIONS[form.role] && (
+              <span className="schedule-note" style={{ marginTop: 6, display: "block" }}>
+                {ROLE_DESCRIPTIONS[form.role]}
+              </span>
+            )}
           </label>
         </div>
         <label className="field" style={{ marginTop: 14 }}>

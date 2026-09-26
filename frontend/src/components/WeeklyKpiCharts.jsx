@@ -12,7 +12,12 @@ export default function WeeklyKpiCharts({ weeklyKpi }) {
 
   return (
     <>
-      <div className="section-row"><h2>Tendance de l'indice de consommation</h2></div>
+      <div className="section-row">
+        <h2>Aliment consommé par kilo de poulet (indice de consommation)</h2>
+      </div>
+      <p className="schedule-note" style={{ margin: "-10px 0 14px" }}>
+        Plus le chiffre est bas, moins vous dépensez d'aliment pour le même poids de volaille.
+      </p>
       <div className="card schedule-card" style={{ marginBottom: 18, height: 240 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={weeks}>

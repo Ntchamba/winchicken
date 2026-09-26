@@ -201,7 +201,7 @@ def farm_health_score(farm):
     active_batches = list(
         PoultryBatch.objects.filter(house__farm=farm, status=BatchStatus.ACTIVE).prefetch_related('daily_logs')
     )
-    breaches = []  # [(batch, 'mortalité'|'IC')]
+    breaches = []  # [(batch, 'mortalité'|"consommation d'aliment")]
     for batch in active_batches:
         kpi = weekly_kpi(batch)
         weeks = kpi['weeks']
@@ -209,7 +209,7 @@ def farm_health_score(farm):
             breaches.append((batch, 'mortalité'))
         fcr = feed_conversion_ratio(batch)
         if fcr is not None and fcr > FCR_REFERENCE_RANGE[1]:
-            breaches.append((batch, 'IC'))
+            breaches.append((batch, "consommation d'aliment"))
 
     open_alerts = open_problem_alerts(farm)
     open_count = open_alerts.count()
@@ -225,7 +225,7 @@ def farm_health_score(farm):
         tier, label = 'watch', 'À surveiller'
     else:
         tier, label = 'good', 'Bonne'
-        reasons = ['Aucune alerte ouverte, mortalité et IC dans la norme sur toutes les bandes actives']
+        reasons = ["Aucune alerte ouverte, mortalité et consommation d'aliment dans la norme sur toutes les bandes actives"]
 
     return {'tier': tier, 'label': label, 'reason': ', '.join(reasons)}
 

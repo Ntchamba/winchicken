@@ -6,20 +6,27 @@ import "./quick-links-bar.css";
 
 // The sections users move between constantly. Kept in one list so every view offers the same
 // set and nobody has to go back to the main menu to cross from Finances to Stock.
+//
+// `inIconNav`: already one tap away in the phone top bar (DashboardLayout's icon row), so
+// hidden here at <=600px — no duplicate row on a phone.
+// `inSidebar`: already a permanent link in the desktop sidebar (DashboardLayout.jsx), so
+// hidden here at >=901px (the width where that sidebar stops being a drawer and is always on
+// screen) — same "no duplicate row" logic, applied to the other end of the width range.
+// "Bâtiments" is deliberately NOT `inSidebar`: the sidebar lists individual houses, never an
+// aggregate list, so this is the only link to /dashboard/houses at any width above 600px.
 const LINKS = [
-  { to: "/dashboard/overview", inIconNav: true, label: "Bilan global", Icon: LayoutGrid },
-  { to: "/dashboard/finances", inIconNav: true, label: "Finances", Icon: Coins },
-  { to: "/dashboard/stock", inIconNav: true, label: "Stock", Icon: Package },
+  { to: "/dashboard/overview", inIconNav: true, inSidebar: true, label: "Bilan global", Icon: LayoutGrid },
+  { to: "/dashboard/finances", inIconNav: true, inSidebar: true, label: "Finances", Icon: Coins },
+  { to: "/dashboard/stock", inIconNav: true, inSidebar: true, label: "Stock", Icon: Package },
   { to: "/dashboard/houses", inIconNav: true, label: "Bâtiments", Icon: Warehouse },
-  { to: "/dashboard/calendar", inIconNav: true, label: "Calendrier", Icon: CalendarDays },
-  { to: "/dashboard/my-tasks", label: "Tâches du jour", Icon: ListChecks },
+  { to: "/dashboard/calendar", inIconNav: true, inSidebar: true, label: "Calendrier", Icon: CalendarDays },
+  { to: "/dashboard/my-tasks", inSidebar: true, label: "Mes tâches", Icon: ListChecks },
   { to: "/dashboard/alerts", label: "Alertes", Icon: Bell },
 ];
 
-// `inIconNav` links are already one tap away in the phone top bar (DashboardLayout's
-// "Navigation principale"), so at ≤600px only the rest stay here — no duplicate row.
-const linkClass = (inIconNav, extra = "") =>
-  ["quick-link", extra, inIconNav ? "quick-link--in-icon-nav" : ""].filter(Boolean).join(" ");
+const linkClass = (inIconNav, inSidebar, extra = "") =>
+  ["quick-link", extra, inIconNav ? "quick-link--in-icon-nav" : "", inSidebar ? "quick-link--in-sidebar" : ""]
+    .filter(Boolean).join(" ");
 
 /**
  * Horizontal shortcuts between the main sections, shown at the top of each of them.
@@ -58,18 +65,18 @@ export default function QuickLinksBar({ sections = [], sectionsLabel = "Sections
         </nav>
       )}
       <nav className="quick-links" aria-label="Accès rapide">
-        {LINKS.map(({ to, label, Icon, inIconNav }) => {
+        {LINKS.map(({ to, label, Icon, inIconNav, inSidebar }) => {
           const current = pathname === to || pathname.startsWith(`${to}/`);
           if (current) {
             return (
-              <span className={linkClass(inIconNav, "quick-link--current")} key={to} aria-current="page">
+              <span className={linkClass(inIconNav, inSidebar, "quick-link--current")} key={to} aria-current="page">
                 <Icon size={15} strokeWidth={2} />
                 {label}
               </span>
             );
           }
           return (
-            <NavLink className={linkClass(inIconNav)} to={to} key={to}>
+            <NavLink className={linkClass(inIconNav, inSidebar)} to={to} key={to}>
               <Icon size={15} strokeWidth={2} />
               {label}
             </NavLink>

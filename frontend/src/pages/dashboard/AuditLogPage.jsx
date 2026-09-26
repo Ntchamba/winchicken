@@ -15,7 +15,7 @@ import { ACTION_LABELS } from "../../utils/auditActions";
  * what any one request returns.
  */
 export default function AuditLogPage() {
-  useDocumentTitle("Journal d'audit");
+  useDocumentTitle("Historique des actions");
   const [entries, setEntries] = useState([]);
   const [count, setCount] = useState(0);
   const [page, setPage] = useState(1);
@@ -50,7 +50,7 @@ export default function AuditLogPage() {
         <span className="brand-mark"><FileClock size={20} strokeWidth={1.8} /></span>
         <div>
           <p className="eyebrow">WINCHICKEN</p>
-          <p className="brand-subtitle">Journal d'audit</p>
+          <p className="brand-subtitle">Historique des actions</p>
         </div>
       </div>
 

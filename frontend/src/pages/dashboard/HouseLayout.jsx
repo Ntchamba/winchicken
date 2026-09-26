@@ -51,10 +51,10 @@ export default function HouseLayout() {
         Tableau de bord /{" "}
         {section ? (
           <>
-            <Link to={base}>{house?.name || houseCode}</Link> / <strong>{section.label}</strong>
+            <Link to={base}>{house?.name || "Bâtiment sans nom"}</Link> / <strong>{section.label}</strong>
           </>
         ) : (
-          <strong>{house?.name || houseCode}</strong>
+          <strong>{house?.name || "Bâtiment sans nom"}</strong>
         )}
         {houses.length > 1 && (
           <select

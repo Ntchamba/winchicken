@@ -172,7 +172,7 @@ class FarmHealthTests(BatchCalcBase):
     def test_fcr_just_above_the_upper_reference_is_a_breach(self):
         b = self.batch(initial=100)
         self.log(b, 0, feed=231, weight=1.0)   # FCR 2.31
-        self.assertIn('IC', calc.farm_health_score(self.farm)['reason'])
+        self.assertIn("consommation d'aliment", calc.farm_health_score(self.farm)['reason'])
 
     def test_one_batch_breaching_both_signals_is_critical(self):
         b = self.batch(initial=100)

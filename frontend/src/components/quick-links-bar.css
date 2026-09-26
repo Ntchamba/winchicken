@@ -46,9 +46,20 @@
 }
 
 /* Phones: the top bar's icon nav already carries these five, so the row keeps only what it
-   doesn't (Tâches du jour, Alertes). Same 600px breakpoint as .mobile-icon-nav. */
+   doesn't (Mes tâches, Alertes). Same 600px breakpoint as .mobile-icon-nav. */
 @media (max-width: 600px) {
   .quick-link--in-icon-nav {
+    display: none;
+  }
+}
+
+/* Desktop: the sidebar (always on screen from 901px, see sidebar-theme.css) already carries
+   Bilan global / Finances / Stock / Calendrier / Mes tâches — repeating them here doubled the
+   navigation a first-time user had to read to find "where am I, where can I go". Bâtiments and
+   Alertes stay: neither has a sidebar equivalent (the sidebar lists individual houses, never
+   an aggregate list, and has no alerts entry at all). */
+@media (min-width: 901px) {
+  .quick-link--in-sidebar {
     display: none;
   }
 }

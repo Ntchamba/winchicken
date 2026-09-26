@@ -8,7 +8,7 @@ import "../styles/receipt.css";
 import { formatDateFR } from "../utils/localDate";
 import { formatMoney } from "../utils/money";
 
-const PRODUCT_LABELS = { BIRD: "Volaille", EGG: "Œufs", CULL: "Réforme", MANURE: "Fumier" };
+const PRODUCT_LABELS = { BIRD: "Volaille", EGG: "Œufs", CULL: "Poules réformées", MANURE: "Fumier" };
 
 /**
  * Printable sale receipt (2026-08-26, docs/deviations.md Part 15, Part D) — no PDF library

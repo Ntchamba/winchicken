@@ -8,7 +8,7 @@ import useDocumentTitle from "../../hooks/useDocumentTitle";
 export default function HouseCasesPage() {
   const { houseCode } = useParams();
   const { house, batch } = useOutletContext();
-  useDocumentTitle(`Cas signalés — ${house?.name || houseCode}`);
+  useDocumentTitle(`Cas signalés — ${house?.name || "Bâtiment sans nom"}`);
   const [incidentsKey, setIncidentsKey] = useState(0);
 
   return (
