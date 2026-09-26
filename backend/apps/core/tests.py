@@ -665,6 +665,25 @@ class EmployeeImportJobTests(APITestCase):
         self.assertEqual(self.client.delete(f'/api/employees/import-xlsx/{job_id}/').status_code, 204)
         self.assertEqual(self.client.get(f'/api/employees/import-xlsx/{job_id}/').status_code, 404)
 
+    def test_a_factory_reset_during_the_import_ends_the_job_in_an_error(self):
+        from unittest import mock
+        from apps.core import employee_xlsx_import
+
+        real = employee_xlsx_import.parse_and_apply_employee_import
+
+        def reset_midway(actor, farm, data, on_progress=None):
+            result = real(actor, farm, data, on_progress=on_progress)
+            farm.delete()  # what factory_reset_farm does, landing before the job finishes
+            return result
+
+        with mock.patch('apps.core.employee_xlsx_import.parse_and_apply_employee_import', side_effect=reset_midway):
+            resp = self.post(self._xlsx([['A', 'a@emp-imp.local', 'Ouvrier', 'M.', '']]))
+        from django.core.cache import cache
+        from apps.core.import_jobs import _state_key
+        state = cache.get(_state_key(resp.data['jobId']))  # its owner is gone with the farm
+        self.assertEqual(state['status'], 'error', state)
+        self.assertIn('réinitialisée', state['detail'])
+
     def test_a_crash_mid_import_ends_in_an_error_the_screen_can_show(self):
         from unittest import mock
         # A failing row is only a skipped row; this breaks the loop itself.

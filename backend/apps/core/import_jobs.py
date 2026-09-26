@@ -119,6 +119,12 @@ def run_job(job_id, actor_id) -> None:
         return
     finally:
         cache.delete(_file_key(job_id))
+    # A factory reset during the import deletes the farm and this admin: every later row failed
+    # on its own, and the audit-log write below crashed the task on the missing farm, leaving the
+    # job 'running' for good (campaign 9, finding B16). End it in a state the screen can show.
+    if not User.objects.filter(pk=actor_id).exists():
+        _update(job_id, status='error', detail="La ferme a été réinitialisée pendant l'import.")
+        return
     record_audit_log(
         actor, 'employee.imported',
         f"Import employés ({result['updated']} maj, {result['created']} créé(s))",
