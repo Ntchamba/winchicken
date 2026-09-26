@@ -82,13 +82,14 @@ _KIND_PREFIX = {'FEED': 'FEE', 'VETERINARY': 'VET', 'EQUIPMENT': 'EQU', 'BEDDING
 
 
 def generate_item_code(farm_id, category):
-    """Builds the next `{PREFIX}-{farmId}-{seq}` code, scoped per farm and per category
-    (e.g. `FEE-1-001`) — counts existing rows for that farm+category rather than a persisted
-    counter. `category` is a `StockCategory` instance; the 3-letter prefix comes from its
-    `kind` (`CUS` for user-added categories)."""
-    count = StockItem.objects.filter(farm_id=farm_id, category=category).count() + 1
+    """Builds the next `{PREFIX}-{farmId}-{seq}` code (e.g. `FEE-1-001`) — one past the highest
+    in use under that prefix. `category` is a `StockCategory` instance; the 3-letter prefix comes
+    from its `kind` (`CUS` for user-added categories). It used to count the *category's* rows,
+    which collided both after a deletion and between two custom categories sharing `CUS`
+    (see apps.core.codes)."""
+    from apps.core.codes import next_sequential_code
     prefix = _KIND_PREFIX.get(category.kind, 'CUS')
-    return f'{prefix}-{farm_id}-{count:03d}'
+    return next_sequential_code(StockItem, 'item_code', f'{prefix}-{farm_id}-')
 
 
 def next_free_item_code(farm_id, category, taken):

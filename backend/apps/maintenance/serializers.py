@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.core.codes import create_with_code, next_sequential_code
 from apps.maintenance.models import EquipmentFault, UnusualCase
 
 
@@ -25,9 +26,11 @@ class EquipmentFaultSerializer(serializers.ModelSerializer):
         }
 
     def create(self, validated_data):
-        count = EquipmentFault.objects.filter(house=validated_data['house']).count() + 1
-        validated_data['fault_code'] = f"FAULT-{validated_data['house'].house_code}-{count:03d}"
-        return super().create(validated_data)
+        def create():
+            validated_data['fault_code'] = next_sequential_code(
+                EquipmentFault, 'fault_code', f"FAULT-{validated_data['house'].house_code}-")
+            return super(EquipmentFaultSerializer, self).create(validated_data)
+        return create_with_code(create)
 
 
 class UnusualCaseSerializer(serializers.ModelSerializer):
@@ -57,6 +60,8 @@ class UnusualCaseSerializer(serializers.ModelSerializer):
         return reporter.name if reporter else None
 
     def create(self, validated_data):
-        count = UnusualCase.objects.filter(batch=validated_data['batch']).count() + 1
-        validated_data['case_code'] = f"CASE-{validated_data['batch'].batch_code}-{count:03d}"
-        return super().create(validated_data)
+        def create():
+            validated_data['case_code'] = next_sequential_code(
+                UnusualCase, 'case_code', f"CASE-{validated_data['batch'].batch_code}-")
+            return super(UnusualCaseSerializer, self).create(validated_data)
+        return create_with_code(create)

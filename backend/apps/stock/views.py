@@ -11,6 +11,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.codes import create_with_code
 from apps.core.models import Farm
 from apps.core.permissions import IsAdminOrFarmManagerOrFarmer
 from apps.core.services import record_audit_log
@@ -124,11 +125,11 @@ class FarmStockItemsView(APIView):
         if category is None:
             return Response({'detail': 'Aucune catégorie de stock disponible.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        item = StockItem.objects.create(
+        item = create_with_code(lambda: StockItem.objects.create(
             item_code=generate_item_code(farm.id, category),
             farm=farm, category=category, name=name, unit=(request.data.get('unit') or 'kg'),
             item_type=(request.data.get('item_type') or ''),
-        )
+        ))
         record_audit_log(request.user, 'stock.item_created', item.name)
         return Response(StockItemSerializer(item).data, status=status.HTTP_201_CREATED)
 

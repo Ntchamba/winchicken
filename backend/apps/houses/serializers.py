@@ -1,13 +1,13 @@
 from rest_framework import serializers
 
+from apps.core.codes import create_with_code, next_sequential_code
 from apps.houses.models import PoultryHouse
 
 
 def generate_house_code(farm_id):
-    """Builds the next `H-{farmId}-{seq}` code for a farm (sequential, not gap-filling —
-    counts existing rows for that farm rather than tracking a persisted counter)."""
-    count = PoultryHouse.objects.filter(farm_id=farm_id).count() + 1
-    return f'H-{farm_id}-{count:03d}'
+    """Builds the next `H-{farmId}-{seq}` code for a farm — one past the highest in use, never a
+    row count (a count reissues a live code after any deletion; see apps.core.codes)."""
+    return next_sequential_code(PoultryHouse, 'house_code', f'H-{farm_id}-')
 
 
 class PoultryHouseSerializer(serializers.ModelSerializer):
@@ -26,6 +26,9 @@ class PoultryHouseSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         farm = self.context['request'].user.farm
-        validated_data['house_code'] = generate_house_code(farm.id)
         validated_data['farm'] = farm
-        return super().create(validated_data)
+
+        def create():
+            validated_data['house_code'] = generate_house_code(farm.id)
+            return super(PoultryHouseSerializer, self).create(validated_data)
+        return create_with_code(create)

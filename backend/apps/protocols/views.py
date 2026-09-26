@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 
 from apps.batches.models import BatchStatus, PoultryBatch
 from apps.batches.serializers import generate_batch_code
+from apps.core.codes import create_with_code
 from apps.houses.models import PoultryHouse
 from apps.houses.serializers import generate_house_code
 from apps.protocols.models import ProtocolCategory, ProtocolTemplate, ProtocolTimeSlot
@@ -113,14 +114,14 @@ class OnboardingView(APIView):
         category_serializer.is_valid(raise_exception=True)
 
         with transaction.atomic():
-            house = PoultryHouse.objects.create(
+            house = create_with_code(lambda: PoultryHouse.objects.create(
                 house_code=generate_house_code(farm.id),
                 farm=farm,
                 name=house_data.get('name', 'Untitled house'),
                 size_m2=house_data.get('sizeM2'),
                 max_capacity=house_data.get('maxCapacity') or batch_data.get('initialCount', 0),
                 last_disinfection_date=None,
-            )
+            ))
 
             # The 5 defaults now exist (apps.houses.signals, fired synchronously by .create()
             # above, inside this same transaction) — append any custom categories after them.
@@ -172,7 +173,7 @@ class OnboardingView(APIView):
                     start_date + timedelta(days=cycle_value * UNIT_TO_DAYS.get(cycle_unit, 1))
                     if cycle_value else None
                 )
-                batch = PoultryBatch.objects.create(
+                batch = create_with_code(lambda: PoultryBatch.objects.create(
                     batch_code=generate_batch_code(farm.id),
                     name=str(batch_data.get('name') or '').strip(),
                     house=house,
@@ -184,7 +185,7 @@ class OnboardingView(APIView):
                     planned_end_date=planned_end_date,
                     weighing_frequency=batch_data.get('weighingFrequency') or None,
                     status=BatchStatus.ACTIVE,
-                )
+                ))
                 expand_protocol_to_alert_rules(batch)
                 sync_weighing_reminder(batch)
 

@@ -12,12 +12,15 @@ def validate_batch_name(value):
 
 
 def generate_batch_code(farm_id):
-    """Builds the next `BATCH-{year}-{seq}` code, scoped per farm and per calendar year
-    (counts existing rows for that farm+year prefix rather than a persisted counter)."""
+    """Builds the next `BATCH-{year}-{seq}` code — one past the highest in use for the farm-local
+    year (`localdate`: on 31 December after 23:00 Africa/Douala the UTC year is already the next).
+    `batch_code` is the primary key across the whole table, so the sequence is too; `farm_id` is
+    kept for the callers' signature. Never a row count — see apps.core.codes."""
     from django.utils import timezone
-    year = timezone.now().year
-    count = PoultryBatch.objects.filter(house__farm_id=farm_id, batch_code__startswith=f'BATCH-{year}-').count() + 1
-    return f'BATCH-{year}-{count:03d}'
+
+    from apps.core.codes import next_sequential_code
+    year = timezone.localdate().year
+    return next_sequential_code(PoultryBatch, 'batch_code', f'BATCH-{year}-')
 
 
 class PoultryBatchSerializer(serializers.ModelSerializer):
@@ -57,9 +60,13 @@ class PoultryBatchSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
+        from apps.core.codes import create_with_code
         farm = self.context['request'].user.farm
-        validated_data['batch_code'] = generate_batch_code(farm.id)
-        return super().create(validated_data)
+
+        def create():
+            validated_data['batch_code'] = generate_batch_code(farm.id)
+            return super(PoultryBatchSerializer, self).create(validated_data)
+        return create_with_code(create)
 
 
 class PoultryBatchQuickEditSerializer(serializers.ModelSerializer):
