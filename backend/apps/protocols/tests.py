@@ -51,6 +51,19 @@ class ScheduleViewMultiDayTests(APITestCase):
         for entry in response.data:
             self.assertLessEqual(entry['date'], '2026-03-16')
 
+    def test_without_a_month_it_defaults_to_the_current_one(self):
+        # `timezone` was never imported in this module: the documented default answered 500
+        # NameError (campaign 9, finding B12).
+        self.assertEqual(self.client.get('/api/protocols/schedule/').status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get('/api/protocols/schedule/', {'month': ''}).status_code, status.HTTP_200_OK)
+
+    def test_a_bad_month_or_date_is_a_french_400(self):
+        for params in ({'month': '2026-13'}, {'month': 'abc'}, {'date': '2026-02-30'}):
+            response = self.client.get('/api/protocols/schedule/', params)
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, params)
+            self.assertIn('format', response.data['detail'])
+            self.assertNotIn('must be', response.data['detail'])
+
     def test_no_entries_in_a_month_before_the_batch_started(self):
         response = self.client.get('/api/protocols/schedule/', {'month': '2026-02'})
         self.assertEqual(response.data, [])

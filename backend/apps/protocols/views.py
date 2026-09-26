@@ -2,6 +2,7 @@ from calendar import monthrange
 from datetime import date
 
 from django.db import transaction
+from django.utils import timezone
 from django.http import HttpResponse
 from drf_spectacular.utils import OpenApiExample, extend_schema, inline_serializer
 from rest_framework import serializers, status
@@ -237,7 +238,7 @@ class ScheduleView(APIView):
             try:
                 day = date.fromisoformat(day_param)
             except ValueError:
-                return Response({'detail': 'date must be formatted YYYY-MM-DD'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'detail': "La date doit être au format AAAA-MM-JJ."}, status=status.HTTP_400_BAD_REQUEST)
             return Response(compute_month_schedule(request.user.farm, day, day))
 
         month_param = request.query_params.get('month')
@@ -249,7 +250,7 @@ class ScheduleView(APIView):
                 year, month = today.year, today.month
             start = date(year, month, 1)
         except ValueError:
-            return Response({'detail': 'month must be formatted YYYY-MM'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'Le mois doit être au format AAAA-MM.'}, status=status.HTTP_400_BAD_REQUEST)
 
         end = date(year, month, monthrange(year, month)[1])
 
