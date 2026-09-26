@@ -6,8 +6,9 @@ deleted: remove any row that is not the newest and the count lands on a code sti
 next create hits the primary key (500) — and keeps hitting it, since the count never moves again.
 Deleting one house made "Nouveau bâtiment" fail for good (campaign 9, finding B1).
 
-The sequence now follows the highest existing suffix under the prefix, so a deleted code is never
-reissued either (an old audit-log line naming it cannot be mistaken for a newer row). Two creates
+The sequence now follows the highest existing suffix under the prefix, so it can never land on a
+live code. (A code freed by deleting the *newest* row is handed out again — there is no persisted
+counter to remember it — but only once nothing uses it.) Two creates
 racing on the same number (a double-tapped submit) are resolved by `create_with_code` retrying.
 """
 from django.db import IntegrityError, transaction
