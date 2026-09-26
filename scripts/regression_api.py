@@ -135,27 +135,28 @@ def main():
         finally:
             req("PATCH", path, {"assignees": original}, tok=admin)  # restore
 
-    @check("FIX: opening stock entry (upsert round-trip)")
+    @check("FIX: opening stock entry (quantity lands on the item)")
     def _():
-        farm_id = None
-        s, b = req("GET", "/api/farm/overview/", tok=admin)
-        # farm id is in the /api/farms/<id>/... routes; discover it from the stock-items link
-        # by trying the batch's farm, else parse from an existing item. Simplest: use /me.
         me = as_json(req("GET", "/api/auth/me/", tok=admin)[1]) or {}
-        farm_id = me.get("farm") or me.get("farm_id") or (batch or {}).get("farm") or 2
+        farm_id = me.get("farm")
+        if not farm_id:
+            raise Skip("no farm on /api/auth/me/")
+        # Opening stock is an IN movement on a new item. The item create itself takes no
+        # quantity (this check used to send one, never read it back, and passed on a 0 item).
+        # Stock items have no API delete; regression.sh removes this one through manage.py.
         name = "REG-Article-Temporaire"
-        s, b = req("POST", f"/api/farms/{farm_id}/stock-items/", {"name": name, "unit": "kg", "quantity": 42}, tok=admin)
+        s, b = req("POST", f"/api/farms/{farm_id}/stock-items/", {"name": name, "unit": "kg"}, tok=admin)
         if s not in (200, 201):
             raise Skip(f"cannot create a disposable stock item ({s} {b[:120]!r})")
-        code = as_json(b).get("item_code") or as_json(b).get("itemCode")
-        try:
-            items = as_json(req("GET", f"/api/farms/{farm_id}/stock-items/", tok=admin)[1]) or {}
-            row = next((i for i in items.get("items", items if isinstance(items, list) else []) if i.get("name") == name), None)
-            assert row is not None, "created item not found on read-back"
-            return f"opening stock item created and read back (code {code})"
-        finally:
-            if code:
-                req("DELETE", f"/api/stock-items/{code}/", tok=admin)  # restore
+        code = as_json(b)["item_code"]
+        s, b = req("POST", "/api/stock-movements/", {"item": code, "movement_type": "IN", "quantity": 42,
+                                                      "movement_date": datetime.now(FARM_TZ).date().isoformat()}, tok=admin)
+        assert s == 201, f"opening IN movement -> {s} {b[:160]!r}"
+        items = as_json(req("GET", f"/api/farms/{farm_id}/stock-items/", tok=admin)[1]) or {}
+        row = next((i for i in items.get("items", []) if i.get("item_code") == code), None)
+        assert row is not None, "created item not found on read-back"
+        assert float(row["current_quantity"]) == 42, f"on-hand {row['current_quantity']} != opening 42"
+        return f"item {code} created, opening 42 kg read back as on-hand"
 
     @check("FIX: task completion deducts stock, undo restores it")
     def _():

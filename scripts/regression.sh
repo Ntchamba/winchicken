@@ -71,6 +71,10 @@ fi
 section "Live API regression (FIX 1-7) against $REG_API_URL"
 python3 "$ROOT/scripts/regression_api.py"
 record "live API smoke" $?
+# The opening-stock check's item has no API delete; remove it (and its movements) here.
+$REG_COMPOSE exec -T web python manage.py shell --no-imports -c \
+  "from apps.stock.models import StockItem; StockItem.objects.filter(name='REG-Article-Temporaire').delete()" \
+  2>/dev/null || echo "  (could not remove REG-Article-Temporaire — compose stack not reachable)"
 
 # 4. Live UI smoke -------------------------------------------------------------------------------
 if [ "$NO_UI" -eq 0 ]; then
