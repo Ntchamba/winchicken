@@ -1,5 +1,6 @@
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from apps.core.permissions import IsAdminOrFarmManager
 from apps.houses.models import PoultryHouse
@@ -36,3 +37,19 @@ class HouseDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return PoultryHouse.objects.filter(farm=self.request.user.farm)
+
+    def destroy(self, request, *args, **kwargs):
+        # Deleting a house CASCADEs its batches with their daily logs, weighings, task
+        # completions and closing report, and unlinks their sales and stock movements. With an
+        # ACTIVE batch that is a live flock's whole history gone in one request, with no trace
+        # (campaign 9, finding B8). A running flock is closed first; an empty house (or one whose
+        # batches are all closed) is still deletable.
+        from apps.batches.models import BatchStatus
+
+        house = self.get_object()
+        if house.batches.filter(status=BatchStatus.ACTIVE).exists():
+            return Response(
+                {'detail': "Ce bâtiment a une bande en cours : clôturez-la avant de supprimer le bâtiment."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return super().destroy(request, *args, **kwargs)

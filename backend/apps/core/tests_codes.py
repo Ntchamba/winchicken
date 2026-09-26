@@ -81,12 +81,22 @@ class CreateAfterDeleteApiTests(APITestCase):
                                                     'initial_count': 10, 'start_date': dt.date.today().isoformat()}, format='json')
             self.assertEqual(r.status_code, 201, r.content[:300])
             codes.append(r.data['batch_code'])
-        self.client.delete(f'/api/houses/{houses[0]}/')  # cascades the first batch
+        self.client.patch(f'/api/batches/{codes[0]}/close/', {}, format='json')  # a closed batch's house may go
+        self.assertEqual(self.client.delete(f'/api/houses/{houses[0]}/').status_code, 204)  # cascades its batch
         r = self.client.post('/api/batches/', {'name': 'C', 'house_code': houses[2], 'production_type': 'BROILER',
                                                 'initial_count': 10, 'start_date': dt.date.today().isoformat()}, format='json')
         self.assertEqual(r.status_code, 201, r.content[:300])
         self.assertNotIn(r.data['batch_code'], codes)
         self.assertEqual(PoultryBatch.objects.filter(status=BatchStatus.ACTIVE).count(), 2)
+
+    def test_a_house_with_an_active_batch_cannot_be_deleted(self):
+        house = self.new_house('A')
+        r = self.client.post('/api/batches/', {'name': 'A', 'house_code': house, 'production_type': 'BROILER',
+                                                'initial_count': 10, 'start_date': dt.date.today().isoformat()}, format='json')
+        response = self.client.delete(f'/api/houses/{house}/')
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('clôturez', response.data['detail'])
+        self.assertTrue(PoultryBatch.objects.filter(batch_code=r.data['batch_code']).exists())
 
     def test_stock_item_code_follows_the_highest_not_the_count(self):
         category = StockCategory.objects.filter(farm=self.farm, kind='FEED').first() or StockCategory.objects.create(
