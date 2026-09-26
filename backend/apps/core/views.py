@@ -1,4 +1,3 @@
-from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError
 from django.shortcuts import get_object_or_404
@@ -25,7 +24,7 @@ from apps.core.serializers import (
     PreLoginResetRequestSerializer,
     WinchickenTokenObtainPairSerializer,
 )
-from apps.core.services import factory_reset_farm, record_audit_log
+from apps.core.services import InvalidHourlyRate, factory_reset_farm, parse_hourly_rate, record_audit_log
 
 
 @extend_schema(
@@ -279,8 +278,6 @@ class EmployeeDetailView(generics.RetrieveUpdateDestroyAPIView):
         record_audit_log(self.request.user, 'employee.deleted', f'{instance.name} ({instance.get_role_display()})')
 
 
-# User.hourly_rate is DecimalField(max_digits=10, decimal_places=2).
-HOURLY_RATE_LIMIT = Decimal('100000000')
 
 
 class EmployeeHourlyRateView(APIView):
@@ -295,18 +292,10 @@ class EmployeeHourlyRateView(APIView):
 
     def patch(self, request, pk):
         employee = get_object_or_404(User, pk=pk, farm=request.user.farm)
-        raw = request.data.get('hourly_rate')
-        if raw in (None, ''):
-            employee.hourly_rate = None
-        else:
-            try:
-                rate = Decimal(str(raw).strip().replace(',', '.'))
-            except InvalidOperation:
-                return Response({'hourly_rate': ['Doit être un nombre valide.']}, status=status.HTTP_400_BAD_REQUEST)
-            # Decimal() also takes "NaN", "Infinity" and negatives; a salary is hours x rate.
-            if not rate.is_finite() or rate < 0 or rate >= HOURLY_RATE_LIMIT:
-                return Response({'hourly_rate': ['Doit être un montant positif valide.']}, status=status.HTTP_400_BAD_REQUEST)
-            employee.hourly_rate = rate
+        try:
+            employee.hourly_rate = parse_hourly_rate(request.data.get('hourly_rate'))
+        except InvalidHourlyRate as exc:
+            return Response({'hourly_rate': [str(exc)]}, status=status.HTTP_400_BAD_REQUEST)
         employee.save(update_fields=['hourly_rate'])
         return Response({'hourly_rate': employee.hourly_rate})
 

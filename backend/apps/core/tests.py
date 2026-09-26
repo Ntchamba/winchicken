@@ -579,6 +579,36 @@ class EmployeeXlsxImportTests(APITestCase):
         self.assertEqual(resp.status_code, 403)
 
 
+class EmployeeImportRateTests(APITestCase):
+    """The import stored a -300 FCFA hourly rate and reported an oversized one with PostgreSQL's
+    English 'numeric field overflow' text (campaign 9, B10/B11). Same rule as the rate screen."""
+
+    setUp = EmployeeXlsxImportTests.setUp
+    _xlsx = staticmethod(EmployeeXlsxImportTests._xlsx)
+    _upload = EmployeeXlsxImportTests._upload
+
+    def test_negative_oversized_and_unreadable_rates_are_skipped_in_french(self):
+        resp = self._upload(self._xlsx([
+            ['Neg', 'neg@emp-imp.local', 'Ouvrier', 'M.', -300],
+            ['Huge', 'huge@emp-imp.local', 'Ouvrier', 'M.', 10 ** 15],
+            ['Text', 'text@emp-imp.local', 'Ouvrier', 'M.', 'beaucoup'],
+            ['Ok', 'ok@emp-imp.local', 'Ouvrier', 'M.', '1 250,5'],
+        ]))
+        self.assertEqual(resp.data['created'], 1, resp.data)
+        reasons = [s['reason'] for s in resp.data['skipped']]
+        self.assertEqual(len(reasons), 3, reasons)
+        for reason in reasons:
+            self.assertTrue(reason.startswith('taux horaire invalide'), reason)
+            self.assertNotIn('numeric field overflow', reason)
+        self.assertFalse(User.objects.filter(email__in=['neg@emp-imp.local', 'huge@emp-imp.local', 'text@emp-imp.local']).exists())
+        self.assertEqual(str(User.objects.get(email='ok@emp-imp.local').hourly_rate), '1250.50')
+
+    def test_a_blank_rate_still_leaves_the_rate_unset(self):
+        resp = self._upload(self._xlsx([['Blank', 'blank@emp-imp.local', 'Ouvrier', 'M.', '']]))
+        self.assertEqual(resp.data['created'], 1, resp.data)
+        self.assertIsNone(User.objects.get(email='blank@emp-imp.local').hourly_rate)
+
+
 class EmployeeImportJobTests(APITestCase):
     """2026-09-25: the import runs as a background job — 100 new accounts took 107 s in the
     request and past ~80 rows gunicorn killed it, losing the temporary passwords."""

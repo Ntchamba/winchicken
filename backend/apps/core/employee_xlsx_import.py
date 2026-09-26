@@ -12,6 +12,7 @@ from django.db import transaction
 
 from apps.core.models import ROLE_PROFILE_MODELS, Civility, User, UserRole, create_role_profile
 from apps.core.serializers import EmployeeSerializer
+from apps.core.services import InvalidHourlyRate, parse_hourly_rate
 from apps.core.xlsx import (
     WorkbookError, as_number, build_workbook, cell_getter, clean, header_index, open_rows, require_headers,
 )
@@ -98,7 +99,16 @@ def parse_and_apply_employee_import(actor, farm, file_obj, on_progress=None) -> 
             continue
 
         civility = _CIVILITY_BY_TEXT.get(clean(get(raw, 'civility')).lower(), Civility.M)
-        rate = as_number(get(raw, 'hourly_rate'))
+        raw_rate = get(raw, 'hourly_rate')
+        blank_rate = raw_rate is None or str(raw_rate).strip() == ''
+        number = as_number(raw_rate)
+        try:
+            if not blank_rate and number is None:
+                raise InvalidHourlyRate('Doit être un nombre valide.')
+            rate = parse_hourly_rate(number)
+        except InvalidHourlyRate as exc:
+            skipped.append({'line': line, 'reason': f'taux horaire invalide : {exc}'})
+            continue
 
         try:
             with transaction.atomic():

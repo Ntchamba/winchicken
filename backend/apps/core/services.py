@@ -1,3 +1,4 @@
+from decimal import Decimal, InvalidOperation
 import logging
 
 from django.db import transaction
@@ -76,3 +77,30 @@ def is_farm_configured(farm):
     ).distinct().exists()
     has_stock_item = StockItem.objects.filter(farm=farm).exists()
     return has_configured_house and has_stock_item
+
+
+# `User.hourly_rate` is DecimalField(max_digits=10, decimal_places=2): anything at or over 10^8
+# cannot be stored. Kept here, next to its one parser, so the rate screen and the employee
+# Excel import apply the same rule.
+HOURLY_RATE_LIMIT = Decimal('100000000')
+
+
+class InvalidHourlyRate(ValueError):
+    """The French message is the exception's text."""
+
+
+def parse_hourly_rate(raw):
+    """`None` for an empty value, else a finite `Decimal` in [0, 10^8). Accepts a decimal comma.
+    The employee import used to skip this: it stored a -300 FCFA rate (a negative salary) and
+    reported an oversized one with PostgreSQL's English "numeric field overflow" text
+    (campaign 9, finding B10/B11)."""
+    if raw in (None, ''):
+        return None
+    try:
+        rate = Decimal(str(raw).strip().replace(',', '.'))
+    except InvalidOperation:
+        raise InvalidHourlyRate('Doit être un nombre valide.')
+    # Decimal() also takes "NaN", "Infinity" and negatives; a salary is hours x rate.
+    if not rate.is_finite() or rate < 0 or rate >= HOURLY_RATE_LIMIT:
+        raise InvalidHourlyRate('Doit être un montant positif valide.')
+    return rate
