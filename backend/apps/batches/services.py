@@ -61,6 +61,32 @@ def validate_log_date(batch, log_date):
     return None
 
 
+# No chicken comes near 15 kg (a heavy broiler at slaughter is ~3-4 kg). A figure above it is
+# almost always grams typed into the kilo field — 1500 for 1,5 kg — and it was stored as is:
+# 10 000 kg and even 1e300 kg went through and poisoned the growth curve, FCR and health score
+# (campaign 9, finding B3).
+MAX_AVG_SAMPLE_WEIGHT_KG = 15
+
+
+def daily_value_error(*, eggs_collected, avg_sample_weight, living_birds):
+    """The plausibility rules shared by the quick entry and POST /daily-logs/: a sample weight a
+    chicken can have, and at most one egg per living bird per day (1 000 000 000 eggs from 797
+    broilers used to be accepted). Returns the French message, or None."""
+    from apps.core.formatting import fr_number
+
+    if avg_sample_weight is not None and avg_sample_weight > MAX_AVG_SAMPLE_WEIGHT_KG:
+        return (
+            f"Le poids moyen ({fr_number(avg_sample_weight)} kg) n'est pas plausible : il se saisit en "
+            f"kilos (ex. 1,5 pour 1 500 g), {MAX_AVG_SAMPLE_WEIGHT_KG} kg au plus."
+        )
+    if eggs_collected is not None and eggs_collected > living_birds:
+        return (
+            f"Le nombre d'œufs ({fr_number(eggs_collected)}) dépasse l'effectif de la bande "
+            f"({fr_number(living_birds)}) : au plus un œuf par poule et par jour."
+        )
+    return None
+
+
 def record_quick_entry(batch, log_date, mortality=None, eggs_collected=None, avg_sample_weight=None):
     """Upserts one day's `DailyLog` for the quick-entry panel — mortality, eggs, and (2026-08-25)
     average sample weight, each independently optional so a weighing logged on a day that
@@ -91,6 +117,12 @@ def record_quick_entry(batch, log_date, mortality=None, eggs_collected=None, avg
     resolved_mortality = mortality if mortality is not None else previous_mortality
     if resolved_mortality > batch.current_count + previous_mortality:
         return None, None, None, "Ne peut pas dépasser l'effectif actuel de la bande."
+    value_error = daily_value_error(
+        eggs_collected=eggs_collected, avg_sample_weight=avg_sample_weight,
+        living_birds=batch.current_count + previous_mortality - resolved_mortality,
+    )
+    if value_error:
+        return None, None, None, value_error
 
     defaults = {'mortality': resolved_mortality}
     if eggs_collected is not None:

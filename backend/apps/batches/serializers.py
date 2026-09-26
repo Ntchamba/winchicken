@@ -156,16 +156,27 @@ class DailyLogSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
-        from apps.batches.services import validate_log_date
+        from apps.batches.services import daily_value_error, validate_log_date
 
         batch = self.context['batch']
         # Same day rules as the quick entry (closed batch, future day, before the start).
         date_error = validate_log_date(batch, attrs['log_date']) if 'log_date' in attrs else None
         if date_error:
             raise serializers.ValidationError({'log_date': date_error})
+        # A strict create: the day already logged hit the unique constraint and answered 500.
+        if 'log_date' in attrs and DailyLog.objects.filter(batch=batch, log_date=attrs['log_date']).exists():
+            raise serializers.ValidationError(
+                {'log_date': "Une saisie existe déjà pour ce jour : corrigez-la depuis la saisie rapide."}
+            )
         mortality = attrs.get('mortality', 0)
         if mortality > batch.current_count:
             raise serializers.ValidationError({'mortality': "Ne peut pas dépasser l'effectif actuel de la bande."})
+        value_error = daily_value_error(
+            eggs_collected=attrs.get('eggs_collected'), avg_sample_weight=attrs.get('avg_sample_weight'),
+            living_birds=batch.current_count - mortality,
+        )
+        if value_error:
+            raise serializers.ValidationError({'non_field_errors': [value_error]})
         return attrs
 
 

@@ -141,6 +141,18 @@ class StockMovementSerializer(serializers.ModelSerializer):
             'note': {'required': False, 'help_text': 'Free-text note for a manual IN entry made outside the PurchaseOrder flow.'},
         }
 
+    # A manual movement had no bounds at all: an IN of -5 (a hidden OUT that bypassed every
+    # shortfall warning) and a movement dated 2200 were both stored (campaign 9, finding B6).
+    # The date rule is the one sales and expenses already use.
+    def validate_quantity(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("La quantité doit être supérieure à 0.")
+        return value
+
+    def validate_movement_date(self, value):
+        from apps.finance.serializers import _not_in_the_future
+        return _not_in_the_future(value, "La date du mouvement ne peut pas être dans le futur.")
+
     def create(self, validated_data):
         validated_data.pop('total_price', None)         # consumed by the view, not model fields
         validated_data.pop('production_quantity', None)
