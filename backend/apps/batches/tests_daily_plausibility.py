@@ -96,3 +96,36 @@ class ManualStockMovementTests(PlausibilityBase):
     def test_a_future_date_is_refused(self):
         self.assertEqual(self.post(movement_date='2200-01-01').status_code, 400)
         self.assertEqual(self.post(movement_date=(self.today + dt.timedelta(days=1)).isoformat()).status_code, 400)
+
+
+class StockItemParameterTests(PlausibilityBase):
+    """The stock form's PUT and the Excel import stored a -50 alert threshold and a -100 FCFA
+    unit price (campaign 9, finding B9)."""
+
+    def setUp(self):
+        super().setUp()
+        self.category = StockCategory.objects.create(farm=self.farm, label='Aliment', kind='FEED')
+
+    def put(self, **over):
+        row = {'category': self.category.id, 'name': 'Provende', 'unit': 'kg', 'alert_threshold': 5, 'unit_price': '450', **over}
+        return self.client.put(f'/api/farms/{self.farm.id}/stock-items/', {'items': [row]}, format='json')
+
+    def test_real_parameters_are_saved(self):
+        self.assertEqual(self.put().status_code, 200)
+
+    def test_negative_threshold_or_price_is_refused(self):
+        self.assertEqual(self.put(alert_threshold=-50).status_code, 400)
+        self.assertEqual(self.put(unit_price='-100').status_code, 400)
+        self.assertFalse(StockItem.objects.exists())
+
+    def test_raw_values_that_used_to_crash_are_400_per_line(self):
+        for over in ({'name': 'Z' * 10000}, {'alert_threshold': 'abc'}, {'unit_price': '100000000000000000000'}):
+            response = self.put(**over)
+            self.assertEqual(response.status_code, 400, over)
+            self.assertIn('0', response.data['items'])
+        row = {'category': self.category.id, 'unit': 'kg'}  # no name at all
+        response = self.client.put(f'/api/farms/{self.farm.id}/stock-items/', {'items': [row]}, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_a_blank_unit_is_still_accepted_as_before(self):
+        self.assertEqual(self.put(unit='').status_code, 200)

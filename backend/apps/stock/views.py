@@ -20,7 +20,8 @@ from apps.stock.models import (
     StockCategory, StockComposition, StockItem, StockMovement, Supplier, Vaccination,
 )
 from apps.stock.serializers import (
-    StockCategorySerializer, StockCompositionSerializer, StockItemSerializer, StockMovementSerializer,
+    StockCategorySerializer, StockCompositionSerializer, StockItemRowSerializer, StockItemSerializer,
+    StockMovementSerializer,
     SupplierSerializer, VaccinationSerializer, generate_item_code, next_free_item_code,
 )
 
@@ -143,6 +144,21 @@ class FarmStockItemsView(APIView):
         categories = {c.id: c for c in StockCategory.objects.filter(farm=farm)}
         supplier_ids = set(Supplier.objects.filter(farm=farm).values_list('id', flat=True))
 
+        # Each row's own values go through StockItemRowSerializer before anything is written.
+        # They used to be read raw: a name over 255 characters or a price over 10^10 was a
+        # DataError, a non-numeric threshold a ValueError, a row without a name a KeyError — 500
+        # each — and a -50 threshold or -100 FCFA price was stored (campaign 9, finding B9).
+        # Errors are keyed by row index, which the UI shows as "Ligne N : ...".
+        row_errors, clean_rows = {}, []
+        for index, entry in enumerate(items_data):
+            row = StockItemRowSerializer(data={k: entry[k] for k in StockItemRowSerializer.Meta.fields if k in entry})
+            if row.is_valid():
+                clean_rows.append(row.validated_data)
+            else:
+                row_errors[str(index)] = row.errors
+        if row_errors:
+            return Response({'items': row_errors}, status=status.HTTP_400_BAD_REQUEST)
+
         seen_names = set()
         for entry in items_data:
             key = (entry.get('name') or '').strip().lower()
@@ -161,7 +177,7 @@ class FarmStockItemsView(APIView):
             # article and gets one that avoids every code already taken or kept in this request.
             used_codes = set(existing) | {e['item_code'] for e in items_data if e.get('item_code')}
             kept_codes = set()
-            for entry in items_data:
+            for entry, values in zip(items_data, clean_rows):
                 category = categories.get(entry.get('category'))
                 if category is None:
                     return Response(
@@ -176,13 +192,13 @@ class FarmStockItemsView(APIView):
                     )
                 fields = {
                     'category': category,
-                    'name': entry['name'],
-                    'unit': entry.get('unit', ''),
-                    'item_type': entry.get('item_type', '') or '',
-                    'feed_stage': entry.get('feed_stage', 'NOT_APPLICABLE'),
-                    'cold_chain_required': entry.get('cold_chain_required', False),
-                    'alert_threshold': entry.get('alert_threshold', 0),
-                    'unit_price': entry.get('unit_price', 0),
+                    'name': values['name'],
+                    'unit': values.get('unit', ''),
+                    'item_type': values.get('item_type', '') or '',
+                    'feed_stage': values.get('feed_stage', 'NOT_APPLICABLE'),
+                    'cold_chain_required': values.get('cold_chain_required', False),
+                    'alert_threshold': values.get('alert_threshold', 0),
+                    'unit_price': values.get('unit_price', 0),
                     'supplier_id': supplier_id,
                 }
                 item = existing.get(entry.get('item_code'))

@@ -69,8 +69,15 @@ class StockItemSerializer(serializers.ModelSerializer):
             'current_quantity', 'supplier', 'supplier_name',
         ]
         read_only_fields = ['item_code']
+        # min_value 0 on both: the stock form's PUT and the Excel import (which reuses this
+        # serializer) stored a -50 threshold and a -100 FCFA unit price (campaign 9, finding B9) —
+        # a negative price turns every purchase-order and valuation figure built on it negative.
         extra_kwargs = {
-            'alert_threshold': {'help_text': 'An article is low (badge, overview, LOW_STOCK alert) when current_quantity is at or under this value.'},
+            'alert_threshold': {
+                'min_value': 0,
+                'help_text': 'An article is low (badge, overview, LOW_STOCK alert) when current_quantity is at or under this value.',
+            },
+            'unit_price': {'min_value': 0},
             'supplier': {'required': False, 'allow_null': True},
         }
 
@@ -106,6 +113,20 @@ def next_free_item_code(farm_id, category, taken):
         if code not in taken:
             return code
         seq += 1
+
+
+class StockItemRowSerializer(StockItemSerializer):
+    """One row of the stock parameters PUT, validated for its own values only — category and
+    supplier are resolved (and farm-checked) by the view, `item_code` matches the row. Same
+    field rules as `StockItemSerializer` (which the Excel import uses), except that `unit` may be
+    left blank here, as the form always could."""
+
+    class Meta(StockItemSerializer.Meta):
+        fields = ['name', 'unit', 'item_type', 'feed_stage', 'cold_chain_required', 'alert_threshold', 'unit_price']
+        extra_kwargs = {
+            **StockItemSerializer.Meta.extra_kwargs,
+            'unit': {'required': False, 'allow_blank': True},
+        }
 
 
 class StockMovementSerializer(serializers.ModelSerializer):
