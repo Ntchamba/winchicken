@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import HouseProtocolForm from "../../components/HouseProtocolForm";
 import BatchHeaderStep from "../../components/onboarding/BatchHeaderStep";
 import BatchMethodChoice from "../../components/onboarding/BatchMethodChoice";
@@ -58,11 +58,20 @@ export default function OnboardingProtocolPage() {
   // reset its own useState-held form data.
   const [addedHouses, setAddedHouses] = useState([]);
   const [formKey, setFormKey] = useState(0);
-  const [step, setStep] = useState("header");
   // Lifted here rather than left in the header step, so stepping back and forth through the
   // sequence never loses what was typed.
   const [pendingHeader, setPendingHeader] = useState(houseHeader || {});
   const navigate = useNavigate();
+  const location = useLocation();
+  // Each step is its own history entry (router state), so the phone's back button steps back
+  // through header -> choice -> manual/excel instead of leaving the page: it used to land on
+  // /dashboard from any step, silently discarding the header and every protocol line typed
+  // (campaign 9, finding B15). A reload onto a later step with no header falls back to the
+  // header, since what was typed lives in this page's state, not in the URL.
+  const historyStep = location.state?.batchStep || "header";
+  const step = historyStep !== "header" && !pendingHeader.batchName ? "header" : historyStep;
+  const setStep = (next) => navigate(location.pathname + location.search, { state: { ...location.state, batchStep: next } });
+  const stepBack = () => navigate(-1);
   const { user, refreshMe } = useAuth();
   // The farm's existing articles, so the Consommation selector finds "Provende" after a reload
   // instead of offering to create it a second time.
@@ -171,7 +180,7 @@ export default function OnboardingProtocolPage() {
         <BatchMethodChoice
           onSelectManual={() => setStep("manual")}
           onSelectExcel={() => setStep("excel")}
-          onBack={() => setStep("header")}
+          onBack={stepBack}
         />
       </>
     );
@@ -185,7 +194,7 @@ export default function OnboardingProtocolPage() {
           farmId={user.farm}
           onProtocolImported={handleProtocolImported}
           onContinue={() => setStep("manual")}
-          onBack={() => setStep("choice")}
+          onBack={stepBack}
         />
       </>
     );
@@ -195,7 +204,7 @@ export default function OnboardingProtocolPage() {
     <>
       {addedHousesPanel}
       <div className="batch-step-actions" style={{ marginTop: 0, marginBottom: 14 }}>
-        <button type="button" className="batch-back-button" onClick={() => setStep("choice")}>
+        <button type="button" className="batch-back-button" onClick={stepBack}>
           Retour
         </button>
       </div>

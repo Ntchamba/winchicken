@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import OnboardingProtocolPage from "../OnboardingProtocolPage";
@@ -16,8 +16,40 @@ import { onboardingApi } from "../../../api/endpoints";
 // (Farm.singleton_lock) — the real farm here already carries real manual-testing data (incident
 // reports, etc.) that a factory reset would destroy just to get an is_configured:false user.
 
-const navigateMock = vi.fn();
-vi.mock("react-router-dom", () => ({ useNavigate: () => navigateMock }));
+// A tiny in-memory history: each wizard step is its own history entry since campaign 9 (B15 —
+// the phone's back button left the page from any step), so navigating to the same path pushes
+// an entry carrying the step, navigate(-1) steps back, and any other path is just recorded.
+const PAGE = "/onboarding/protocol";
+const { navigateMock, fakeHistory } = vi.hoisted(() => {
+  const listeners = new Set();
+  let entries;
+  let index;
+  const emit = () => listeners.forEach((l) => l());
+  const fakeHistory = {
+    reset() { entries = [{ pathname: "/onboarding/protocol", search: "", state: null }]; index = 0; },
+    current: () => entries[index],
+    subscribe: (l) => { listeners.add(l); return () => listeners.delete(l); },
+  };
+  fakeHistory.reset();
+  const navigateMock = vi.fn((to, opts) => {
+    if (typeof to === "number") { index = Math.max(0, Math.min(entries.length - 1, index + to)); emit(); return; }
+    if (to === entries[index].pathname) {
+      entries = [...entries.slice(0, index + 1), { pathname: to, search: "", state: opts?.state ?? null }];
+      index += 1;
+      emit();
+    }
+  });
+  return { navigateMock, fakeHistory };
+});
+vi.mock("react-router-dom", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    useNavigate: () => navigateMock,
+    useLocation: () => useSyncExternalStore(fakeHistory.subscribe, fakeHistory.current),
+  };
+});
+beforeEach(() => fakeHistory.reset());
+const leftThePage = () => navigateMock.mock.calls.filter(([to]) => typeof to === "string" && to !== PAGE);
 vi.mock("../../../context/AuthContext", () => ({ useAuth: vi.fn() }));
 vi.mock("../../../context/OnboardingContext", () => ({ useOnboarding: vi.fn() }));
 vi.mock("../../../api/endpoints", () => ({
@@ -73,8 +105,8 @@ describe("OnboardingProtocolPage — true first-time onboarding (is_configured: 
     await userEvent.click(screen.getByRole("button", { name: "Ajouter ce bâtiment et en configurer un autre" }));
 
     await waitFor(() => expect(onboardingApi.submit).toHaveBeenCalledTimes(1));
-    // Stayed on this step — no navigation happened for "add another".
-    expect(navigateMock).not.toHaveBeenCalled();
+    // Stayed on this page — no navigation away happened for "add another".
+    expect(leftThePage()).toEqual([]);
     // Running list shows the just-added house, and a way to move on without adding more.
     expect(await screen.findByText("Poulailler Nord")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continuer sans ajouter d'autre bâtiment" })).toBeInTheDocument();
@@ -157,5 +189,17 @@ describe("OnboardingProtocolPage — '+ Nouvelle bande' add-house flow (is_confi
     expect(screen.getByRole("spinbutton", { name: /poussins mis en place/i })).toHaveValue(500);
     expect(screen.getByRole("textbox", { name: /nom du bâtiment/i })).toHaveValue("Bâtiment A");
     expect(screen.getByRole("combobox", { name: /type de protocole/i })).toHaveValue("LAYER");
+  });
+
+  test("the phone's back button steps back through the wizard instead of leaving it", async () => {
+    render(<OnboardingProtocolPage />);
+    await goToManualForm();
+    expect(screen.getByRole("button", { name: /charger le modèle de départ/i })).toBeInTheDocument();
+
+    act(() => navigateMock(-1)); // what the browser's back button does to the history
+    expect(await screen.findByRole("button", { name: /Configurer manuellement/i })).toBeInTheDocument();
+    act(() => navigateMock(-1));
+    expect(await screen.findByRole("textbox", { name: /nom de la bande/i })).toHaveValue("Bande test");
+    expect(leftThePage()).toEqual([]);
   });
 });
