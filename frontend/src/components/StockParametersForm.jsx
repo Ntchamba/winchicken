@@ -52,8 +52,11 @@ const STOCK_ITEM_TYPE_OPTIONS = [
 
 // Column widths for the item table — Article | Détail | Seuil | Prix | Fournisseur | Quantité |
 // Date | (delete). Set inline on .table-head and every .schedule-row because the shared grid in
-// house-protocol-theme-light.css only declares 5 tracks.
-const ITEM_GRID = "1.4fr 1fr 1.1fr .7fr 1.1fr .8fr 140px 34px";
+// house-protocol-theme-light.css only declares 5 tracks. The two fixed tracks are minmax(0, …):
+// inline, this template outlives the phone rule that stacks every input full width, and a plain
+// 140px + 34px (+ 7 gaps) row was 346px — wider than a 375/390px phone (campaign 9). Desktop is
+// unchanged: a minmax track grows to its maximum before the fr tracks share what is left.
+const ITEM_GRID = "1.4fr 1fr 1.1fr .7fr 1.1fr .8fr minmax(0, 140px) minmax(0, 34px)";
 
 let nextRowId = 1000;
 const makeRow = (overrides = {}) => ({
