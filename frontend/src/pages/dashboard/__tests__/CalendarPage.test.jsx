@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import CalendarPage from "../CalendarPage";
 import { scheduleApi } from "../../../api/endpoints";
+import { networkError } from "../../../test/networkError";
 
 // 2026-09-25: the grid used to download every task of the month (4.4 MB at 50 houses). It now
 // reads per-day counts + the pills a cell shows, and fetches a day's full list when opened.
@@ -47,7 +48,7 @@ describe("CalendarPage", () => {
   });
 
   test("a day that fails to load says so", async () => {
-    scheduleApi.day.mockRejectedValue(new Error("réseau"));
+    scheduleApi.day.mockRejectedValue(networkError());
     render(<MemoryRouter><CalendarPage /></MemoryRouter>);
     await userEvent.click((await screen.findByText(/Aliment 1/)).closest("button"));
     // No answer at all: the phone is off the network, and the message says so.

@@ -83,7 +83,15 @@ const ASK_ADMIN = "Demandez à l'administrateur de la ferme si vous devez pouvoi
  */
 export function getServerErrorMessage(err, fallback = "Une erreur est survenue. Réessayez.") {
   if (!err?.response) {
-    return "Le serveur est inaccessible. Vérifiez votre connexion et réessayez.";
+    // Only a request that went out and got nothing back is "unreachable" (axios: `request` set,
+    // no `response` — offline, timeout, CORS). A bug in the page itself, e.g. a TypeError while
+    // building the payload, used to be reported as "server unreachable" too, and sent a farmer
+    // chasing their connection for an error no connection could fix (campaign 9, finding B18).
+    if (err?.isAxiosError || err?.request != null || ["ERR_NETWORK", "ECONNABORTED", "ETIMEDOUT"].includes(err?.code)) {
+      return "Le serveur est inaccessible. Vérifiez votre connexion et réessayez.";
+    }
+    if (err) console.error(err);
+    return fallback;
   }
   const { status } = err.response;
   const data = err.response.data;

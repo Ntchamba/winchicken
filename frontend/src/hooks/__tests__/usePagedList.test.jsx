@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import usePagedList from "../usePagedList";
+import { networkError } from "../../test/networkError";
 
 const page = (n, rows, next) => ({ data: { count: 45, next: next ? `?page=${n + 1}` : null, results: rows } });
 const rowsOf = (from, to) => Array.from({ length: to - from }, (_, i) => ({ id: from + i }));
@@ -46,7 +47,7 @@ describe("usePagedList", () => {
   test("a failure is reported, the rows already shown stay", async () => {
     const fetchPage = vi.fn()
       .mockResolvedValueOnce(page(1, rowsOf(0, 20), true))
-      .mockRejectedValueOnce(new Error("réseau"));
+      .mockRejectedValueOnce(networkError());
     const { result } = renderHook(() => usePagedList(fetchPage));
     await waitFor(() => expect(result.current.rows).toHaveLength(20));
     await act(() => result.current.loadMore());

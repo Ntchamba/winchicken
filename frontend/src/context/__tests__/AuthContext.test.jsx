@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthProvider, useAuth } from "../AuthContext";
 import ProtectedRoute from "../../routes/ProtectedRoute";
 import { authApi } from "../../api/endpoints";
+import { networkError } from "../../test/networkError";
 
 // 2026-09-25 (phone usability audit): opening the app on a slow farm connection showed a bare
 // "Chargement…" for as long as /auth/me took, and any failed /auth/me — a dropped connection
@@ -50,7 +51,7 @@ describe("AuthProvider on a poor connection", () => {
   test("a dropped connection keeps the user logged in", async () => {
     localStorage.setItem("winchicken_tokens", TOKENS);
     localStorage.setItem("winchicken_user", JSON.stringify(USER));
-    authApi.me.mockRejectedValue(new Error("Network Error"));
+    authApi.me.mockRejectedValue(networkError());
     app();
     await waitFor(() => expect(authApi.me).toHaveBeenCalled());
     expect(screen.getByText("Connecté : Awa")).toBeInTheDocument();
@@ -69,7 +70,7 @@ describe("AuthProvider on a poor connection", () => {
 
   test("first start with no server: a way out, not a login form or a bare loader", async () => {
     localStorage.setItem("winchicken_tokens", TOKENS);
-    authApi.me.mockRejectedValue(new Error("Network Error"));
+    authApi.me.mockRejectedValue(networkError());
     app();
     expect(await screen.findByText(/Le serveur de la ferme ne répond pas/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Réessayer" })).toBeInTheDocument();

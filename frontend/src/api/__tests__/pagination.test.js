@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 
 import { fetchAllPages } from "../pagination";
+import { networkError } from "../../test/networkError";
 
 // Every list endpoint is paginated by 20. A caller that sums or searches a list must read every
 // page, or its answer silently changes at row 21 ("Ventes du jour" short from the 21st sale).
@@ -29,7 +30,7 @@ describe("fetchAllPages", () => {
   test("a failing page rejects the whole read instead of returning a partial list", async () => {
     const get = vi.fn()
       .mockResolvedValueOnce({ data: { next: "?page=2", results: [1] } })
-      .mockRejectedValueOnce(new Error("réseau"));
-    await expect(fetchAllPages(get)).rejects.toThrow("réseau");
+      .mockRejectedValueOnce(networkError());
+    await expect(fetchAllPages(get)).rejects.toThrow("Network Error");
   });
 });

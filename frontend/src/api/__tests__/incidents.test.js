@@ -5,6 +5,7 @@ const faults = vi.fn();
 vi.mock("../endpoints", () => ({ maintenanceApi: { cases: (...a) => cases(...a), faults: (...a) => faults(...a) } }));
 
 import { countOf, countOpenIncidents } from "../incidents";
+import { networkError } from "../../test/networkError";
 
 describe("countOf", () => {
   test("reads a paginated count, else the array length", () => {
@@ -39,8 +40,8 @@ describe("countOpenIncidents", () => {
   });
 
   test("a failed request rejects instead of reporting zero", async () => {
-    cases.mockRejectedValue(new Error("réseau"));
+    cases.mockRejectedValue(networkError());
     faults.mockResolvedValue({ data: [] });
-    await expect(countOpenIncidents()).rejects.toThrow("réseau");
+    await expect(countOpenIncidents()).rejects.toThrow("Network Error");
   });
 });

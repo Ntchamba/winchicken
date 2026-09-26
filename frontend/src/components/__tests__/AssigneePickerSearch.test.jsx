@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import AssigneePicker, { PICKER_LIMIT } from "../AssigneePicker";
 import { tasksApi } from "../../api/endpoints";
+import { networkError } from "../../test/networkError";
 
 // Load test 2026-09-25: every screen with a picker downloaded every account (1 MB at 20 000
 // staff). Without a `users` prop the picker loads only when opened, searches server-side, and
@@ -64,7 +65,7 @@ describe("AssigneePicker without a users list", () => {
   });
 
   test("a failed load is said, not shown as an empty farm", async () => {
-    tasksApi.assignableUsers.mockRejectedValue(new Error("réseau"));
+    tasksApi.assignableUsers.mockRejectedValue(networkError());
     render(<AssigneePicker assignedTo={[]} assignedToNames={[]} onChange={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: /Modifier/ }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Le serveur est inaccessible. Vérifiez votre connexion et réessayez.");

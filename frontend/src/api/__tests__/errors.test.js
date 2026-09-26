@@ -1,11 +1,20 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { getFieldErrors, getServerErrorMessage } from "../errors";
 
 const err = (data) => ({ response: { data } });
 
 describe("getServerErrorMessage", () => {
   test("no response at all means the server was unreachable", () => {
-    expect(getServerErrorMessage({})).toMatch(/serveur est inaccessible/);
+    // What axios rejects with when the request went out and nothing came back.
+    expect(getServerErrorMessage({ isAxiosError: true, request: {} })).toMatch(/serveur est inaccessible/);
+  });
+
+  test("a bug in the page (no request made) is not reported as an unreachable server", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const message = getServerErrorMessage(new TypeError("x.toUpperCase is not a function"), "Le protocole n'a pas été enregistré. Réessayez.");
+    expect(message).toBe("Le protocole n'a pas été enregistré. Réessayez.");
+    expect(message).not.toMatch(/inaccessible/);
+    spy.mockRestore();
   });
 
   test("detail wins, then the first field error, then the fallback", () => {

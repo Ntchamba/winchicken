@@ -12,6 +12,7 @@ vi.mock("../../api/endpoints", () => ({
 }));
 
 import useHouses from "../useHouses";
+import { networkError } from "../../test/networkError";
 
 const page = (results) => ({ data: { count: results.length, results } });
 
@@ -46,7 +47,7 @@ describe("useHouses", () => {
   });
 
   test("a failed load keeps the error and stops loading; refetch recovers", async () => {
-    api.houses.mockRejectedValueOnce(new Error("réseau"));
+    api.houses.mockRejectedValueOnce(networkError());
     const { result } = renderHook(() => useHouses());
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.error).toBeInstanceOf(Error);

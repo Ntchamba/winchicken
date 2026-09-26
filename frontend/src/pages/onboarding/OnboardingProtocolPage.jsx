@@ -8,6 +8,7 @@ import { onboardingApi } from "../../api/endpoints";
 import { useAuth } from "../../context/AuthContext";
 import { useOnboarding } from "../../context/OnboardingContext";
 import { todayISO } from "../../utils/localDate";
+import { buildProtocolSchedules } from "../../utils/protocolRows";
 import useStockItemOptions from "../../hooks/useStockItemOptions";
 
 function buildOnboardingRequest(payload, productionType) {
@@ -90,13 +91,14 @@ export default function OnboardingProtocolPage() {
     try {
       setHouseHeader({ ...payload.house, batchName: payload.batchName, weighingFrequency: payload.weighingFrequency });
       setCategories(payload.categories);
-      const scheduleMap = {};
-      for (const cat of payload.categories) scheduleMap[cat.id] = [];
-      for (const line of payload.protocolLines) {
-        const cat = payload.categories[line.categoryIndex];
-        if (cat) scheduleMap[cat.id].push(line);
-      }
-      setSchedules(scheduleMap);
+      // Kept as *form rows* (fromUnit, toUnit, ...), the shape HouseProtocolForm reopens with when
+      // the user steps back to this page. It used to keep the API lines (from_unit, ...): back on
+      // this step, "Suivant" threw in buildPayload and the page said the server was unreachable,
+      // so a first-time user who went back to fix something could never save (campaign 9, B18).
+      setSchedules(buildProtocolSchedules(
+        payload.categories,
+        payload.protocolLines.map((line) => ({ ...line, category: payload.categories[line.categoryIndex]?.id })),
+      ));
 
       await onboardingApi.submit(buildOnboardingRequest(payload, pendingHeader.productionType));
       if (isAddingHouse) {
