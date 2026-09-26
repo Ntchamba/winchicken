@@ -11,6 +11,45 @@ def validate_batch_name(value):
     return value.strip()
 
 
+# How far a batch's dates may sit from today. A layer flock runs ~18 months, so a batch entered
+# mid-cycle can have started well over a year ago; nobody places chicks years ahead, and no
+# cycle outlives three years. Beyond these a date is a typo (1900, 2200), and it would make
+# `day_of_cycle` read 46 289 or -63 284 on every screen.
+BATCH_START_MAX_PAST_DAYS = 2 * 365
+BATCH_START_MAX_FUTURE_DAYS = 365
+BATCH_CYCLE_MAX_DAYS = 3 * 365
+
+
+def batch_value_errors(*, initial_count, max_capacity, start_date, planned_end_date) -> dict:
+    """The one set of plausibility rules for a new batch, shared by POST /api/batches/ and the
+    onboarding endpoint (the UI's "+ Nouvelle bande"), so the two cannot drift apart. Returns
+    `{field: message}` — empty when the batch is plausible. Field names are the model's."""
+    from django.utils import timezone
+
+    from apps.core.formatting import fr_number
+    errors = {}
+    if initial_count is not None:
+        if initial_count < 1:
+            errors['initial_count'] = "L'effectif de départ doit être d'au moins 1 volaille."
+        elif max_capacity is not None and initial_count > max_capacity:
+            errors['initial_count'] = (
+                f"L'effectif de départ ({fr_number(initial_count)}) dépasse la capacité maximale "
+                f"du bâtiment ({fr_number(max_capacity)})."
+            )
+    if start_date is not None:
+        today = timezone.localdate()
+        if (today - start_date).days > BATCH_START_MAX_PAST_DAYS:
+            errors['start_date'] = "La date de début est trop ancienne (plus de 2 ans)."
+        elif (start_date - today).days > BATCH_START_MAX_FUTURE_DAYS:
+            errors['start_date'] = "La date de début est trop loin dans le futur (plus d'un an)."
+        if planned_end_date is not None:
+            if planned_end_date < start_date:
+                errors['planned_end_date'] = "La date de fin prévue ne peut pas précéder la date de début."
+            elif (planned_end_date - start_date).days > BATCH_CYCLE_MAX_DAYS:
+                errors['planned_end_date'] = "Le cycle ne peut pas dépasser 3 ans."
+    return errors
+
+
 def generate_batch_code(farm_id):
     """Builds the next `BATCH-{year}-{seq}` code — one past the highest in use for the farm-local
     year (`localdate`: on 31 December after 23:00 Africa/Douala the UTC year is already the next).
@@ -58,6 +97,22 @@ class PoultryBatchSerializer(serializers.ModelSerializer):
         if PoultryBatch.objects.filter(house_id=value, status=BatchStatus.ACTIVE).exists():
             raise serializers.ValidationError("Ce bâtiment a déjà une bande active (vide sanitaire requis).")
         return value
+
+    def validate(self, attrs):
+        from apps.houses.models import PoultryHouse
+
+        house = PoultryHouse.objects.filter(
+            house_code=attrs.get('house_id'), farm=self.context['request'].user.farm,
+        ).first()
+        if house is None:
+            raise serializers.ValidationError({'house_code': "Bâtiment introuvable."})
+        errors = batch_value_errors(
+            initial_count=attrs.get('initial_count'), max_capacity=house.max_capacity,
+            start_date=attrs.get('start_date'), planned_end_date=attrs.get('planned_end_date'),
+        )
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
 
     def create(self, validated_data):
         from apps.core.codes import create_with_code

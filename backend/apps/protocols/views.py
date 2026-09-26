@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date
 
 from django.db import transaction
 from django.http import HttpResponse
@@ -14,12 +14,12 @@ from apps.batches.models import BatchStatus, PoultryBatch
 from apps.batches.serializers import generate_batch_code
 from apps.core.codes import create_with_code
 from apps.houses.models import PoultryHouse
-from apps.houses.serializers import generate_house_code
+from apps.houses.serializers import PoultryHouseSerializer, generate_house_code
 from apps.protocols.models import ProtocolCategory, ProtocolTemplate, ProtocolTimeSlot
-from apps.protocols.serializers import ProtocolCategorySerializer, ProtocolTemplateSerializer
+from apps.protocols.serializers import OnboardingBatchSerializer, ProtocolCategorySerializer, ProtocolTemplateSerializer
 from apps.batches.services import sync_weighing_reminder
 from apps.houses.services import compute_month_schedule, summarize_month_schedule
-from apps.protocols.services import UNIT_TO_DAYS, expand_protocol_to_alert_rules
+from apps.protocols.services import expand_protocol_to_alert_rules
 from apps.protocols.xlsx_import import ImportError as XlsxImportError
 from apps.protocols.xlsx_import import build_template_workbook, parse_protocol_rows
 
@@ -110,6 +110,27 @@ class OnboardingView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # House and batch are validated through serializers too, before anything is written —
+        # both used to be read raw out of request.data (campaign 9, finding B7: seven inputs
+        # answered 500 and the rest were stored as given). The house reuses the same serializer
+        # as POST /api/houses/; the batch rules are shared with POST /api/batches/.
+        house_serializer = PoultryHouseSerializer(data={
+            'name': house_data.get('name'),
+            'size_m2': house_data.get('sizeM2'),
+            'max_capacity': house_data.get('maxCapacity') or batch_data.get('initialCount') or 0,
+        })
+        if not house_serializer.is_valid():
+            return Response({'house': house_serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        house_values = house_serializer.validated_data
+        batch_values = None
+        if batch_data.get('initialCount'):
+            batch_serializer = OnboardingBatchSerializer(
+                data=batch_data, context={'max_capacity': house_values['max_capacity']},
+            )
+            if not batch_serializer.is_valid():
+                return Response({'batch': batch_serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+            batch_values = batch_serializer.validated_data
+
         category_serializer = ProtocolCategorySerializer(data=custom_categories_data, many=True)
         category_serializer.is_valid(raise_exception=True)
 
@@ -117,10 +138,8 @@ class OnboardingView(APIView):
             house = create_with_code(lambda: PoultryHouse.objects.create(
                 house_code=generate_house_code(farm.id),
                 farm=farm,
-                name=house_data.get('name', 'Untitled house'),
-                size_m2=house_data.get('sizeM2'),
-                max_capacity=house_data.get('maxCapacity') or batch_data.get('initialCount', 0),
                 last_disinfection_date=None,
+                **house_values,
             ))
 
             # The 5 defaults now exist (apps.houses.signals, fired synchronously by .create()
@@ -162,28 +181,18 @@ class OnboardingView(APIView):
             ])
 
             batch = None
-            if batch_data.get('initialCount'):
-                from django.utils.dateparse import parse_date
-                from django.utils import timezone
-
-                start_date = parse_date(batch_data.get('startDate', '')) or timezone.localdate()
-                cycle_value = int(batch_data.get('growthCycleValue', 0) or 0)
-                cycle_unit = batch_data.get('growthCycleUnit', 'DAY')
-                planned_end_date = (
-                    start_date + timedelta(days=cycle_value * UNIT_TO_DAYS.get(cycle_unit, 1))
-                    if cycle_value else None
-                )
+            if batch_values is not None:
                 batch = create_with_code(lambda: PoultryBatch.objects.create(
                     batch_code=generate_batch_code(farm.id),
-                    name=str(batch_data.get('name') or '').strip(),
+                    name=batch_values['name'],
                     house=house,
                     farmer=request.user if request.user.role == 'FARMER' else None,
-                    production_type=batch_data.get('productionType', 'BROILER'),
-                    breed=batch_data.get('breed', ''),
-                    initial_count=batch_data['initialCount'],
-                    start_date=start_date,
-                    planned_end_date=planned_end_date,
-                    weighing_frequency=batch_data.get('weighingFrequency') or None,
+                    production_type=batch_values['productionType'],
+                    breed=batch_values.get('breed', ''),
+                    initial_count=batch_values['initialCount'],
+                    start_date=batch_values['startDate'],
+                    planned_end_date=batch_values['plannedEndDate'],
+                    weighing_frequency=batch_values.get('weighingFrequency') or None,
                     status=BatchStatus.ACTIVE,
                 ))
                 expand_protocol_to_alert_rules(batch)

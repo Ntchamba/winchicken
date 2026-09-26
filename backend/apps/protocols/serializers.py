@@ -1,6 +1,9 @@
 from rest_framework import serializers
 
+from apps.batches.models import ProductionType
+from apps.batches.serializers import BATCH_CYCLE_MAX_DAYS, batch_value_errors, validate_batch_name
 from apps.protocols.models import CUSTOM_CATEGORY_ICON_CHOICES, ProtocolCategory, ProtocolTemplate, ProtocolTimeSlot
+from apps.protocols.services import UNIT_TO_DAYS
 
 
 class ProtocolCategorySerializer(serializers.ModelSerializer):
@@ -124,4 +127,47 @@ class ProtocolTemplateSerializer(serializers.ModelSerializer):
                     f"La fin de la période (jour {end}) est avant le début (jour {start}) : "
                     "vérifiez les valeurs et les unités « De » et « À »."
                 )
+        return attrs
+
+
+class OnboardingBatchSerializer(serializers.Serializer):
+    """The `batch` block of POST /api/protocols/onboarding/ (camelCase, as the UI sends it).
+    The view used to read these keys straight out of `request.data`: a name over 255 characters,
+    a negative or non-numeric count, a 10^9-day cycle or an unknown weighing frequency each
+    answered 500, and "DRAGON" was stored as a production type (campaign 9, finding B7). The
+    plausibility rules themselves are `apps.batches.serializers.batch_value_errors`, shared with
+    POST /api/batches/ — only the parsing lives here. `maxCapacity` comes in through context."""
+
+    name = serializers.CharField(max_length=255)
+    initialCount = serializers.IntegerField()
+    startDate = serializers.DateField(required=False, allow_null=True)
+    productionType = serializers.ChoiceField(choices=ProductionType.choices, default=ProductionType.BROILER)
+    breed = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    growthCycleValue = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+    growthCycleUnit = serializers.ChoiceField(choices=list(UNIT_TO_DAYS), required=False, default='DAY')
+    weighingFrequency = serializers.ChoiceField(
+        choices=['DAY', 'WEEK', 'MONTH'], required=False, allow_null=True, allow_blank=True,
+    )
+
+    validate_name = staticmethod(validate_batch_name)
+
+    def validate(self, attrs):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        start = attrs.get('startDate') or timezone.localdate()
+        cycle = attrs.get('growthCycleValue') or 0
+        days = cycle * UNIT_TO_DAYS[attrs.get('growthCycleUnit') or 'DAY']
+        if days > BATCH_CYCLE_MAX_DAYS:
+            raise serializers.ValidationError({'growthCycleValue': "Le cycle ne peut pas dépasser 3 ans."})
+        attrs['startDate'] = start
+        attrs['plannedEndDate'] = start + timedelta(days=days) if cycle else None
+        errors = batch_value_errors(
+            initial_count=attrs['initialCount'], max_capacity=self.context.get('max_capacity'),
+            start_date=start, planned_end_date=attrs['plannedEndDate'],
+        )
+        if errors:
+            names = {'initial_count': 'initialCount', 'start_date': 'startDate', 'planned_end_date': 'growthCycleValue'}
+            raise serializers.ValidationError({names[k]: v for k, v in errors.items()})
         return attrs
