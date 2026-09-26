@@ -216,13 +216,18 @@ def main():
 
 
 def cleanup(ctx):
-    """Remove what the API can: deleting the house cascades the batch, the protocol line and
-    its completion. The stock item (and with it its movements) and the sale are left to smoke.sh."""
+    """Remove what the API can: deleting the batch (its completion goes with it) then the
+    house (its protocol line goes with it). The stock item (and with it its movements) and the sale are left to smoke.sh."""
     tok = ctx.get("tok")
     if not tok:
         return
+    if ctx.get("batch"):
+        # A house with an ACTIVE batch cannot be deleted (409) — delete the smoke batch first.
+        req("DELETE", f"/api/batches/{ctx['batch']}/", tok=tok)
     if ctx.get("house"):
-        req("DELETE", f"/api/houses/{ctx['house']}/", tok=tok)
+        s, b = req("DELETE", f"/api/houses/{ctx['house']}/", tok=tok)
+        if s != 204:
+            print(f"  cleanup: house {ctx['house']} not deleted ({s} {b!r}) — remove it by hand")
 
 
 if __name__ == "__main__":
