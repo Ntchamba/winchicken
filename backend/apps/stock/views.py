@@ -54,6 +54,12 @@ _PROTOCOL_LABEL_TO_KIND = {
 }
 
 
+_ROW_FIELD_LABELS = {
+    'name': 'Nom', 'unit': 'Unité', 'item_type': 'Type', 'feed_stage': 'Stade',
+    'cold_chain_required': 'Chaîne du froid', 'alert_threshold': "Seuil d'alerte", 'unit_price': 'Prix unitaire',
+}
+
+
 class FarmStockItemsView(APIView):
     """GET/PUT /api/farms/{farmId}/stock-items/ — read or save stock parameters.
 
@@ -157,7 +163,18 @@ class FarmStockItemsView(APIView):
             else:
                 row_errors[str(index)] = row.errors
         if row_errors:
-            return Response({'items': row_errors}, status=status.HTTP_400_BAD_REQUEST)
+            # The form groups articles by category tab, so a flat "Ligne N" does not match anything
+            # on screen — name the article and the field. A row already stored with a now-refused
+            # value (a legacy negative price) blocks the save until corrected, so the message has
+            # to say exactly which one.
+            index, errors = next(iter(row_errors.items()))
+            field, messages = next(iter(errors.items()))
+            name = str(items_data[int(index)].get('name') or '').strip() or f'ligne {int(index) + 1}'
+            label = _ROW_FIELD_LABELS.get(field, field)
+            return Response(
+                {'detail': f"Article « {name[:60]} » — {label} : {messages[0]}", 'items': row_errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         seen_names = set()
         for entry in items_data:

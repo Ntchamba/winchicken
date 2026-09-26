@@ -114,7 +114,9 @@ class StockItemParameterTests(PlausibilityBase):
         self.assertEqual(self.put().status_code, 200)
 
     def test_negative_threshold_or_price_is_refused(self):
-        self.assertEqual(self.put(alert_threshold=-50).status_code, 400)
+        response = self.put(alert_threshold=-50)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Article « Provende » — Seuil d'alerte", response.data['detail'])
         self.assertEqual(self.put(unit_price='-100').status_code, 400)
         self.assertFalse(StockItem.objects.exists())
 
