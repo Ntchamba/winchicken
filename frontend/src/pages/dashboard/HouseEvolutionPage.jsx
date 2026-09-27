@@ -13,7 +13,7 @@ import useDocumentTitle from "../../hooks/useDocumentTitle";
 export default function HouseEvolutionPage() {
   const { houseCode } = useParams();
   const { house, batch } = useOutletContext();
-  useDocumentTitle(`Évolution — ${house?.name || houseCode}`);
+  useDocumentTitle(`Évolution — ${house?.name || "Bâtiment sans nom"}`);
   const batchCode = batch?.batch_code;
 
   // Each stored with what it was loaded for, so another house/batch never shows stale curves.

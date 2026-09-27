@@ -28,10 +28,18 @@
 .house-meta{display:flex;align-items:center;gap:14px;flex-shrink:0}
 .house-progress{width:64px;height:5px;border-radius:99px;background:var(--surface-2);overflow:hidden}
 .house-progress-fill{height:100%;background:var(--mint-fill);border-radius:99px}
-.status-pill{padding:5px 11px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap}
+/* A colored dot in front of every status pill (active/received=green, void/cancelled=gray,
+   pending=amber) — the same signal the text already carries, but readable by someone who
+   cannot read the word itself, and consistent everywhere this class is used (HomeDashboard's
+   house cards, purchase orders, salary payments). */
+.status-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap}
+.status-pill::before{content:"";width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .status-pill.active,.status-pill.received{background:rgba(11,143,104,.12);color:var(--mint)}
+.status-pill.active::before,.status-pill.received::before{background:var(--mint)}
 .status-pill.void,.status-pill.cancelled{background:rgba(95,115,119,.14);color:var(--muted)}
+.status-pill.void::before,.status-pill.cancelled::before{background:var(--muted)}
 .status-pill.pending{background:rgba(185,121,12,.14);color:var(--warning)}
+.status-pill.pending::before{background:var(--warning)}
 
 /* "Commandes fournisseurs" item picker (2026-08-27, purchase-order task) — no existing
    searchable-item-select pattern to reuse elsewhere in this app (checked before assuming one

@@ -55,7 +55,7 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
     const rows = ingredients
       .filter((r) => r.item && Number(r.quantity) > 0)
       .map((r) => ({ item: r.item, quantity: Number(r.quantity) }));
-    if (!name.trim()) { setError("Le nom de la composition est requis."); return; }
+    if (!name.trim()) { setError("Le nom de la recette est requis."); return; }
     if (rows.length === 0) { setError("Ajoutez au moins un ingrédient avec une quantité."); return; }
     if (!outputItem) { setError("Sélectionnez ou créez l'article produit."); return; }
     if (baseYield !== "" && Number(baseYield) <= 0) { setError("Le rendement de base doit être positif."); return; }
@@ -69,7 +69,7 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
       load();
       onChanged?.();
     } catch (err) {
-      setError(getServerErrorMessage(err, "La composition n'a pas été enregistrée. Réessayez."));
+      setError(getServerErrorMessage(err, "La recette n'a pas été enregistrée. Réessayez."));
     } finally {
       setBusy(false);
     }
@@ -146,7 +146,7 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
       load();
       onChanged?.();
     } catch (err) {
-      setRunError(getServerErrorMessage(err, "La composition n'a pas été exécutée. Réessayez."));
+      setRunError(getServerErrorMessage(err, "La recette n'a pas été exécutée. Réessayez."));
     } finally {
       setRunBusy(false);
     }
@@ -158,10 +158,10 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
   return (
     <div className="card schedule-card" style={{ marginBottom: 18 }}>
       <div className="section-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <h2>Compositions</h2>
+        <h2>Recettes</h2>
         {canManage && !creating && (
           <button className="add-button" style={{ marginTop: 0 }} type="button" onClick={() => setCreating(true)}>
-            <Plus size={14} strokeWidth={2.5} /> Nouvelle composition
+            <Plus size={14} strokeWidth={2.5} /> Nouvelle recette
           </button>
         )}
       </div>
@@ -169,7 +169,7 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
       {creating && (
         <div className="card schedule-card" style={{ marginBottom: 14, background: "var(--surface-2)" }}>
           <label className="field" style={{ maxWidth: 340 }}>
-            <span>Nom de la composition</span>
+            <span>Nom de la recette</span>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="ex. Provende maison" autoFocus />
           </label>
 
@@ -233,7 +233,7 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
           {error && <p className="field-error" style={{ margin: "8px 0 0" }}>{error}</p>}
           <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
             <button className="save-button" style={{ width: "auto" }} onClick={save} disabled={busy}>
-              {busy ? <Loader2 size={16} className="spin" /> : "Enregistrer la composition"}
+              {busy ? <Loader2 size={16} className="spin" /> : "Enregistrer la recette"}
             </button>
             <button className="add-button" style={{ marginTop: 0 }} onClick={resetForm} type="button">Annuler</button>
           </div>
@@ -241,7 +241,7 @@ export default function CompositionsSection({ farmId, items = [], onChanged }) {
       )}
 
       {compositions.length === 0 && !creating ? (
-        <p className="empty-state">Aucune composition. Créez-en une pour combiner des articles en un produit.</p>
+        <p className="empty-state">Aucune recette. Créez-en une pour combiner des articles en un produit.</p>
       ) : (
         <div className="table-wrap">
           <table className="help-example-table" style={{ width: "100%" }}>

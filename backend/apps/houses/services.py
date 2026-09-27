@@ -253,17 +253,22 @@ def summarize_month_schedule(entries, preview=3):
     the same entries, never a second computation of what is due.
     """
     categories = []
+    category_icons = {}
     seen = set()
     days = {}
     for entry in entries:
         if entry['category'] not in seen:
             seen.add(entry['category'])
             categories.append(entry['category'])
+            category_icons[entry['category']] = entry.get('icon')
         day = days.setdefault(entry['date'], {'count': 0, 'preview': []})
         day['count'] += 1
         if len(day['preview']) < preview:
             day['preview'].append({key: entry[key] for key in ('id', 'startTime', 'houseName', 'what', 'category')})
-    return {'categories': categories, 'days': days}
+    # `categoryIcons` is additive (existing `categories` list/shape untouched) — lets the
+    # calendar's legend show the same icon as the category's own tab elsewhere in the app,
+    # not just a color, so it reads without having to read the category name.
+    return {'categories': categories, 'categoryIcons': category_icons, 'days': days}
 
 
 def compute_cycle_milestones(house, batch=None, lines=None):

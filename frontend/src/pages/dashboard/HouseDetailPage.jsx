@@ -139,7 +139,7 @@ export default function HouseDetailPage() {
         <div className="section-heading">
           <div>
             <span className="house-chip">{batch === undefined ? "CHARGEMENT…" : batch ? BATCH_STATUS_LABELS[batch.status] || batch.status : "AUCUNE BANDE ACTIVE"}</span>
-            <h1 style={{ margin: "7px 0 0", fontFamily: "'Space Grotesk',sans-serif", fontSize: 22 }}>{house?.name || houseCode}</h1>
+            <h1 style={{ margin: "7px 0 0", fontFamily: "'Space Grotesk',sans-serif", fontSize: 22 }}>{house?.name || "Bâtiment sans nom"}</h1>
             {batch && (
               <p className="schedule-note">
                 {batch.name ? (
@@ -198,7 +198,7 @@ export default function HouseDetailPage() {
       <HubPage
         ariaLabel="Sections du bâtiment"
         core={{
-          label: batch ? (batch.name || batch.batch_code) : batch === null ? "Aucune bande" : "…",
+          label: batch ? (batch.name || "Bande sans nom") : batch === null ? "Aucune bande" : "…",
           detail: tasksNow.dayOfCycle != null ? `Jour ${tasksNow.dayOfCycle} du cycle` : undefined,
         }}
         sections={hubSections}

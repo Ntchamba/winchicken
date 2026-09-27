@@ -109,6 +109,21 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      {summary.categories.length > 0 && (
+        <div className="calendar-legend" aria-label="Légende des catégories">
+          {summary.categories.map((category) => {
+            const Icon = iconFor(summary.categoryIcons?.[category]);
+            return (
+              <span key={category} className="calendar-legend-item">
+                <span className="calendar-task-dot" style={{ background: categoryColor(category) }} />
+                <Icon size={13} strokeWidth={2} aria-hidden="true" />
+                {category}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       <div className="calendar-grid">
         {WEEKDAY_LABELS.map((label) => (
           <div key={label} className="calendar-weekday">

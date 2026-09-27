@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, Receipt, Wallet2 } from "lucide-react";
+import { Bird, Egg, Loader2, MoreHorizontal, Receipt, Recycle, Sprout, Stethoscope, Wallet2, Wheat, Wrench } from "lucide-react";
 import { financeApi } from "../../api/endpoints";
 import { fetchAllPages } from "../../api/pagination";
+import IconChoice from "../../components/IconChoice";
 import ReceiptModal from "../../components/ReceiptModal";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
 import { formatMoney } from "../../utils/money";
@@ -9,11 +10,13 @@ import QuickLinksBar from "../../components/QuickLinksBar";
 import { getServerErrorMessage } from "../../api/errors";
 import { useTodayISO } from "../../hooks/useTodayISO";
 
+// An icon per option, not just a word — so choosing the right one doesn't depend on being able
+// to read "Poules réformées" vs "Fumier" vs "Usure du matériel".
 const PRODUCT_TYPES = [
-  { value: "BIRD", label: "Volaille" },
-  { value: "EGG", label: "Œufs" },
-  { value: "CULL", label: "Réforme" },
-  { value: "MANURE", label: "Fumier" },
+  { value: "BIRD", label: "Volaille", Icon: Bird },
+  { value: "EGG", label: "Œufs", Icon: Egg },
+  { value: "CULL", label: "Poules réformées", Icon: Recycle },
+  { value: "MANURE", label: "Fumier", Icon: Sprout },
 ];
 
 const EMPTY_FORM = { productType: "BIRD", quantity: "", unitPrice: "", customer: "" };
@@ -22,10 +25,10 @@ const EMPTY_FORM = { productType: "BIRD", quantity: "", unitPrice: "", customer:
 // SalaryPayment is marked paid (see SalaryPaymentPayView), never entered by hand here
 // (2026-08-27, Finances restructure Part C).
 const EXPENSE_CATEGORIES = [
-  { value: "FEED", label: "Aliment" },
-  { value: "VETERINARY", label: "Vétérinaire" },
-  { value: "DEPRECIATION", label: "Amortissement" },
-  { value: "MISC", label: "Divers" },
+  { value: "FEED", label: "Aliment", Icon: Wheat },
+  { value: "VETERINARY", label: "Vétérinaire", Icon: Stethoscope },
+  { value: "DEPRECIATION", label: "Usure du matériel", Icon: Wrench },
+  { value: "MISC", label: "Divers", Icon: MoreHorizontal },
 ];
 
 const EMPTY_EXPENSE_FORM = { category: "FEED", amount: "", supplier: "" };
@@ -171,9 +174,12 @@ export default function CashierPage() {
         <div className="detail-grid">
           <label className="field">
             <span>Produit</span>
-            <select value={form.productType} onChange={(e) => setForm({ ...form, productType: e.target.value })}>
-              {PRODUCT_TYPES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-            </select>
+            <IconChoice
+              ariaLabel="Produit"
+              value={form.productType}
+              onChange={(productType) => setForm({ ...form, productType })}
+              options={PRODUCT_TYPES}
+            />
           </label>
           <label className="field">
             <span>Quantité</span>
@@ -203,9 +209,12 @@ export default function CashierPage() {
         <div className="detail-grid">
           <label className="field">
             <span>Catégorie</span>
-            <select value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}>
-              {EXPENSE_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
+            <IconChoice
+              ariaLabel="Catégorie"
+              value={expenseForm.category}
+              onChange={(category) => setExpenseForm({ ...expenseForm, category })}
+              options={EXPENSE_CATEGORIES}
+            />
           </label>
           <label className="field">
             <span>Montant</span>

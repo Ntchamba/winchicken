@@ -308,7 +308,7 @@ export default function DashboardLayout({
           {canSeeAudit && (
             <button className={`sidebar-link ${isActive("/dashboard/audit") ? "active" : ""}`} onClick={() => go("/dashboard/audit")}>
               <FileClock size={16} strokeWidth={1.8} />
-              Journal d'audit
+              Historique des actions
             </button>
           )}
           <button className="sidebar-link" onClick={() => go("/dashboard/settings")}>
