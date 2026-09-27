@@ -72,7 +72,7 @@ export default function OnboardingEmployeesPage() {
     return (
       <TransitionScreen
         message="Merci beaucoup, nous configurons votre tableau de bord."
-        durationMs={8000}
+        durationMs={900}
         onComplete={() => navigate("/dashboard", { replace: true })}
       />
     );

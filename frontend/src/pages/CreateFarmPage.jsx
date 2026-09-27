@@ -84,7 +84,7 @@ export default function CreateFarmPage() {
     return (
       <TransitionScreen
         message="Veuillez patienter, nous préparons votre tableau de bord."
-        durationMs={8000}
+        durationMs={900}
         onComplete={() => navigate("/onboarding/protocol", { replace: true })}
       />
     );
