@@ -1,13 +1,21 @@
 # Builds the farm installers from the committed code. Windows: Winchicken-Setup-<version>.exe,
 # produced on Linux by installer/scripts/build-windows.sh (the same script a developer runs).
-# The .exe is attached to the run as an artifact, for the landing page (other project) to host.
+# The .exe is attached to the run as an artifact (private-repo artifacts need a GitHub login to
+# fetch) AND committed via Git LFS to installer/releases/ on this same branch, so it is also
+# reachable through GitHub's public LFS media endpoint without any authentication — that's what
+# the landing page (other project) and any automation actually download from.
 name: Installateurs
 
 on:
   workflow_dispatch:
   push:
-    branches: ["installer-build"]
+    branches: ["prototype2"]
+    # Otherwise the bot's own release commit below re-triggers this workflow forever.
+    paths-ignore: ["installer/releases/**"]
     tags: ["v*"]
+
+permissions:
+  contents: write
 
 jobs:
   windows:
@@ -20,7 +28,7 @@ jobs:
       - name: Construire Winchicken-Setup.exe
         run: installer/scripts/build-windows.sh "$RUNNER_TEMP/dist"
 
-      - name: Publier l'installateur
+      - name: Publier l'installateur (artefact du run)
         uses: actions/upload-artifact@v4
         with:
           name: Winchicken-Setup-windows
@@ -30,3 +38,22 @@ jobs:
           compression-level: 0
           retention-days: 7
           if-no-files-found: error
+
+      - name: Publier l'installateur (Git LFS, releases publiques)
+        # A tag build (v*) has no branch to push a follow-up commit onto; skip there.
+        if: github.ref_type == 'branch'
+        run: |
+          set -e
+          mkdir -p installer/releases
+          cp "$RUNNER_TEMP"/dist/Winchicken-Setup-*.exe installer/releases/
+          git lfs install --local
+          git lfs track "installer/releases/*.exe"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .gitattributes installer/releases/*.exe
+          if git diff --cached --quiet; then
+            echo "No installer change to commit."
+            exit 0
+          fi
+          git commit -m "chore(installer): publish Winchicken-Setup.exe [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
