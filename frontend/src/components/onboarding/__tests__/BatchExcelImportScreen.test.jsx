@@ -216,16 +216,13 @@ describe("BatchExcelImportScreen", () => {
     expect(stockApi.importXlsx).toHaveBeenCalledTimes(1); // only the dry run
   });
 
-  // No finance import endpoint exists (apps/finance/urls.py has none), so the card must be
-  // visible but inert — and must not block the rest of the flow.
-  test("the Finances card is present but inert", async () => {
+  // No finance import endpoint exists (apps/finance/urls.py has none) — there is no Finances
+  // card at all, rather than a disabled one that only made the screen look broken.
+  test("there is no Finances card", async () => {
     renderScreen();
     await waitFor(() => expect(stockApi.items).toHaveBeenCalled());
-    const finances = cardFor("Finances");
-
-    expect(within(finances).getByText("Bientôt disponible")).toBeInTheDocument();
-    expect(within(finances).getByRole("button", { name: /Importer un fichier/i })).toBeDisabled();
-    expect(finances.querySelector('input[type="file"]')).toBeNull();
+    expect(screen.queryByText("Finances")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bientôt disponible")).not.toBeInTheDocument();
   });
 
   test("'Continuer' only unlocks after a confirmed protocol import", async () => {

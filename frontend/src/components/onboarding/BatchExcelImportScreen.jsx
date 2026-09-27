@@ -15,8 +15,9 @@ import "../../pages/onboarding/batch-flow.css";
  * parsed by `protocolImportApi.parse` and resolved by the same helper `HouseProtocolForm`
  * uses, and the stock file goes to `stockApi.importXlsx`, the update-or-create importer
  * behind "Mettre à jour le stock" (it never deletes an absent article and never touches
- * quantities, so running it here is safe even on a farm that already has stock). Finances has
- * no import endpoint at all yet, so its card is present but inert.
+ * quantities, so running it here is safe even on a farm that already has stock). There is no
+ * Finances card: `apps/finance/urls.py` has no import endpoint, and a disabled "Bientôt
+ * disponible" card only made the screen look broken.
  *
  * Categories are kept locally and handed back with the schedules, because during batch
  * creation the house does not exist yet — a category named only by the file has no database
@@ -252,13 +253,6 @@ export default function BatchExcelImportScreen({ farmId, onProtocolImported, onC
             </p>
           )}
         </ExcelImportCard>
-
-        <ExcelImportCard
-          title="Finances"
-          hint="Recettes et dépenses — l'import n'est pas encore disponible."
-          badge="Bientôt disponible"
-          disabled
-        />
       </div>
 
       <div className="batch-step-actions">
