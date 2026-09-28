@@ -6,6 +6,7 @@ from rest_framework import generics, permissions, serializers, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from apps.core.models import AuditLogEntry, ContactMessage, Farm, NewsletterSubscriber, User
@@ -24,7 +25,7 @@ from apps.core.serializers import (
     PreLoginResetRequestSerializer,
     WinchickenTokenObtainPairSerializer,
 )
-from apps.core.services import InvalidHourlyRate, factory_reset_farm, parse_hourly_rate, record_audit_log
+from apps.core.services import InvalidHourlyRate, factory_reset_farm, is_farm_configured, parse_hourly_rate, record_audit_log
 
 
 @extend_schema(
@@ -64,7 +65,14 @@ class FarmCreateView(generics.CreateAPIView):
     no write attempted) but is not by itself race-safe — two near-simultaneous requests could
     both pass it before either commits. `Farm.singleton_lock`'s DB-level unique constraint
     (core migration 0003) is what actually makes a second row impossible: the losing request's
-    INSERT raises IntegrityError, caught below and turned into the same 409 rather than a 500."""
+    INSERT raises IntegrityError, caught below and turned into the same 409 rather than a 500.
+
+    Mints the token pair directly from the just-created `user` (`RefreshToken.for_user`)
+    instead of routing through `WinchickenTokenObtainPairSerializer` with the raw password:
+    `create_user` above already ran the full password hash once (`set_password`), and
+    re-authenticating by email+password would run it a second time — Django's PBKDF2 hasher is
+    deliberately slow (that's the point, for a login), so this was doubling a farm PC's slowest
+    per-request cost on the one request (account creation) a farmer actually watches complete."""
 
     permission_classes = [permissions.AllowAny]
     serializer_class = FarmCreateSerializer
@@ -79,11 +87,14 @@ class FarmCreateView(generics.CreateAPIView):
         except IntegrityError:
             return Response({'detail': 'Une ferme existe déjà pour cette installation.'}, status=status.HTTP_409_CONFLICT)
 
-        token_serializer = WinchickenTokenObtainPairSerializer(
-            data={'email': user.email, 'password': request.data['password']}
-        )
-        token_serializer.is_valid(raise_exception=True)
-        return Response(token_serializer.validated_data, status=status.HTTP_201_CREATED)
+        refresh = RefreshToken.for_user(user)
+        data = {
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'is_configured': is_farm_configured(user.farm) if user.farm_id else False,
+            'role': user.role,
+        }
+        return Response(data, status=status.HTTP_201_CREATED)
 
 
 @extend_schema(

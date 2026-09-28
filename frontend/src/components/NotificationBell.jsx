@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, Bell, Info, Loader2 } from "lucide-react";
 import { alertsApi } from "../api/endpoints";
+
+// Sidebar breakpoint (sidebar-theme.css) — above it the panel is anchored to the bell via a
+// computed position; below it the drawer sidebar already stacks correctly and the panel keeps
+// its CSS-driven fixed placement (pinned near the top of the screen, not bell-anchored).
+const MOBILE_BREAKPOINT = 900;
 
 // alert.ruleType is the raw AlertRuleType backend enum — displayed only through this French
 // label map, matching AlertsListPage.jsx's ALERT_STATUS_LABELS convention (never shown raw).
@@ -39,7 +45,9 @@ export default function NotificationBell({ unreadCount, onCountsChanged }) {
   const [open, setOpen] = useState(false);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [anchorStyle, setAnchorStyle] = useState({});
   const ref = useRef(null);
+  const panelRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
@@ -47,9 +55,31 @@ export default function NotificationBell({ unreadCount, onCountsChanged }) {
     alertsApi.list().then(({ data }) => setAlerts(data.results || data)).finally(() => setLoading(false));
   }, [open]);
 
+  // The panel is portalled to <body> (see render below — the sidebar is position:sticky with
+  // its own isolated stacking context, so anything rendered inside it painted under the page
+  // content regardless of z-index). Portalling loses the "positioned relative to the bell"
+  // placement a plain absolute child got for free, so its position is computed here instead.
+  useEffect(() => {
+    if (!open) return undefined;
+    const place = () => {
+      if (window.innerWidth <= MOBILE_BREAKPOINT) {
+        setAnchorStyle({}); // CSS media-query rule (fixed, pinned near the top) takes over.
+        return;
+      }
+      const rect = ref.current?.getBoundingClientRect();
+      if (!rect) return;
+      setAnchorStyle({ position: "fixed", top: rect.bottom + 8, left: rect.left, right: "auto" });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open]);
+
   useEffect(() => {
     function onClickOutside(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      if (ref.current?.contains(e.target)) return;
+      if (panelRef.current?.contains(e.target)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
@@ -74,8 +104,8 @@ export default function NotificationBell({ unreadCount, onCountsChanged }) {
         {unreadCount > 0 && <span className="notification-bell-badge pulse-alert">{unreadCount > 9 ? "9+" : unreadCount}</span>}
       </button>
 
-      {open && (
-        <div className="notification-panel">
+      {open && createPortal(
+        <div ref={panelRef} className="notification-panel" style={{ zIndex: 70, ...anchorStyle }}>
           <div className="notification-panel-header">
             <h4>Notifications</h4>
             <button onClick={markAllRead}>Tout marquer comme lu</button>
@@ -109,7 +139,8 @@ export default function NotificationBell({ unreadCount, onCountsChanged }) {
                 </div>
               );
             })}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

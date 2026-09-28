@@ -69,7 +69,7 @@ export default function LoginPage() {
     return (
       <TransitionScreen
         message={transitionTarget.startsWith("/dashboard") ? TRANSITION_MESSAGES.dashboard : TRANSITION_MESSAGES.onboarding}
-        durationMs={900}
+        durationMs={300}
         onComplete={() => navigate(transitionTarget, { replace: true })}
       />
     );
