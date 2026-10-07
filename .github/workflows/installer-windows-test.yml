@@ -1,0 +1,78 @@
+name: Test Windows installer (manual)
+
+# Manual, on-demand smoke test of the real installer/releases/*.exe on an actual Windows
+# machine (a GitHub-hosted windows-latest runner — free, no extra tool or VM needed). No
+# Docker Desktop is pre-installed on this runner, so the test cannot go past "Docker n'est
+# pas installé" — that is the known, expected stopping point; everything before it (the NSIS
+# wizard running silently, the file layout, the shortcuts, the uninstall registry entry, and
+# the launcher's own HTTP status page) runs for real.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: prototype2
+          lfs: true
+
+      - name: Install Winchicken silently (/S)
+        shell: pwsh
+        run: |
+          $exe = "installer\releases\Winchicken-Setup-1.0.0.exe"
+          Write-Host "Installer size: $((Get-Item $exe).Length) bytes"
+          $p = Start-Process -FilePath $exe -ArgumentList "/S" -PassThru -Wait
+          Write-Host "Installer exit code: $($p.ExitCode)"
+
+      - name: Inspect install layout
+        shell: pwsh
+        run: |
+          $dir = "$env:LOCALAPPDATA\Programs\Winchicken"
+          Write-Host "--- $dir ---"
+          if (Test-Path $dir) { Get-ChildItem -Recurse $dir | ForEach-Object { "{0}`t{1} bytes" -f $_.FullName, $_.Length } }
+          else { Write-Host "MISSING: $dir" }
+          Write-Host "--- Desktop shortcut ---"
+          Test-Path "$env:USERPROFILE\Desktop\Winchicken.lnk"
+          Write-Host "--- Start Menu shortcuts ---"
+          Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Winchicken\Winchicken.lnk"
+          Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Winchicken\Désinstaller Winchicken.lnk"
+          Write-Host "--- uninstall registry key ---"
+          Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Winchicken" -ErrorAction SilentlyContinue | Format-List DisplayName, DisplayVersion, Publisher, UninstallString
+
+      - name: Run the launcher and capture its real behaviour
+        shell: pwsh
+        run: |
+          $exe = "$env:LOCALAPPDATA\Programs\Winchicken\winchicken.exe"
+          if (-not (Test-Path $exe)) { Write-Host "MISSING: $exe"; exit 1 }
+          Start-Process -FilePath $exe
+          $status = $null
+          for ($i = 0; $i -lt 15; $i++) {
+            Start-Sleep -Seconds 2
+            try {
+              $resp = Invoke-WebRequest -Uri "http://127.0.0.1:47823/status" -UseBasicParsing -TimeoutSec 3
+              $status = $resp.Content
+              Write-Host "--- /status (attempt $i) ---"
+              Write-Host $status
+              break
+            } catch {
+              Write-Host "status not reachable yet (attempt $i): $($_.Exception.Message)"
+            }
+          }
+          if (-not $status) { Write-Host "launcher never answered on 127.0.0.1:47823" }
+
+      - name: Dump launcher.log
+        if: always()
+        shell: pwsh
+        run: |
+          $log = "$env:LOCALAPPDATA\Winchicken\launcher.log"
+          if (Test-Path $log) { Get-Content $log } else { Write-Host "no launcher.log at $log" }
+
+      - name: Stop the launcher cleanly
+        if: always()
+        shell: pwsh
+        run: |
+          try { Invoke-WebRequest -Uri "http://127.0.0.1:47823/action/quit" -Method Post -UseBasicParsing -TimeoutSec 3 | Out-Null } catch {}
+          Get-Process winchicken -ErrorAction SilentlyContinue | Stop-Process -Force
