@@ -10,8 +10,10 @@ on:
   workflow_dispatch:
   push:
     branches: ["prototype2"]
-    # Otherwise the bot's own release commit below re-triggers this workflow forever.
-    paths-ignore: ["installer/releases/**"]
+    # Otherwise the bot's own release commit below re-triggers this workflow forever, and a
+    # docs-only screenshot commit (docs-screenshots.yml) would rebuild the whole installer for
+    # nothing.
+    paths-ignore: ["installer/releases/**", "docs/screenshots-fresh/**"]
     tags: ["v*"]
 
 permissions:
