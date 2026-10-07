@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Bell, Info, Loader2 } from "lucide-react";
 import { alertsApi } from "../api/endpoints";
@@ -59,7 +59,11 @@ export default function NotificationBell({ unreadCount, onCountsChanged }) {
   // its own isolated stacking context, so anything rendered inside it painted under the page
   // content regardless of z-index). Portalling loses the "positioned relative to the bell"
   // placement a plain absolute child got for free, so its position is computed here instead.
-  useEffect(() => {
+  // useLayoutEffect, not useEffect: computed synchronously before the browser paints, so the
+  // panel never has a frame where anchorStyle is still {} and it falls back to the stylesheet's
+  // position:absolute (relative to the viewport's initial containing block, since its new
+  // parent is <body> — usually harmless, but a visible flash on a slow render).
+  useLayoutEffect(() => {
     if (!open) return undefined;
     const place = () => {
       if (window.innerWidth <= MOBILE_BREAKPOINT) {
@@ -105,7 +109,7 @@ export default function NotificationBell({ unreadCount, onCountsChanged }) {
       </button>
 
       {open && createPortal(
-        <div ref={panelRef} className="notification-panel" style={{ zIndex: 70, ...anchorStyle }}>
+        <div ref={panelRef} className="notification-panel" style={{ zIndex: 300, ...anchorStyle }}>
           <div className="notification-panel-header">
             <h4>Notifications</h4>
             <button onClick={markAllRead}>Tout marquer comme lu</button>

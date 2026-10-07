@@ -44,6 +44,14 @@ export default function useSidebarNotifications(canSeeFinancePendingCount) {
 
   useEffect(() => {
     refetch();
+    // Scheduled alerts (protocol tasks, vaccine reminders — apps.alerts.services.
+    // fire_scheduled_alerts) fire server-side every minute regardless of whether anyone has the
+    // app open. Without a poll here, a farmer sitting on one screen (the dashboard, say) past a
+    // feeding time would only see the new badge after navigating — route changes were the only
+    // other trigger for `refetch`. One minute matches the backend's own cadence: no point
+    // polling faster than alerts can actually appear.
+    const interval = setInterval(refetch, 60_000);
+    return () => clearInterval(interval);
   }, [refetch]);
 
   return { unreadCount, stockLowCount, financePendingCount, openCasesCount, refetch };
