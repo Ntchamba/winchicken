@@ -134,25 +134,28 @@ pub fn run(shared: &Shared) -> Result<(), Problem> {
         crate::log("frontend sans réseau (démarrage précédent interrompu) : recréé");
         let _ = drop_half_started();
     }
+    let original_port = port;
+    let mut tried: Vec<u16> = vec![port];
     let mut out = up();
-    let mut moved_from: Option<u16> = None;
     // Fallback: the port was free when .env was written, but something took it since (another
-    // server installed later, a dev tool left running). Move to the next free port once, rather
-    // than asking a farmer to edit a settings file; the ready page shows the new address + QR.
-    if !out.as_ref().map(|o| o.status.success()).unwrap_or(false) {
+    // server installed later, a dev tool left running). Rather than asking a farmer to edit a
+    // settings file, or giving up after a single alternate port, try up to 10 ports in total
+    // (the original one plus up to 9 more free candidates in 8080-8099) before reporting failure.
+    while !out.as_ref().map(|o| o.status.success()).unwrap_or(false) && tried.len() < 10 {
         let stderr = out.as_ref().map(|o| String::from_utf8_lossy(&o.stderr).to_string()).unwrap_or_default();
-        if is_port_conflict(&stderr) {
-            let _ = drop_half_started();
-            if let Some(free) = (8080..=8099).find(|p| *p != port && platform::port_is_free(*p)) {
-                set_env_port(&env_path, free).map_err(|p| fail(shared, "start", p))?;
-                crate::log(&format!("port {port} occupé par un autre programme -> port {free}"));
-                step(shared, "start", StepState::Running, &format!("Port {port} occupé, passage au port {free}…"));
-                moved_from = Some(port);
-                port = free;
-                out = up();
-            }
+        if !is_port_conflict(&stderr) {
+            break;
         }
+        let _ = drop_half_started();
+        let Some(free) = (8080..=8099).find(|p| !tried.contains(p) && platform::port_is_free(*p)) else { break };
+        set_env_port(&env_path, free).map_err(|p| fail(shared, "start", p))?;
+        crate::log(&format!("port {port} occupé par un autre programme -> port {free}"));
+        step(shared, "start", StepState::Running, &format!("Port {port} occupé, passage au port {free}…"));
+        tried.push(free);
+        port = free;
+        out = up();
     }
+    let moved_from = (port != original_port).then_some(original_port);
     if !out.as_ref().map(|o| o.status.success()).unwrap_or(false) {
         let stderr = out.map(|o| String::from_utf8_lossy(&o.stderr).to_string()).unwrap_or_default();
         let port_taken = is_port_conflict(&stderr);
@@ -160,12 +163,14 @@ pub fn run(shared: &Shared) -> Result<(), Problem> {
             let _ = drop_half_started();
         }
         return Err(fail(shared, "start", if port_taken {
-            // Reached only once the fallback found nothing free in 8080–8099: the fix is closing
-            // programs, not editing a settings file (the path stays in the log for support).
+            // Reached only once all candidates tried (the original port plus every free one
+            // found in 8080-8099, up to 10 in total) failed: the fix is closing programs, not
+            // editing a settings file (the path stays in the log for support).
             Problem::new("port_taken", "Aucun port libre pour Winchicken",
-                &format!("D'autres programmes occupent le port {port} et tous les ports de 8080 à 8099. \
-                          Fermez les autres logiciels serveur (ou redémarrez l'ordinateur), puis cliquez sur Réessayer. \
-                          Si cela recommence, copiez le rapport (Détails techniques) et envoyez-le au support."), &[RETRY])
+                &format!("D'autres programmes occupent le port {port} et {} ports testés en tout dans la \
+                          plage 8080-8099. Fermez les autres logiciels serveur (ou redémarrez l'ordinateur), \
+                          puis cliquez sur Réessayer. Si cela recommence, copiez le rapport (Détails \
+                          techniques) et envoyez-le au support.", tried.len()), &[RETRY])
         } else {
             Problem::new("start_failed", "Winchicken n'a pas pu démarrer",
                 "Docker a refusé de démarrer les services. Cliquez sur Réessayer ; si cela recommence, \
