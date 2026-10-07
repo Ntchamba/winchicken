@@ -1,10 +1,12 @@
 name: Capture docs screenshots
 
 # Manual, on-demand: runs the real app (native Postgres/Redis service containers, no Docker
-# image build needed — faster and avoids the image-build surface entirely) against a seeded
-# demo farm (seed_test_farm, DB name forced to end in _test — see its own guard), logs in
-# through the real login form with Playwright, and screenshots every dashboard screen for the
-# HTML docs site and the PDF manual. Never run this against a real farm's data.
+# image build needed — faster and avoids the image-build surface entirely) against a freshly
+# migrated, UNSEEDED database. capture.py signs up through the real "Créer une ferme" form and
+# does the minimum onboarding a first-time user would (one house, one protocol line, one stock
+# article, employees skipped) — deliberately not seed_test_farm, so every screenshot reflects
+# what a real new farm looks like (zero mortality/sales/weighing history) rather than backfilled
+# demo data. Never run this against a real farm's data.
 
 on:
   workflow_dispatch:
@@ -51,11 +53,9 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt
 
-      - name: Migrate + seed the demo farm
+      - name: Migrate (no seed data — capture.py signs up a real farm by hand)
         working-directory: backend
-        run: |
-          python manage.py migrate --noinput
-          python manage.py seed_test_farm
+        run: python manage.py migrate --noinput
 
       - name: Start the Django API in the background
         working-directory: backend
