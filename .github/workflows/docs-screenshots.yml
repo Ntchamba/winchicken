@@ -1,0 +1,109 @@
+name: Capture docs screenshots
+
+# Manual, on-demand: runs the real app (native Postgres/Redis service containers, no Docker
+# image build needed — faster and avoids the image-build surface entirely) against a seeded
+# demo farm (seed_test_farm, DB name forced to end in _test — see its own guard), logs in
+# through the real login form with Playwright, and screenshots every dashboard screen for the
+# HTML docs site and the PDF manual. Never run this against a real farm's data.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: winchicken_test
+          POSTGRES_USER: winchicken
+          POSTGRES_PASSWORD: winchicken
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U winchicken -d winchicken_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      SECRET_KEY: docs-screenshots-key
+      DEBUG: "False"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      DB_NAME: winchicken_test
+      DB_USER: winchicken
+      DB_PASSWORD: winchicken
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      CORS_ALLOWED_ORIGINS: http://localhost:5173
+      REDIS_URL: redis://localhost:6379/0
+      SMS_PROVIDER: console
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Migrate + seed the demo farm
+        working-directory: backend
+        run: |
+          python manage.py migrate --noinput
+          python manage.py seed_test_farm
+
+      - name: Start the Django API in the background
+        working-directory: backend
+        run: |
+          python manage.py runserver 0.0.0.0:8000 > /tmp/django.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/api/health/ > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://localhost:8000/api/health/ || (cat /tmp/django.log && exit 1)
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Start the Vite dev server in the background
+        working-directory: frontend
+        env:
+          VITE_API_URL: http://localhost:8000/api
+        run: |
+          npm run dev -- --port 5173 --host 127.0.0.1 > /tmp/vite.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:5173/ > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:5173/ || (cat /tmp/vite.log && exit 1)
+
+      - name: Install Playwright + Chromium
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Capture screenshots
+        run: python tools/docs-screenshots/capture.py http://127.0.0.1:5173 docs-screenshots
+
+      - name: Dump server logs on failure
+        if: failure()
+        run: |
+          echo "--- django.log ---"; cat /tmp/django.log || true
+          echo "--- vite.log ---"; cat /tmp/vite.log || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-screenshots
+          path: docs-screenshots/
+          retention-days: 30
