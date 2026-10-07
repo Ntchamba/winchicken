@@ -80,13 +80,16 @@ jobs:
         working-directory: frontend
         env:
           VITE_API_URL: http://localhost:8000/api
+        # Bound to the same "localhost" CORS_ALLOWED_ORIGINS expects — the browser treats
+        # localhost and 127.0.0.1 as different origins, even though they resolve the same way,
+        # so a mismatch here makes every API call fail CORS (measured 2026-10-07).
         run: |
-          npm run dev -- --port 5173 --host 127.0.0.1 > /tmp/vite.log 2>&1 &
+          npm run dev -- --port 5173 --host localhost > /tmp/vite.log 2>&1 &
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:5173/ > /dev/null && break
+            curl -sf http://localhost:5173/ > /dev/null && break
             sleep 1
           done
-          curl -sf http://127.0.0.1:5173/ || (cat /tmp/vite.log && exit 1)
+          curl -sf http://localhost:5173/ || (cat /tmp/vite.log && exit 1)
 
       - name: Install Playwright + Chromium
         run: |
@@ -94,7 +97,7 @@ jobs:
           playwright install --with-deps chromium
 
       - name: Capture screenshots
-        run: python tools/docs-screenshots/capture.py http://127.0.0.1:5173 docs-screenshots
+        run: python tools/docs-screenshots/capture.py http://localhost:5173 docs-screenshots
 
       - name: Dump server logs on failure
         if: failure()
@@ -103,7 +106,9 @@ jobs:
           echo "--- vite.log ---"; cat /tmp/vite.log || true
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: docs-screenshots
           path: docs-screenshots/
           retention-days: 30
+          if-no-files-found: ignore

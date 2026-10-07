@@ -13,12 +13,12 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-VIEWPORT = {"width": 1440, "height": 900}
+VIEWPORT = {"width": 1440, "height": 2000}
 
 
 def login(page, base_url, email, password):
     page.goto(f"{base_url}/login", wait_until="networkidle")
-    page.screenshot(path=str(OUT / "00-login.png"), full_page=True)
+    page.screenshot(path=str(OUT / "00-login.png"))
     page.get_by_label("Email").fill(email)
     page.get_by_label("Mot de passe").fill(password)
     page.get_by_role("button", name="Se connecter").click()
@@ -28,6 +28,12 @@ def login(page, base_url, email, password):
 
 
 def shot(page, base_url, path, name, wait_selector=None, wait_ms=500):
+    # Not full_page=True: the sidebar is position:sticky, pinned to the real viewport height.
+    # A full-page screenshot virtually stretches the capture area far past that height for any
+    # page taller than one screen (Finances, a house's daily logs, ...) and the sidebar — which
+    # never actually moves for a real scrolling user — simply isn't there to paint over that
+    # extra height, so the image shows it cut off partway down. A tall-but-bounded viewport
+    # avoids the artifact outright instead of stretching past where the sidebar can follow.
     page.goto(f"{base_url}{path}", wait_until="networkidle")
     if wait_selector:
         try:
@@ -35,7 +41,7 @@ def shot(page, base_url, path, name, wait_selector=None, wait_ms=500):
         except Exception:
             pass
     page.wait_for_timeout(wait_ms)
-    page.screenshot(path=str(OUT / name), full_page=True)
+    page.screenshot(path=str(OUT / name), full_page=False)
     print(f"  captured {name}")
 
 
