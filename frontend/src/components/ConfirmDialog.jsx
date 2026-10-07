@@ -19,11 +19,14 @@ export default function ConfirmDialog({ message, confirmLabel = "Confirmer", onC
   return (
     <div className="card schedule-card" style={{ marginBottom: 18, borderColor: "var(--danger)" }}>
       <p style={{ margin: "0 0 12px", fontSize: 14 }}>{message}</p>
-      <div style={{ display: "flex", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <button className="delete-button" style={{ width: "auto", padding: "0 16px" }} onClick={onConfirm} disabled={busy}>
           {busy ? <Loader2 size={16} className="spin" /> : confirmLabel}
         </button>
-        <button className="add-button" onClick={onCancel} disabled={busy}>Annuler</button>
+        {/* .add-button carries margin-top:18px for its usual standalone placement below a card —
+            here it sits next to the confirm button in the same row, where that margin pushed it
+            visibly lower than it. */}
+        <button className="add-button" style={{ marginTop: 0 }} onClick={onCancel} disabled={busy}>Annuler</button>
       </div>
       {error && <p className="field-error" role="alert" style={{ margin: "10px 0 0" }}>{error}</p>}
     </div>
