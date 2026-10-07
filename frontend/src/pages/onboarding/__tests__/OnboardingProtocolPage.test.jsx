@@ -84,7 +84,7 @@ async function goToManualForm({ productionType } = {}) {
 describe("OnboardingProtocolPage — true first-time onboarding (is_configured: false)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAuth.mockReturnValue({ user: { is_configured: false }, refreshMe: vi.fn() });
+    useAuth.mockReturnValue({ user: { is_configured: false }, refreshMe: vi.fn(), waitForAccount: vi.fn().mockResolvedValue() });
     mockOnboardingContext();
   });
 
@@ -134,7 +134,7 @@ describe("OnboardingProtocolPage — true first-time onboarding (is_configured: 
 describe("OnboardingProtocolPage — '+ Nouvelle bande' add-house flow (is_configured: true)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAuth.mockReturnValue({ user: { is_configured: true }, refreshMe: vi.fn().mockResolvedValue({}) });
+    useAuth.mockReturnValue({ user: { is_configured: true }, refreshMe: vi.fn().mockResolvedValue({}), waitForAccount: vi.fn().mockResolvedValue() });
     mockOnboardingContext();
   });
 
@@ -194,7 +194,7 @@ describe("OnboardingProtocolPage — '+ Nouvelle bande' add-house flow (is_confi
   test("reopened after a house was created, it lists that house with the way on to Stock", async () => {
     const { housesApi } = await import("../../../api/endpoints");
     housesApi.list.mockResolvedValueOnce({ data: { results: [{ house_code: "H-1-001", name: "Bâtiment 1" }] } });
-    useAuth.mockReturnValue({ user: { is_configured: false }, refreshMe: vi.fn() }); // first-time onboarding
+    useAuth.mockReturnValue({ user: { is_configured: false }, refreshMe: vi.fn(), waitForAccount: vi.fn().mockResolvedValue() }); // first-time onboarding
     render(<OnboardingProtocolPage />);
     expect(await screen.findByText("Bâtiment 1")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continuer sans ajouter d'autre bâtiment" })).toBeInTheDocument();

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { farmApi } from "../api/endpoints";
 import { getFieldErrors, getServerErrorMessage } from "../api/errors";
 import { useAuth } from "../context/AuthContext";
@@ -19,13 +19,12 @@ export default function CreateFarmPage() {
   const [password, setPassword] = useState("");
   const [farmName, setFarmName] = useState("");
   const [errors, setErrors] = useState({});
-  const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState("");
   const [showTransition, setShowTransition] = useState(false);
   // Blocks the form from ever rendering for a farm that already exists — covers direct
   // URL navigation to /create-farm, not just the landing page hiding its own button.
   const [checkingFarm, setCheckingFarm] = useState(true);
-  const { loginWithTokens } = useAuth();
+  const { createAccountInBackground, accountCreationError, setAccountCreationError } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -41,6 +40,22 @@ export default function CreateFarmPage() {
     }).catch(() => setCheckingFarm(false));
   }, [navigate]);
 
+  // Landed back here because a background creation (see handleSubmit) ultimately failed —
+  // ProtectedRoute redirects here instead of /login once accountCreationError is set and no
+  // user ever showed up. Same error formatting the old synchronous handleSubmit used inline.
+  useEffect(() => {
+    if (!accountCreationError) return;
+    const err = accountCreationError;
+    if (err.response?.status === 409) {
+      setServerError(err.response?.data?.detail || "Une ferme existe déjà — veuillez vous connecter.");
+    } else {
+      const fieldErrors = getFieldErrors(err);
+      if (Object.keys(fieldErrors).length > 0) setErrors(fieldErrors);
+      else setServerError(getServerErrorMessage(err));
+    }
+    setAccountCreationError(null);
+  }, [accountCreationError, setAccountCreationError]);
+
   const validate = () => {
     const next = {};
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) next.email = "Saisissez une adresse email valide.";
@@ -49,31 +64,22 @@ export default function CreateFarmPage() {
     return Object.keys(next).length === 0;
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     setServerError("");
+    setErrors({});
     if (!validate()) return;
-    setSubmitting(true);
-    try {
-      const { data } = await farmApi.create({ admin_name: adminName, civility, email, password, farm_name: farmName });
-      await loginWithTokens(data);
-      // Farm/admin already created and saved server-side at this point — the transition
-      // screen only delays this page's own navigation, it never blocks the save itself.
-      setShowTransition(true);
-    } catch (err) {
-      if (err.response?.status === 409) {
-        setServerError(err.response?.data?.detail || "Une ferme existe déjà — veuillez vous connecter.");
-      } else {
-        // Field-level errors (email already used, weak password, ...) show next to their own
-        // input; anything else (network down, unexpected 500) shows as the banner below —
-        // never both collapsed into one generic sentence (see api/errors.js).
-        const fieldErrors = getFieldErrors(err);
-        if (Object.keys(fieldErrors).length > 0) setErrors((prev) => ({ ...prev, ...fieldErrors }));
-        else setServerError(getServerErrorMessage(err));
-      }
-    } finally {
-      setSubmitting(false);
-    }
+    // Fired, not awaited: Django's password hash (PBKDF2) is deliberately slow — several
+    // seconds on a farm PC's modest, often-virtualized hardware — and nothing in the
+    // protocol/stock/employees steps needs the account to exist yet. createAccountInBackground
+    // finishes the real login once this resolves; OnboardingProtocolPage's save is the one
+    // place that actually waits for it (waitForAccount), right before it needs the account for
+    // real. If it ultimately fails, ProtectedRoute sends the user back here to see why
+    // (accountCreationError, handled by the effect above).
+    createAccountInBackground(
+      farmApi.create({ admin_name: adminName, civility, email, password, farm_name: farmName }),
+    );
+    setShowTransition(true);
   };
 
   if (checkingFarm) {
@@ -133,8 +139,8 @@ export default function CreateFarmPage() {
 
         {serverError && <p className="field-error" style={{ marginTop: 4 }}>{serverError}</p>}
 
-        <button className="save-button auth-submit" type="submit" disabled={submitting}>
-          {submitting ? <Loader2 size={16} className="spin" /> : "Créer une ferme"}
+        <button className="save-button auth-submit" type="submit">
+          Créer une ferme
         </button>
 
         <p className="auth-switch">

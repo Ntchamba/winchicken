@@ -73,7 +73,7 @@ export default function OnboardingProtocolPage() {
   const step = historyStep !== "header" && !pendingHeader.batchName ? "header" : historyStep;
   const setStep = (next) => navigate(location.pathname + location.search, { state: { ...location.state, batchStep: next } });
   const stepBack = () => navigate(-1);
-  const { user, refreshMe } = useAuth();
+  const { user, refreshMe, waitForAccount } = useAuth();
   // The farm's existing articles, so the Consommation selector finds "Provende" after a reload
   // instead of offering to create it a second time.
   // Keyed on the step: articles the Excel path creates must be listed when the form opens.
@@ -114,6 +114,11 @@ export default function OnboardingProtocolPage() {
         payload.protocolLines.map((line) => ({ ...line, category: payload.categories[line.categoryIndex]?.id })),
       ));
 
+      // First authenticated call of the whole onboarding sequence: if CreateFarmPage's account
+      // creation (PBKDF2 hash included) is still finishing in the background, this is where the
+      // user actually waits for it — almost never more than an instant, since filling in a
+      // house/batch/protocol normally takes far longer than the hash does.
+      await waitForAccount();
       await onboardingApi.submit(buildOnboardingRequest(payload, pendingHeader.productionType));
       if (isAddingHouse) {
         await refreshMe();
@@ -129,6 +134,7 @@ export default function OnboardingProtocolPage() {
   const handleAddAnother = async (payload) => {
     setSaving(true);
     try {
+      await waitForAccount();
       const { data } = await onboardingApi.submit(buildOnboardingRequest(payload, pendingHeader.productionType));
       setAddedHouses((prev) => [...prev, { name: data.house.name }]);
       // Reset to the same empty state the page starts with on first load — the 5 default
@@ -200,6 +206,15 @@ export default function OnboardingProtocolPage() {
         />
       </>
     );
+  }
+
+  // "excel" and the manual form (below) are the only steps that need the account for real
+  // (file import and HouseProtocolForm both call authenticated endpoints) — header/choice don't
+  // touch `user` at all. The brief wait here only shows up if CreateFarmPage's background
+  // creation genuinely hasn't finished by the time the user clicks past "choice", which filling
+  // in the header step already makes unlikely.
+  if (!user) {
+    return <div className="page-wrap"><p className="empty-state">Finalisation de votre compte…</p></div>;
   }
 
   if (step === "excel") {
