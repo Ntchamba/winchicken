@@ -116,6 +116,9 @@ def main():
             ("/dashboard/overview", "02-bilan-global.png", 500),
             ("/dashboard/houses", "03-batiments-liste.png", 500),
             ("/dashboard/finances", "10-finances.png", 500),
+            ("/dashboard/finances/ventes", "11-finances-ventes.png", 500),
+            ("/dashboard/finances/achats", "12-finances-achats.png", 500),
+            ("/dashboard/finances/salaires", "13-finances-salaires.png", 500),
             ("/dashboard/stock", "20-stock.png", 500),
             ("/dashboard/purchase-orders", "21-commandes-fournisseurs.png", 500),
             ("/dashboard/employees", "30-employes.png", 500),
@@ -153,6 +156,43 @@ def main():
                     shot_path(page, args.base_url, target, name)
                 except Exception as e:
                     print(f"  FAILED {name}: {e}")
+
+            # Interaction states (confirm dialogs, open forms) that a plain page.goto can't
+            # reach — each wrapped on its own so one failure doesn't take out the rest. Every
+            # one that opens something destructive is backed out (Annuler) before moving on.
+            try:
+                page.goto(f"{args.base_url}{house_path}", wait_until="networkidle")
+                page.get_by_role("button", name="Clôturer la bande").click()
+                page.wait_for_timeout(300)
+                shot(page, "56-batiment-cloture-confirm.png")
+                page.get_by_role("button", name="Annuler").click()
+            except Exception as e:
+                print(f"  FAILED 56-batiment-cloture-confirm.png: {e}")
+
+            try:
+                page.goto(f"{args.base_url}{house_path}/protocol", wait_until="networkidle")
+                page.get_by_role("button", name="Importer un fichier Excel").click()
+                page.wait_for_timeout(300)
+                shot(page, "57-protocole-import-confirm.png")
+                page.get_by_role("button", name="Annuler").first.click()
+            except Exception as e:
+                print(f"  FAILED 57-protocole-import-confirm.png: {e}")
+
+        try:
+            page.goto(f"{args.base_url}/dashboard/stock", wait_until="networkidle")
+            page.get_by_role("button", name="Ajouter du stock").first.click()
+            page.wait_for_timeout(300)
+            shot(page, "22-stock-ajouter-form.png")
+        except Exception as e:
+            print(f"  FAILED 22-stock-ajouter-form.png: {e}")
+
+        try:
+            page.goto(f"{args.base_url}/dashboard/stock", wait_until="networkidle")
+            page.get_by_role("button", name="Nouvelle recette").click()
+            page.wait_for_timeout(300)
+            shot(page, "23-stock-nouvelle-recette.png")
+        except Exception as e:
+            print(f"  FAILED 23-stock-nouvelle-recette.png: {e}")
 
         browser.close()
     print(f"Done — screenshots in {OUT}")
