@@ -56,4 +56,13 @@ jobs:
             exit 0
           fi
           git commit -m "chore(installer): publish Winchicken-Setup.exe [skip ci]"
-          git push origin HEAD:${{ github.ref_name }}
+          # docs-screenshots.yml commits to this same branch too and can land between checkout
+          # and this push (run 38145373506 lost a finished 1.1.0 build that way) — rebase and retry.
+          for i in 1 2 3 4 5; do
+            if git push origin HEAD:${{ github.ref_name }}; then exit 0; fi
+            echo "push rejected, rebasing onto origin/${{ github.ref_name }} (attempt $i)"
+            git fetch origin ${{ github.ref_name }}
+            git rebase origin/${{ github.ref_name }}
+            sleep 3
+          done
+          exit 1
