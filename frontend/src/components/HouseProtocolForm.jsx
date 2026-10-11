@@ -347,6 +347,21 @@ export default function HouseProtocolForm({
   const [saveError, setSaveError] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
 
+  // "Charger le modèle de départ" (2026-10-11) — also a full replacement of `schedules`
+  // (loadStarterTemplate), exactly as destructive on an already-populated protocol as the
+  // Excel import below, but it had no confirm step: one misclick silently wiped every existing
+  // line with zero warning. Skip the prompt only when there is nothing to lose (totalRows===0,
+  // e.g. first-time onboarding) — same guard philosophy as the Excel import's own
+  // zero-usable-rows guard.
+  const [starterConfirmOpen, setStarterConfirmOpen] = useState(false);
+  const requestStarterTemplate = () => {
+    if (totalRows === 0) {
+      loadStarterTemplate();
+      return;
+    }
+    setStarterConfirmOpen(true);
+  };
+
   // Excel import (docs/excel-import.md) — parse server-side, then REPLACE the form's rows with
   // the file's content (full replacement, not append). Destructive → a confirm step first.
   const importInputRef = useRef(null);
@@ -700,7 +715,7 @@ export default function HouseProtocolForm({
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-              <button className="add-button" style={{ marginTop: 0 }} onClick={loadStarterTemplate} disabled={saving}>
+              <button className="add-button" style={{ marginTop: 0 }} onClick={requestStarterTemplate} disabled={saving}>
                 <Sparkles size={14} strokeWidth={2.2} />
                 Charger le modèle de départ
               </button>
@@ -734,6 +749,28 @@ export default function HouseProtocolForm({
             </span>
           </div>
         </div>
+        {starterConfirmOpen && (
+          <div className="card schedule-card" style={{ margin: "0 0 16px", borderColor: "var(--danger)" }}>
+            <p style={{ margin: "0 0 12px", fontSize: 14 }}>
+              Charger le modèle de départ va <strong>remplacer toutes les lignes de protocole actuelles</strong>
+              de ce bâtiment. Rien n'est enregistré tant que vous ne cliquez pas sur
+              « Enregistrer le protocole », mais vos lignes actuelles seront retirées de cet écran.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                className="delete-button"
+                style={{ width: "auto", padding: "0 16px" }}
+                onClick={() => {
+                  setStarterConfirmOpen(false);
+                  loadStarterTemplate();
+                }}
+              >
+                Charger quand même
+              </button>
+              <button className="add-button" onClick={() => setStarterConfirmOpen(false)}>Annuler</button>
+            </div>
+          </div>
+        )}
         {importConfirmOpen && (
           <div className="card schedule-card" style={{ margin: "0 0 16px", borderColor: "var(--danger)" }}>
             <p style={{ margin: "0 0 12px", fontSize: 14 }}>
