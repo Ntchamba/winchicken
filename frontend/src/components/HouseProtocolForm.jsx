@@ -17,6 +17,12 @@ import "../styles/house-protocol-theme-light.css";
 // `import { iconFor } from ".../HouseProtocolForm"` call sites stay untouched.
 export { iconFor };
 
+// Exported so the public /demo page shows this exact researched protocol instead of maintaining
+// a second, separately-curated fixture (demo/demoData.js's old DEMO_SCHEDULES, removed
+// 2026-10-11 — it was also keyed by "feeding"/"temperature"/... instead of DEFAULT_CATEGORIES'
+// "default-0".."default-4" ids, so its rows silently never matched a tab and rendered empty).
+export { STARTER_TEMPLATE };
+
 // Stable identity for the `stockItems` default — an inline `[]` in the destructure is a fresh
 // array every render, which makes the `setStockItemList(stockItems)` effect below re-fire on
 // every render and spin into "Maximum update depth exceeded" for the callers that don't pass
@@ -51,35 +57,181 @@ function formatSlotTime(value) {
 // Reference starter template — only ever applied via the explicit "Load starter template"
 // button (cahier des charges 7.3): never pre-filled automatically (no-default-data rule).
 // Keyed by the 5 defaults' stable local ids, matching DEFAULT_CATEGORIES above.
+//
+// Poulet de chair, jour 1 à jour 56 (2026-10-11) — researched from Hubbard/Cobb breeder
+// manuals (widely used by Cameroonian farms), an IRAD Cameroun source on the démarrage ->
+// croissance feed transition, the GIZ-Nafa Cameroun training module, and commonly-documented
+// Newcastle/Gumboro vaccination windows for the region. No single official day-by-day
+// Cameroonian calendar exists publicly — this is the best grounded synthesis found, flagged as
+// such inline wherever a figure is an order of magnitude rather than a fixed rule. Lighting
+// rows (no "Éclairage" category exists among the 5 defaults) are folded into Température,
+// since both are environment-control tasks on the same climate-management tab.
 const STARTER_TEMPLATE = {
   "default-0": [
-    makeRow({ fromValue: 1, toValue: 15, what: "Aliment démarrage", details: "3000 kcal, 22,5% de protéines" }),
-    makeRow({ fromValue: 15, toValue: 30, what: "Aliment croissance", details: "3150 kcal, 21,5% de protéines" }),
-    makeRow({ fromValue: 30, untilEnd: true, what: "Aliment finition", details: "3200 kcal, 20% de protéines" }),
+    makeRow({
+      fromValue: 1, toValue: 3, what: "Aliment démarrage (reprise fréquente)",
+      details: "3000 kcal/kg, 22-23% protéines — recharger les mangeoires 3 à 4 fois/jour les 3 premiers jours pour stimuler la prise alimentaire précoce (guide Cobb)",
+      timeSlots: [
+        { id: nextRowId(), startTime: "06:30", endTime: "07:00" },
+        { id: nextRowId(), startTime: "12:00", endTime: "12:30" },
+        { id: nextRowId(), startTime: "17:30", endTime: "18:00" },
+      ],
+    }),
+    makeRow({
+      fromValue: 4, toValue: 14, what: "Aliment démarrage",
+      details: "3000 kcal/kg, 22-23% protéines",
+      timeSlots: [
+        { id: nextRowId(), startTime: "06:30", endTime: "07:30" },
+        { id: nextRowId(), startTime: "17:30", endTime: "18:30" },
+      ],
+    }),
+    makeRow({
+      fromValue: 15, toValue: 28, what: "Aliment croissance",
+      details: "3000-3100 kcal/kg, 20-21% protéines — transition progressive sur 2-3 jours en mélangeant avec l'aliment démarrage (IRAD Cameroun : transition à partir du 2e jour de la 4e semaine)",
+      timeSlots: [
+        { id: nextRowId(), startTime: "06:30", endTime: "07:30" },
+        { id: nextRowId(), startTime: "17:30", endTime: "18:30" },
+      ],
+    }),
+    makeRow({
+      fromValue: 29, untilEnd: true, what: "Aliment finition",
+      details: "3100-3200 kcal/kg, 19-20% protéines (transition citée vers J29 par le module GIZ-Nafa Cameroun)",
+      timeSlots: [
+        { id: nextRowId(), startTime: "06:30", endTime: "07:30" },
+        { id: nextRowId(), startTime: "17:30", endTime: "18:30" },
+      ],
+    }),
   ],
   "default-1": [
-    makeRow({ fromValue: 1, toValue: 3, what: "Démarrage (éleveuse)", details: "Éleveuse 38°C, salle > 28°C" }),
+    makeRow({
+      fromValue: 1, toValue: 7, what: "Chauffage poussinière",
+      details: "32-34°C sous radiant au démarrage, baisse progressive d'environ 0,3°C/jour jusqu'à 30-31°C à J7 — regroupés sous le radiant = trop froid, écartés vers les bords = trop chaud (guide Hubbard)",
+      timeSlots: [
+        { id: nextRowId(), startTime: "06:00", endTime: "06:15" },
+        { id: nextRowId(), startTime: "18:00", endTime: "18:15" },
+      ],
+    }),
+    makeRow({
+      fromValue: 8, toValue: 14, what: "Chauffage poussinière",
+      details: "Poursuite de la baisse progressive jusqu'à environ 28°C",
+      timeSlots: [
+        { id: nextRowId(), startTime: "06:00", endTime: "06:15" },
+        { id: nextRowId(), startTime: "18:00", endTime: "18:15" },
+      ],
+    }),
+    makeRow({
+      fromValue: 15, toValue: 21, what: "Chauffage poussinière",
+      details: "Environ 26°C, réduire progressivement la durée de chauffage journalière",
+      timeSlots: [
+        { id: nextRowId(), startTime: "06:00", endTime: "06:15" },
+        { id: nextRowId(), startTime: "18:00", endTime: "18:15" },
+      ],
+    }),
+    makeRow({
+      fromValue: 22, toValue: 28, what: "Chauffage poussinière",
+      details: "Environ 24°C, chauffage d'appoint le soir seulement si nécessaire",
+      timeSlots: [{ id: nextRowId(), startTime: "18:00", endTime: "18:15" }],
+    }),
+    makeRow({
+      fromValue: 29, untilEnd: true, what: "Température ambiante",
+      details: "Environ 20-22°C généralement suffisant sous climat tropical ; chauffage artificiel habituellement inutile sauf nuits fraîches en altitude",
+      timeSlots: [{ id: nextRowId(), startTime: "06:00", endTime: "06:15" }],
+    }),
+    makeRow({
+      fromValue: 1, toValue: 7, what: "Lumière quasi continue",
+      details: "23h de lumière / 1h d'obscurité — favorise la prise alimentaire précoce et le développement digestif",
+      timeSlots: [{ id: nextRowId(), startTime: "00:00", endTime: "01:00" }],
+    }),
+    makeRow({
+      fromValue: 8, untilEnd: true, what: "Lumière réduite",
+      details: "18 à 20h de lumière/jour (naturelle + appoint en soirée), ajustable selon la saison et la luminosité du bâtiment",
+      timeSlots: [{ id: nextRowId(), startTime: "20:00", endTime: "22:00" }],
+    }),
   ],
   "default-2": [
-    makeRow({ fromValue: 2, toValue: 4, what: "Anti-infectieux + vitamines", details: "Dans l'eau de boisson" }),
+    makeRow({
+      fromValue: 1, toValue: 3, what: "Vitamines + électrolytes dans l'eau",
+      details: "Anti-stress hydrosoluble, dose selon la notice (souvent ~5 ml/L) — réduit le stress du transport et du démarrage",
+      timeSlots: [{ id: nextRowId(), startTime: "06:00", endTime: "06:30" }],
+    }),
+    makeRow({
+      fromValue: 5, toValue: 6, what: "Vitamines dans l'eau (post-vaccin)",
+      details: "Réduit le stress lié à la vaccination Newcastle",
+      timeSlots: [{ id: nextRowId(), startTime: "06:00", endTime: "06:30" }],
+    }),
+    makeRow({
+      fromValue: 10, toValue: 12, what: "Anticoccidien préventif",
+      details: "Si l'aliment n'est pas déjà médicamenté — vérifier l'étiquette avant d'ajouter un traitement",
+      timeSlots: [{ id: nextRowId(), startTime: "06:00", endTime: "06:30" }],
+    }),
+    makeRow({
+      fromValue: 14, toValue: 15, what: "Vitamines dans l'eau (post-vaccin Gumboro)",
+      details: "Réduit le stress lié à la vaccination",
+      timeSlots: [{ id: nextRowId(), startTime: "06:00", endTime: "06:30" }],
+    }),
+    makeRow({
+      fromValue: 25, toValue: 25, what: "Déparasitage (vermifuge)",
+      details: "Pratique courante chez les petits éleveurs camerounais contre les vers intestinaux — dose selon le produit, ne correspond pas à un protocole officiel unique",
+      timeSlots: [{ id: nextRowId(), startTime: "06:00", endTime: "06:30" }],
+    }),
   ],
   "default-3": [
-    makeRow({ fromValue: 1, toValue: 1, what: "Maladie de Newcastle", details: "Hitchner B1, goutte oculaire" }),
+    makeRow({
+      fromValue: 1, toValue: 1, what: "Vaccin Marek",
+      details: "Généralement déjà administré à l'écloserie avant la livraison des poussins — à confirmer auprès du fournisseur",
+    }),
+    makeRow({
+      fromValue: 5, toValue: 5, what: "Vaccin Newcastle (souche B1/Hitchner)",
+      details: "Goutte oculaire ou dans l'eau de boisson selon le vaccin utilisé — administrer tôt le matin, avant la chaleur, quand les oiseaux ont le plus soif",
+      timeSlots: [{ id: nextRowId(), startTime: "06:00", endTime: "07:00" }],
+    }),
+    makeRow({
+      fromValue: 14, toValue: 14, what: "Vaccin Gumboro (1ère dose)",
+      details: "Dans l'eau de boisson — le moment optimal dépend du niveau d'anticorps maternels ; 14 jours est une moyenne courante, pas une règle fixe",
+      timeSlots: [{ id: nextRowId(), startTime: "06:00", endTime: "07:00" }],
+    }),
+    makeRow({
+      fromValue: 21, toValue: 21, what: "Rappel Newcastle + rappel Gumboro",
+      details: "Période à risque Gumboro : poulets de 3 à 6 semaines, au moment où l'immunité maternelle disparaît",
+      timeSlots: [{ id: nextRowId(), startTime: "06:00", endTime: "07:00" }],
+    }),
   ],
   "default-4": [
-    makeRow({ fromValue: 1, fromUnit: "Day", untilEnd: true, what: "Ajout de litière", details: "+40kg au jour 7" }),
+    makeRow({
+      fromValue: 1, toValue: 1, what: "Mise en place de la litière",
+      details: "Copeaux de bois ou balle de riz, épaisseur 5-8 cm, bâtiment désinfecté et vide sanitaire respecté avant l'arrivée",
+      timeSlots: [{ id: nextRowId(), startTime: "06:00", endTime: "07:00" }],
+    }),
+    makeRow({
+      fromValue: 7, toValue: 7, what: "Ajout de litière",
+      details: "Compléter les zones humides, en particulier autour des abreuvoirs",
+      timeSlots: [{ id: nextRowId(), startTime: "06:00", endTime: "06:30" }],
+    }),
+    makeRow({
+      fromValue: 1, untilEnd: true, what: "Nettoyage quotidien mangeoires et abreuvoirs",
+      details: "Rinçage à l'eau claire chaque jour pour limiter la prolifération bactérienne",
+      timeSlots: [
+        { id: nextRowId(), startTime: "06:30", endTime: "07:00" },
+        { id: nextRowId(), startTime: "17:30", endTime: "18:00" },
+      ],
+    }),
+    makeRow({
+      fromValue: 56, toValue: 56, what: "Vide sanitaire et désinfection complète",
+      details: "Évacuation de la litière, lavage, désinfection ; vide sanitaire d'au moins 2 semaines avant la bande suivante",
+      timeSlots: [{ id: nextRowId(), startTime: "06:00", endTime: "10:00" }],
+    }),
   ],
 };
 
 // One worked example per default category, shown read-only in the help panel — reuses the
-// same reference content as STARTER_TEMPLATE/Demo mode, illustrative only, never written into
-// the real form.
+// same reference content as STARTER_TEMPLATE/Demo mode (its first row per category),
+// illustrative only, never written into the real form.
 const HELP_EXAMPLES = [
-  { label: "Alimentation", icon: "Soup", from: "1 Jour", to: "15 Jours", what: "Aliment démarrage", details: "3000 kcal, 22,5% de protéines" },
-  { label: "Température", icon: "Thermometer", from: "1 Jour", to: "3 Jours", what: "Démarrage (éleveuse)", details: "Éleveuse 38°C, salle > 28°C" },
-  { label: "Santé et soins", icon: "Stethoscope", from: "2 Jours", to: "4 Jours", what: "Anti-infectieux + vitamines", details: "Dans l'eau de boisson" },
-  { label: "Vaccination", icon: "Syringe", from: "1 Jour", to: "1 Jour", what: "Maladie de Newcastle", details: "Hitchner B1, goutte oculaire" },
-  { label: "Nettoyage", icon: "SprayCan", from: "1 Jour", to: "Fin de cycle", what: "Ajout de litière", details: "+40kg au jour 7" },
+  { label: "Alimentation", icon: "Soup", from: "1 Jour", to: "3 Jours", what: "Aliment démarrage (reprise fréquente)", details: "3000 kcal/kg, 22-23% protéines — recharger les mangeoires 3 à 4 fois/jour" },
+  { label: "Température", icon: "Thermometer", from: "1 Jour", to: "7 Jours", what: "Chauffage poussinière", details: "32-34°C au démarrage, baisse progressive jusqu'à 30-31°C à J7" },
+  { label: "Santé et soins", icon: "Stethoscope", from: "1 Jour", to: "3 Jours", what: "Vitamines + électrolytes dans l'eau", details: "Anti-stress hydrosoluble — réduit le stress du transport et du démarrage" },
+  { label: "Vaccination", icon: "Syringe", from: "5 Jours", to: "5 Jours", what: "Vaccin Newcastle (souche B1/Hitchner)", details: "Goutte oculaire ou dans l'eau de boisson" },
+  { label: "Nettoyage", icon: "SprayCan", from: "1 Jour", to: "1 Jour", what: "Mise en place de la litière", details: "Copeaux de bois ou balle de riz, épaisseur 5-8 cm" },
 ];
 
 /**
@@ -200,6 +352,21 @@ export default function HouseProtocolForm({
   // the one screen where the user has just typed a whole protocol (FIX 8, group 3).
   const [saveError, setSaveError] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
+
+  // "Charger le modèle de départ" (2026-10-11) — also a full replacement of `schedules`
+  // (loadStarterTemplate), exactly as destructive on an already-populated protocol as the
+  // Excel import below, but it had no confirm step: one misclick silently wiped every existing
+  // line with zero warning. Skip the prompt only when there is nothing to lose (totalRows===0,
+  // e.g. first-time onboarding) — same guard philosophy as the Excel import's own
+  // zero-usable-rows guard.
+  const [starterConfirmOpen, setStarterConfirmOpen] = useState(false);
+  const requestStarterTemplate = () => {
+    if (totalRows === 0) {
+      loadStarterTemplate();
+      return;
+    }
+    setStarterConfirmOpen(true);
+  };
 
   // Excel import (docs/excel-import.md) — parse server-side, then REPLACE the form's rows with
   // the file's content (full replacement, not append). Destructive → a confirm step first.
@@ -554,7 +721,7 @@ export default function HouseProtocolForm({
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-              <button className="add-button" style={{ marginTop: 0 }} onClick={loadStarterTemplate} disabled={saving}>
+              <button className="add-button" style={{ marginTop: 0 }} onClick={requestStarterTemplate} disabled={saving}>
                 <Sparkles size={14} strokeWidth={2.2} />
                 Charger le modèle de départ
               </button>
@@ -588,6 +755,28 @@ export default function HouseProtocolForm({
             </span>
           </div>
         </div>
+        {starterConfirmOpen && (
+          <div className="card schedule-card" style={{ margin: "0 0 16px", borderColor: "var(--danger)" }}>
+            <p style={{ margin: "0 0 12px", fontSize: 14 }}>
+              Charger le modèle de départ va <strong>remplacer toutes les lignes de protocole actuelles</strong>
+              de ce bâtiment. Rien n'est enregistré tant que vous ne cliquez pas sur
+              « Enregistrer le protocole », mais vos lignes actuelles seront retirées de cet écran.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                className="delete-button"
+                style={{ width: "auto", padding: "0 16px" }}
+                onClick={() => {
+                  setStarterConfirmOpen(false);
+                  loadStarterTemplate();
+                }}
+              >
+                Charger quand même
+              </button>
+              <button className="add-button" style={{ marginTop: 0 }} onClick={() => setStarterConfirmOpen(false)}>Annuler</button>
+            </div>
+          </div>
+        )}
         {importConfirmOpen && (
           <div className="card schedule-card" style={{ margin: "0 0 16px", borderColor: "var(--danger)" }}>
             <p style={{ margin: "0 0 12px", fontSize: 14 }}>
@@ -605,7 +794,7 @@ export default function HouseProtocolForm({
               >
                 Choisir le fichier et remplacer
               </button>
-              <button className="add-button" onClick={() => setImportConfirmOpen(false)}>Annuler</button>
+              <button className="add-button" style={{ marginTop: 0 }} onClick={() => setImportConfirmOpen(false)}>Annuler</button>
             </div>
           </div>
         )}

@@ -58,3 +58,13 @@
 .batch-action--close:hover{background:var(--warning);color:#fff}
 .batch-action--delete{background:var(--danger);border-color:var(--danger);color:#fff}
 .batch-action--delete:hover{background:#b5322e;border-color:#b5322e}
+
+/* Button-row baseline fix (2026-10-11): .add-button carries margin-top:18px for its default
+   "sits below a list" context (e.g. "Ajouter une ligne"). Reused next to .delete-button or
+   .save-button as the "Annuler"/"Retour" half of a horizontal actions row, that same margin
+   pushes it visibly below its sibling unless the call site remembers to override it. Fixed
+   once here via the adjacent-sibling combinator instead of hunting down every call site. */
+.delete-button + .add-button,
+.add-button + .delete-button,
+.save-button + .add-button,
+.add-button + .save-button { margin-top: 0; }

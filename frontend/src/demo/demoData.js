@@ -4,25 +4,6 @@
 
 export const DEMO_HOUSE_HEADER = { buildingName: "Bâtiment A", chicksPlaced: 500, growthCycle: 56, growthCycleUnit: "Day" };
 
-export const DEMO_SCHEDULES = {
-  feeding: [
-    { id: 1, fromValue: 1, fromUnit: "Day", toValue: 15, toUnit: "Day", untilEnd: false, what: "Aliment démarrage", details: "3000 kcal, 22,5% de protéines" },
-    { id: 2, fromValue: 15, fromUnit: "Day", toValue: 30, toUnit: "Day", untilEnd: false, what: "Aliment croissance", details: "3150 kcal, 21,5% de protéines" },
-  ],
-  temperature: [
-    { id: 3, fromValue: 1, fromUnit: "Day", toValue: 3, toUnit: "Day", untilEnd: false, what: "Démarrage (éleveuse)", details: "Éleveuse 38°C, salle > 28°C" },
-  ],
-  health: [
-    { id: 4, fromValue: 2, fromUnit: "Day", toValue: 4, toUnit: "Day", untilEnd: false, what: "Anti-infectieux + vitamines", details: "Dans l'eau de boisson" },
-  ],
-  vaccination: [
-    { id: 5, fromValue: 1, fromUnit: "Day", toValue: 1, toUnit: "Day", untilEnd: false, what: "Maladie de Newcastle", details: "Hitchner B1, goutte oculaire" },
-  ],
-  cleaning: [
-    { id: 6, fromValue: 1, fromUnit: "Week", toValue: 1, toUnit: "Week", untilEnd: true, what: "Ajout de litière", details: "+40kg au jour 7" },
-  ],
-};
-
 // Client-side demo only. `initialCategories` uses the same shape the backend returns
 // (`{ id, label, icon, kind }`); `DEMO_STOCK` is keyed by those ids. Feed-stage values stay
 // English (backend FeedStage enum); `farmId` is omitted on the demo form so no write fires.

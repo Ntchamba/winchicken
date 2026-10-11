@@ -2,9 +2,9 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Info } from "lucide-react";
 import HomeDashboard from "../components/HomeDashboard";
-import HouseProtocolForm from "../components/HouseProtocolForm";
+import HouseProtocolForm, { STARTER_TEMPLATE } from "../components/HouseProtocolForm";
 import StockParametersForm from "../components/StockParametersForm";
-import { DEMO_ALERTS, DEMO_HOUSES, DEMO_HOUSE_HEADER, DEMO_SCHEDULES, DEMO_STOCK, DEMO_STOCK_CATEGORIES } from "./demoData";
+import { DEMO_ALERTS, DEMO_HOUSES, DEMO_HOUSE_HEADER, DEMO_STOCK, DEMO_STOCK_CATEGORIES } from "./demoData";
 import useDocumentTitle from "../hooks/useDocumentTitle";
 import "../styles/house-protocol-theme-light.css";
 import "../styles/dashboard-theme.css";
@@ -42,7 +42,7 @@ export default function DemoPage() {
         <HomeDashboard farmName="Ferme de démonstration" houses={DEMO_HOUSES} alerts={DEMO_ALERTS} onNavigate={() => {}} />
       )}
       {view === "protocol" && (
-        <HouseProtocolForm initialHeader={DEMO_HOUSE_HEADER} initialSchedules={DEMO_SCHEDULES} mode="management" onSave={() => {}} />
+        <HouseProtocolForm initialHeader={DEMO_HOUSE_HEADER} initialSchedules={STARTER_TEMPLATE} mode="management" onSave={() => {}} />
       )}
       {view === "stock" && (
         <StockParametersForm
