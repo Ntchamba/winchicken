@@ -25,7 +25,7 @@ const TREND_LABELS = { up: "Hausse", down: "Baisse", flat: "Stable" };
  * behavior, just repositioned as one section among four instead of its own route. Page chrome
  * (page-wrap/breadcrumb/document title) now lives once in `FinancesPage.jsx`, not per-section.
  */
-export default function GlobaleSection({ refreshKey }) {
+export default function GlobaleSection({ refreshKey, onSummary }) {
   const [range, setRange] = useState("6m");
   const [summary, setSummary] = useState(null);
   const [categories, setCategories] = useState([]);
@@ -36,8 +36,11 @@ export default function GlobaleSection({ refreshKey }) {
   // LABOR expense was just created elsewhere on this same-mounted page — see FinancesPage.jsx's
   // own docstring for why a hash-only navigation can't do this on its own.
   useEffect(() => {
-    financeApi.summary(range).then(({ data }) => setSummary(data));
-  }, [range, refreshKey]);
+    financeApi.summary(range).then(({ data }) => {
+      setSummary(data);
+      onSummary?.(data);
+    });
+  }, [range, refreshKey, onSummary]);
 
   const isFull = summary?.access === "full";
 
@@ -109,6 +112,22 @@ export default function GlobaleSection({ refreshKey }) {
         </ResponsiveContainer>
       </div>
 
+      <div className="card progress-card" style={{ marginBottom: 18 }}>
+        <p className="schedule-note">Trésorerie actuelle</p>
+        <p
+          style={{
+            margin: "4px 0 2px", fontFamily: "'Space Grotesk',sans-serif", fontSize: "clamp(32px, 6vw, 48px)",
+            fontWeight: 700, letterSpacing: "-.02em",
+            color: summary.cashOnHand < 0 ? "var(--danger)" : "var(--mint)",
+          }}
+        >
+          {formatMoney(summary.cashOnHand)}
+        </p>
+        <p className="schedule-note" style={{ margin: 0 }}>
+          Total des ventes moins toutes les dépenses et commandes reçues, depuis le début.
+        </p>
+      </div>
+
       {/* Farm-wide indicators (2026-08-31) — the "état de la ferme" alongside the pure
           revenue/expense view: value of stock on hand, operational losses (mortality +
           reported incidents, NOT a monetary figure), a compact echo of Ventes, egg output. */}
@@ -165,14 +184,10 @@ export default function GlobaleSection({ refreshKey }) {
         </div>
       </div>
 
-      <div className="card progress-card" style={{ marginBottom: 14 }}>
-        <p className="schedule-note">Trésorerie disponible</p>
-        <p style={{ margin: "6px 0 0", fontFamily: "'Space Grotesk',sans-serif", fontSize: 24 }}>{summary.cashOnHand.toLocaleString()}</p>
-      </div>
       <div className="card progress-card warn" style={{ marginBottom: 22 }}>
         <p className="schedule-note">Montants à régler</p>
         <p style={{ margin: "6px 0 0", fontFamily: "'Space Grotesk',sans-serif", fontSize: 24, color: "var(--warning)" }}>
-          {summary.pendingPayables.toLocaleString()}
+          {formatMoney(summary.pendingPayables)}
         </p>
       </div>
 
