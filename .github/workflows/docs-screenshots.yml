@@ -102,6 +102,9 @@ jobs:
       - name: Capture screenshots
         run: python tools/docs-screenshots/capture.py http://localhost:5173 docs-screenshots
 
+      - name: Record notification bell video
+        run: python tools/docs-screenshots/record_notification_video.py http://localhost:5173 docs-screenshots
+
       - name: Dump server logs on failure
         if: failure()
         run: |
@@ -124,6 +127,7 @@ jobs:
         run: |
           mkdir -p docs/screenshots-fresh
           cp docs-screenshots/*.png docs/screenshots-fresh/
+          cp docs-screenshots/*.webm docs/screenshots-fresh/ 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/screenshots-fresh
