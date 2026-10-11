@@ -175,7 +175,7 @@ export default function OnboardingEmployeesPage() {
       </div>
 
       <div className="save-bar">
-        <button className="add-button" onClick={skip} disabled={saving}>Sauter</button>
+        <button className="add-button" style={{ marginTop: 0 }} onClick={skip} disabled={saving}>Sauter</button>
         <span style={{ flex: 1 }} />
         <button className="save-button" onClick={finish} disabled={saving}>
           {saving ? <Loader2 size={16} className="spin" /> : "Suivant"}

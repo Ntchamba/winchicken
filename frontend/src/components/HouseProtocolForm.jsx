@@ -767,7 +767,7 @@ export default function HouseProtocolForm({
               >
                 Charger quand même
               </button>
-              <button className="add-button" onClick={() => setStarterConfirmOpen(false)}>Annuler</button>
+              <button className="add-button" style={{ marginTop: 0 }} onClick={() => setStarterConfirmOpen(false)}>Annuler</button>
             </div>
           </div>
         )}
@@ -788,7 +788,7 @@ export default function HouseProtocolForm({
               >
                 Choisir le fichier et remplacer
               </button>
-              <button className="add-button" onClick={() => setImportConfirmOpen(false)}>Annuler</button>
+              <button className="add-button" style={{ marginTop: 0 }} onClick={() => setImportConfirmOpen(false)}>Annuler</button>
             </div>
           </div>
         )}

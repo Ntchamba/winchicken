@@ -621,7 +621,7 @@ export default function StockParametersForm({
       {mode === "onboarding" ? (
         <div className="save-bar">
           {onBack && (
-            <button className="add-button" onClick={onBack} disabled={saving}>Retour</button>
+            <button className="add-button" style={{ marginTop: 0 }} onClick={onBack} disabled={saving}>Retour</button>
           )}
           <span className="save-message error" role="alert" style={{ flex: 1 }}>{saveError}</span>
           <button className="save-button" onClick={handleSave} disabled={saving || totalItems === 0}>
