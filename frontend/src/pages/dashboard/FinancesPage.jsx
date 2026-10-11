@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Navigate, useLocation, useOutletContext } from "react-router-dom";
+import { financeVerdict } from "../../utils/financeVerdict";
 import HubPage from "../../components/HubPage";
 import GlobaleSection from "../../components/finances/GlobaleSection";
 import useDocumentTitle from "../../hooks/useDocumentTitle";
@@ -20,6 +22,9 @@ export default function FinancesPage() {
   useDocumentTitle("Finances");
   const { hash } = useLocation();
   const { canSeeSalaires } = useOutletContext();
+  // Lifted from GlobaleSection (which still owns the fetch) so the hub disc can state a verdict
+  // instead of a bare "Vue globale" label — one request, shared.
+  const [summary, setSummary] = useState(null);
 
   const legacy = FINANCE_SECTIONS.find(({ key }) => hash === `#${key}`);
   if (legacy) return <Navigate to={`${FINANCES_BASE}/${legacy.path}`} replace />;
@@ -31,11 +36,15 @@ export default function FinancesPage() {
   return (
     <>
       <h1 className="finances-section-title">Finances</h1>
-      <HubPage ariaLabel="Sections des finances" core={{ label: "Vue globale" }} sections={sections} />
+      <HubPage
+        ariaLabel="Sections des finances"
+        core={financeVerdict(summary) || { label: "Vue globale" }}
+        sections={sections}
+      />
 
       <section id="globale" style={{ marginBottom: 12 }}>
         <h2 className="finances-section-title">Globale</h2>
-        <GlobaleSection />
+        <GlobaleSection onSummary={setSummary} />
       </section>
     </>
   );
