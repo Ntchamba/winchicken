@@ -107,6 +107,23 @@ def seed_one_real_alert():
     )
 
 
+def seed_one_expense():
+    """One real feed purchase (350 000 FCFA, no sale yet) so the Finances hub has a verdict to
+    show — a fresh farm sits at exactly 0 FCFA, which only ever renders the neutral case.
+    Taken *after* the plain 10-finances.png, so that one still shows a brand-new farm."""
+    script = (
+        "from apps.core.models import Farm\n"
+        "from apps.finance.models import Expense\n"
+        "from django.utils import timezone\n"
+        "Expense.objects.create(farm=Farm.objects.get(), category='FEED', amount=350000,\n"
+        "                       expense_date=timezone.localdate(), supplier='Provenderie')\n"
+    )
+    subprocess.run(
+        [sys.executable, "manage.py", "shell", "-c", script],
+        cwd="backend", check=True,
+    )
+
+
 def shot_path(page, base_url, path, name, wait_ms=500):
     page.goto(f"{base_url}{path}", wait_until="networkidle")
     page.wait_for_timeout(wait_ms)
@@ -161,6 +178,12 @@ def main():
                 shot_path(page, args.base_url, path, name, wait_ms)
             except Exception as e:
                 print(f"  FAILED {name}: {e}")
+
+        try:
+            seed_one_expense()
+            shot_path(page, args.base_url, "/dashboard/finances", "14-finances-perte.png", 800)
+        except Exception as e:
+            print(f"  FAILED 14-finances-perte.png: {e}")
 
         house_buttons = page.locator("nav.sidebar-nav button.sidebar-link")
         count = house_buttons.count()
