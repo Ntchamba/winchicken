@@ -17,6 +17,12 @@ import "../styles/house-protocol-theme-light.css";
 // `import { iconFor } from ".../HouseProtocolForm"` call sites stay untouched.
 export { iconFor };
 
+// Exported so the public /demo page shows this exact researched protocol instead of maintaining
+// a second, separately-curated fixture (demo/demoData.js's old DEMO_SCHEDULES, removed
+// 2026-10-11 — it was also keyed by "feeding"/"temperature"/... instead of DEFAULT_CATEGORIES'
+// "default-0".."default-4" ids, so its rows silently never matched a tab and rendered empty).
+export { STARTER_TEMPLATE };
+
 // Stable identity for the `stockItems` default — an inline `[]` in the destructure is a fresh
 // array every render, which makes the `setStockItemList(stockItems)` effect below re-fire on
 // every render and spin into "Maximum update depth exceeded" for the callers that don't pass
