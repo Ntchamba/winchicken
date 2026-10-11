@@ -12,6 +12,7 @@ weighings stay at zero, exactly as they are the day a real farm is created.
 Usage: python capture.py <frontend_base_url> <out_dir>
 """
 import argparse
+import subprocess
 import sys
 import os
 from pathlib import Path
@@ -86,6 +87,26 @@ def create_farm_and_onboard(page, base_url):
     page.wait_for_timeout(600)
 
 
+def seed_one_real_alert():
+    """Fires `apps.alerts.services.trigger_alert` directly — the exact function the LOW_STOCK
+    signal handler calls in production (apps/alerts/signals.py) — so the notification bell
+    screenshot shows a real Alert row through the real serializer, not a hand-built fixture.
+    Runs in-process via `manage.py shell`, against the same job-level DB env vars the Django
+    dev server used to start (docs-screenshots.yml sets them at job scope).
+    """
+    script = (
+        "from apps.core.models import Farm\n"
+        "from apps.alerts.services import trigger_alert\n"
+        "farm = Farm.objects.get()\n"
+        "trigger_alert(farm, 'LOW_STOCK', "
+        "'Stock bas : Aliment d\\u00e9marrage (12 kg restants)', severity='warning')\n"
+    )
+    subprocess.run(
+        [sys.executable, "manage.py", "shell", "-c", script],
+        cwd="backend", check=True,
+    )
+
+
 def shot_path(page, base_url, path, name, wait_ms=500):
     page.goto(f"{base_url}{path}", wait_until="networkidle")
     page.wait_for_timeout(wait_ms)
@@ -110,6 +131,12 @@ def main():
 
         print("Signing up and onboarding (no seed data)…")
         create_farm_and_onboard(page, args.base_url)
+
+        try:
+            seed_one_real_alert()
+            print("  seeded one real LOW_STOCK alert")
+        except Exception as e:
+            print(f"  FAILED to seed alert: {e}")
 
         pages = [
             ("/dashboard", "01-dashboard-accueil.png", 500),
@@ -179,6 +206,18 @@ def main():
             except Exception as e:
                 print(f"  FAILED 57-protocole-import-confirm.png: {e}")
 
+        # The notification bell panel is portalled to <body> and positioned `fixed` (see
+        # NotificationBell.jsx) specifically so it floats above the sidebar's own isolated
+        # stacking context instead of painting underneath it — this screenshot is the real
+        # check that it actually does, with a real unread Alert row rendered inside it.
+        try:
+            page.goto(f"{args.base_url}/dashboard", wait_until="networkidle")
+            page.get_by_role("button", name="Notifications").click()
+            page.wait_for_timeout(400)
+            shot(page, "45-notification-bell-ouverte.png")
+        except Exception as e:
+            print(f"  FAILED 45-notification-bell-ouverte.png: {e}")
+
         try:
             page.goto(f"{args.base_url}/dashboard/stock", wait_until="networkidle")
             page.get_by_role("button", name="Ajouter du stock").first.click()
@@ -197,10 +236,16 @@ def main():
 
         # The "Charger le modèle de départ" button (poulet de chair J1-J56) — loads into the
         # in-memory form only, never saved here, so the real demo farm's protocol is untouched.
+        # This house already has the one real protocol line entered during onboarding, so the
+        # click now opens the confirm dialog added 2026-10-11 (replacing it is destructive)
+        # rather than loading the template directly — capture both states.
         if house_path:
             try:
                 page.goto(f"{args.base_url}{house_path}/protocol", wait_until="networkidle")
                 page.get_by_role("button", name="Charger le modèle de départ").click()
+                page.wait_for_timeout(300)
+                shot(page, "58-protocole-modele-defaut-confirmation.png")
+                page.get_by_role("button", name="Charger quand même").click()
                 page.wait_for_timeout(400)
                 shot(page, "58-protocole-modele-defaut.png")
             except Exception as e:
