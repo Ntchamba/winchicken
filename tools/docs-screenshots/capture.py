@@ -138,6 +138,7 @@ def main():
         house_buttons = page.locator("nav.sidebar-nav button.sidebar-link")
         count = house_buttons.count()
         print(f"Found {count} house sidebar button(s)")
+        house_path = None
         if count > 0:
             house_buttons.first.click()
             page.wait_for_url("**/dashboard/houses/*", timeout=10000)
@@ -193,6 +194,17 @@ def main():
             shot(page, "23-stock-nouvelle-recette.png")
         except Exception as e:
             print(f"  FAILED 23-stock-nouvelle-recette.png: {e}")
+
+        # The "Charger le modèle de départ" button (poulet de chair J1-J56) — loads into the
+        # in-memory form only, never saved here, so the real demo farm's protocol is untouched.
+        if house_path:
+            try:
+                page.goto(f"{args.base_url}{house_path}/protocol", wait_until="networkidle")
+                page.get_by_role("button", name="Charger le modèle de départ").click()
+                page.wait_for_timeout(400)
+                shot(page, "58-protocole-modele-defaut.png")
+            except Exception as e:
+                print(f"  FAILED 58-protocole-modele-defaut.png: {e}")
 
         browser.close()
     print(f"Done — screenshots in {OUT}")
