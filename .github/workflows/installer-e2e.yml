@@ -1,0 +1,162 @@
+name: Test installateur de A à Z (manuel)
+
+# End-to-end test of the published installer, on real GitHub machines (no VM available here):
+#
+#   windows — the real Winchicken-Setup-<version>.exe from installer/releases on main, run on
+#             windows-latest: silent NSIS install, shortcuts, uninstall entry, then the launcher's
+#             own setup page, screenshotted. GitHub's Windows runners cannot run Docker Desktop
+#             (no nested virtualisation), so this job stops, by design, at "Docker n'est pas
+#             installé" — the page a farm sees before the launcher installs Docker for them.
+#
+#   linux   — everything after that point, for real: the same .exe is unpacked (7z), its bundled
+#             images/compose/VERSION are handed to the same launcher source built for Linux,
+#             which loads the images, writes .env, starts the production stack and waits for
+#             /api/health/. Then a real farm is created in the installed app (onboarding with
+#             "Charger le modèle de départ") and the installed /demo page is checked.
+#
+# Each run downloads the .exe twice through GitHub's LFS media endpoint (~0.24 GiB each), which
+# counts against the account's Git LFS bandwidth quota.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the published installer
+        shell: pwsh
+        run: |
+          $version = (Get-Content frontend/package.json | ConvertFrom-Json).version
+          $url = "https://media.githubusercontent.com/media/${{ github.repository }}/${{ github.ref_name }}/installer/releases/Winchicken-Setup-$version.exe"
+          Write-Host "GET $url"
+          Invoke-WebRequest -Uri $url -OutFile setup.exe -UseBasicParsing
+          Write-Host "Installer size: $((Get-Item setup.exe).Length) bytes"
+
+      - name: Install silently (/S)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath setup.exe -ArgumentList "/S" -PassThru -Wait
+          Write-Host "Installer exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { exit 1 }
+
+      - name: Check install layout, shortcuts, uninstall entry
+        shell: pwsh
+        run: |
+          $dir = "$env:LOCALAPPDATA\Programs\Winchicken"
+          Get-ChildItem -Recurse $dir | ForEach-Object { "{0}`t{1}" -f $_.FullName, $_.Length }
+          $checks = @{
+            "launcher"          = Test-Path "$dir\winchicken.exe"
+            "desktop shortcut"  = Test-Path "$env:USERPROFILE\Desktop\Winchicken.lnk"
+            "start menu"        = Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Winchicken\Winchicken.lnk"
+            "uninstall entry"   = [bool](Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Winchicken" -ErrorAction SilentlyContinue)
+          }
+          $checks.GetEnumerator() | ForEach-Object { "{0}: {1}" -f $_.Key, $_.Value }
+          if ($checks.Values -contains $false) { exit 1 }
+
+      - name: Install Playwright
+        shell: pwsh
+        run: |
+          pip install playwright
+          python -m playwright install chromium
+
+      - name: Run the launcher and screenshot its setup page
+        shell: pwsh
+        run: |
+          Start-Process -FilePath "$env:LOCALAPPDATA\Programs\Winchicken\winchicken.exe"
+          python tools/installer-e2e/launcher_page.py http://127.0.0.1:47823 e2e-shots windows
+
+      - name: Dump launcher.log
+        if: always()
+        shell: pwsh
+        run: |
+          $log = "$env:LOCALAPPDATA\Winchicken\launcher.log"
+          if (Test-Path $log) { Get-Content $log } else { Write-Host "no launcher.log" }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-windows
+          path: e2e-shots/
+          if-no-files-found: ignore
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download and unpack the published installer
+        run: |
+          VERSION=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' frontend/package.json)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          curl -fsSL -o setup.exe "https://media.githubusercontent.com/media/${{ github.repository }}/${{ github.ref_name }}/installer/releases/Winchicken-Setup-$VERSION.exe"
+          ls -la setup.exe
+          sudo apt-get install -y -qq p7zip-full >/dev/null
+          7z x -y -oext setup.exe >/dev/null
+          RES=$(dirname "$(dirname "$(find ext -name images.txt | head -1)")")
+          echo "Resources: $RES"; ls -la "$RES" "$RES/images"; cat "$RES/VERSION"
+          echo "WINCHICKEN_RESOURCES_DIR=$PWD/$RES" >> "$GITHUB_ENV"
+
+      - name: Build the launcher for Linux (same source as the .exe's)
+        working-directory: installer/launcher
+        run: cargo build --release --locked
+
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Run the launcher end to end (images, settings, start, health)
+        run: |
+          installer/launcher/target/release/winchicken-launcher > launcher.out 2>&1 &
+          python tools/installer-e2e/launcher_page.py http://127.0.0.1:47823 e2e-shots linux
+
+      - name: Create a farm in the installed app, check the demo page
+        run: python tools/installer-e2e/installed_app.py "$(cat e2e-shots/local_url.txt)" e2e-shots
+
+      - name: Dump launcher log
+        if: always()
+        run: |
+          cat ~/.local/share/winchicken/launcher.log || true
+          cat launcher.out || true
+          docker ps -a || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-linux
+          path: e2e-shots/
+          if-no-files-found: ignore
+
+  publish:
+    needs: [windows, linux]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+      - name: Commit the screenshots (artifact storage is not reachable from every network)
+        run: |
+          mkdir -p docs/installer-e2e
+          find art -name '*.png' -exec cp {} docs/installer-e2e/ \;
+          ls -la docs/installer-e2e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/installer-e2e
+          git diff --cached --quiet && exit 0
+          git commit -m "chore(installer): end-to-end test screenshots [skip ci]"
+          for i in 1 2 3 4 5; do
+            if git push origin HEAD:${{ github.ref_name }}; then exit 0; fi
+            git fetch origin ${{ github.ref_name }}
+            git rebase origin/${{ github.ref_name }}
+            sleep 3
+          done
+          exit 1

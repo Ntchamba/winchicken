@@ -11,7 +11,15 @@ on:
   push:
     branches: ["main"]
     # Otherwise the bot's own release commit below re-triggers this workflow forever.
-    paths-ignore: ["installer/releases/**"]
+    # Docs, screenshots and test tooling don't change what the .exe ships; rebuilding on them
+    # would add another ~0.24 GiB LFS object to the account's 10 GiB storage quota each time.
+    paths-ignore:
+      - "installer/releases/**"
+      - "docs/**"
+      - "tools/**"
+      - ".github/workflows/docs-screenshots.yml"
+      - ".github/workflows/installer-e2e.yml"
+      - ".github/workflows/installer-windows-test.yml"
     tags: ["v*"]
 
 permissions:
